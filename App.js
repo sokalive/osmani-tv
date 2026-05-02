@@ -74,7 +74,8 @@ const carouselData = [
 
 const filters = ['Zote', 'Trending', 'Sports', 'Movies'];
 
-const CHANNELS_API_URL = 'http://192.168.1.179:3000/channels';
+const CHANNELS_API_URL =
+  'https://nodejs-railway-production-ce4a.up.railway.app/channels';
 
 const TAB_BAR_HEIGHT = 76;
 /** Small gap between safe-area bottom and the tab bar (comfortable, not touching system nav). */
