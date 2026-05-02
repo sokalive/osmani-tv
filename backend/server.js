@@ -1,24 +1,48 @@
+const { Pool } = require("pg");
 const express = require("express");
 const app = express();
 
 const PORT = process.env.PORT || 3000;
 
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
+
 app.get("/", (req, res) => {
   res.send("Server yako inafanya kazi 🚀");
 });
 
-// TEST DATA (channels)
-app.get("/channels", (req, res) => {
-  res.json([
-    { name: "Azam Sports 1", url: "https://example.com/stream1.m3u8" },
-    { name: "SuperSport Mix", url: "https://example.com/stream2.m3u8" },
-    { name: "ESPN", url: "https://example.com/stream3.m3u8" },
-    { name: "Sky Sports", url: "https://example.com/stream4.m3u8" },
-    { name: "BT Sport", url: "https://example.com/stream5.m3u8" },
-    { name: "Star Sports", url: "https://example.com/stream6.m3u8" },
-  ]);
+app.get("/channels", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM channels ORDER BY id DESC");
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch channels" });
+  }
 });
 
-app.listen(PORT, () => {
-  console.log("Server running on port " + PORT);
+async function createTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS channels (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      url TEXT NOT NULL,
+      category TEXT DEFAULT 'Sports',
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+}
+
+async function start() {
+  await createTable();
+  app.listen(PORT, () => {
+    console.log("Server running on port " + PORT);
+  });
+}
+
+start().catch((err) => {
+  console.error(err);
+  process.exit(1);
 });
