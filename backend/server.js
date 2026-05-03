@@ -6,16 +6,20 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// DEBUG (hakikisha DATABASE_URL ipo)
+// DEBUG (optional)
 console.log("DATABASE_URL:", process.env.DATABASE_URL);
 
 // PostgreSQL connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: process.env.DATABASE_URL
+    ? { rejectUnauthorized: false }
+    : false,
 });
+
+// ======================
+// ROUTES
+// ======================
 
 // TEST ROUTE
 app.get("/", (req, res) => {
@@ -70,7 +74,9 @@ app.delete("/channels/:id", async (req, res) => {
   }
 });
 
-// CREATE TABLE
+// ======================
+// DATABASE SETUP
+// ======================
 async function createTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS channels (
@@ -83,7 +89,9 @@ async function createTable() {
   `);
 }
 
+// ======================
 // START SERVER
+// ======================
 async function start() {
   try {
     await pool.query("SELECT 1");
@@ -92,7 +100,6 @@ async function start() {
     await createTable();
     console.log("Database ready ✅");
 
-    // 🔥 HII NDIO FIX MUHIMU
     app.listen(PORT, "0.0.0.0", () => {
       console.log("Server running on port " + PORT);
     });
