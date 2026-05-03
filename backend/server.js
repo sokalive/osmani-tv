@@ -1,28 +1,73 @@
 const { Pool } = require("pg");
 const express = require("express");
+
 const app = express();
+app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
+// PostgreSQL connection
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: process.env.NODE_ENV === "production"
+    ? { rejectUnauthorized: false }
+    : false,
 });
 
+// TEST ROUTE
 app.get("/", (req, res) => {
   res.send("Server yako inafanya kazi 🚀");
 });
 
+// GET CHANNELS
 app.get("/channels", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM channels ORDER BY id DESC");
+    const result = await pool.query(
+      "SELECT * FROM channels ORDER BY id DESC"
+    );
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error("ERROR /channels:", err);
     res.status(500).json({ error: "Failed to fetch channels" });
   }
 });
 
+// ADD CHANNEL (ADMIN)
+app.post("/channels", async (req, res) => {
+  try {
+    const { name, url, category } = req.body;
+
+    if (!name || !url) {
+      return res.status(400).json({ error: "Name and URL required" });
+    }
+
+    const result = await pool.query(
+      "INSERT INTO channels (name, url, category) VALUES ($1, $2, $3) RETURNING *",
+      [name, url, category || "Sports"]
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("ERROR ADD:", err);
+    res.status(500).json({ error: "Failed to add channel" });
+  }
+});
+
+// DELETE CHANNEL
+app.delete("/channels/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await pool.query("DELETE FROM channels WHERE id = $1", [id]);
+
+    res.json({ message: "Deleted successfully" });
+  } catch (err) {
+    console.error("ERROR DELETE:", err);
+    res.status(500).json({ error: "Failed to delete channel" });
+  }
+});
+
+// CREATE TABLE
 async function createTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS channels (
@@ -35,14 +80,19 @@ async function createTable() {
   `);
 }
 
+// START SERVER
 async function start() {
-  await createTable();
-  app.listen(PORT, () => {
-    console.log("Server running on port " + PORT);
-  });
+  try {
+    await createTable();
+    console.log("Database ready ✅");
+
+    app.listen(PORT, () => {
+      console.log("Server running on port " + PORT);
+    });
+  } catch (err) {
+    console.error("START ERROR:", err);
+    process.exit(1);
+  }
 }
 
-start().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+start();
