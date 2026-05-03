@@ -4,12 +4,14 @@ const express = require("express");
 const app = express();
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
-// DEBUG (optional)
+// DEBUG
 console.log("DATABASE_URL:", process.env.DATABASE_URL);
 
-// PostgreSQL connection
+// ======================
+// DATABASE CONNECTION
+// ======================
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL
@@ -21,13 +23,22 @@ const pool = new Pool({
 // ROUTES
 // ======================
 
-// TEST ROUTE (healthcheck muhimu)
+// ROOT TEST
 app.get("/", (req, res) => {
   res.send("Server yako inafanya kazi 🚀");
 });
 
+// API TEST
+app.get("/api", (req, res) => {
+  res.json({ message: "API inafanya kazi 🔥" });
+});
+
+// ======================
+// CHANNELS (REAL DATABASE)
+// ======================
+
 // GET CHANNELS
-app.get("/channels", async (req, res) => {
+app.get("/api/channels", async (req, res) => {
   try {
     const result = await pool.query(
       "SELECT * FROM channels ORDER BY id DESC"
@@ -40,7 +51,7 @@ app.get("/channels", async (req, res) => {
 });
 
 // ADD CHANNEL
-app.post("/channels", async (req, res) => {
+app.post("/api/channels", async (req, res) => {
   try {
     const { name, url, category } = req.body;
 
@@ -61,7 +72,7 @@ app.post("/channels", async (req, res) => {
 });
 
 // DELETE CHANNEL
-app.delete("/channels/:id", async (req, res) => {
+app.delete("/api/channels/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -90,14 +101,14 @@ async function createTable() {
 }
 
 // ======================
-// 🔥 START SERVER HARAKA (IMPORTANT)
+// START SERVER
 // ======================
 app.listen(PORT, "0.0.0.0", () => {
   console.log("Server running on port " + PORT);
 });
 
 // ======================
-// 🔥 DB INIT (BACKGROUND)
+// DB INIT (BACKGROUND)
 // ======================
 (async () => {
   try {
