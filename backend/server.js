@@ -21,7 +21,7 @@ const pool = new Pool({
 // ROUTES
 // ======================
 
-// TEST ROUTE
+// TEST ROUTE (healthcheck muhimu)
 app.get("/", (req, res) => {
   res.send("Server yako inafanya kazi 🚀");
 });
@@ -90,9 +90,16 @@ async function createTable() {
 }
 
 // ======================
-// START SERVER
+// 🔥 START SERVER HARAKA (IMPORTANT)
 // ======================
-async function start() {
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("Server running on port " + PORT);
+});
+
+// ======================
+// 🔥 DB INIT (BACKGROUND)
+// ======================
+(async () => {
   try {
     await pool.query("SELECT 1");
     console.log("DB Connected ✅");
@@ -100,14 +107,7 @@ async function start() {
     await createTable();
     console.log("Database ready ✅");
 
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log("Server running on port " + PORT);
-    });
-
   } catch (err) {
-    console.error("START ERROR:", err);
-    process.exit(1);
+    console.error("DB ERROR:", err);
   }
-}
-
-start();
+})();
