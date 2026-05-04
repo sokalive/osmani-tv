@@ -11,6 +11,7 @@ import {
   Dimensions,
   FlatList,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,9 +19,14 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import EmergencyModal from './components/EmergencyModal';
+import MaintenanceScreen from './components/MaintenanceScreen';
 import PremiumModal from './components/PremiumModal';
 import AkauntiYanguScreen from './screens/AkauntiYanguScreen';
 import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
+import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
+import { BASE_URL } from './api';
+import { resolveStream } from './lib/channelStream';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -74,9 +80,6 @@ const carouselData = [
 
 const filters = ['Zote', 'Trending', 'Sports', 'Movies'];
 
-const CHANNELS_API_URL =
-  'https://nodejs-railway-production-ce4a.up.railway.app/channels';
-
 const TAB_BAR_HEIGHT = 76;
 /** Small gap between safe-area bottom and the tab bar (comfortable, not touching system nav). */
 const TAB_BAR_FLOAT_GAP = 4;
@@ -93,70 +96,148 @@ function getScrollContentBottomPadding(insets) {
 const DEFAULT_CHANNEL_CARD_IMAGE =
   'https://images.unsplash.com/photo-1518091043644-c1d4457512c6?auto=format&fit=crop&w=900&q=80';
 
-function mapApiChannelToCard(raw, index) {
+function resolveChannelCardImage(raw) {
+  const rel = raw?.thumbnail != null ? String(raw.thumbnail).trim() : '';
+  const abs = raw?.thumbnailUrl != null ? String(raw.thumbnailUrl).trim() : '';
+  if (abs.startsWith('http')) return abs;
+  if (rel.startsWith('http')) return rel;
+  if (rel.startsWith('/')) return `${BASE_URL}${rel}`;
+  if (rel.length > 0) return `${BASE_URL}/${rel}`;
+  return DEFAULT_CHANNEL_CARD_IMAGE;
+}
+
+function channelVisibleInApp(raw) {
+  const showInApp =
+    raw?.showInApp !== undefined
+      ? Boolean(raw.showInApp)
+      : raw?.show_in_app !== undefined
+        ? Boolean(raw.show_in_app)
+        : true;
+  const isActive =
+    raw?.isActive !== undefined
+      ? Boolean(raw.isActive)
+      : raw?.active !== undefined
+        ? Boolean(raw.active)
+        : true;
+  return showInApp && isActive;
+}
+
+function matchesBottomTabRow(r, filter) {
+  if (filter == null || String(filter).trim() === '') return true;
+  const v = String(r.bottomTab ?? r.bottomTabsDisplay ?? r.category ?? '').trim();
+  return v.toLowerCase() === String(filter).trim().toLowerCase();
+}
+
+function matchesPillFilter(r, pill) {
+  if (pill === 'Zote' || pill === 'Trending') return true;
+  if (pill === 'Sports' || pill === 'Movies') {
+    const want = pill.toLowerCase();
+    const cat = String(r.category ?? '').trim().toLowerCase();
+    const bt = String(r.bottomTab ?? r.bottomTabsDisplay ?? '').trim().toLowerCase();
+    return cat === want || bt === want;
+  }
+  return true;
+}
+
+function mapApiChannelToCard(raw, index, freeMode = false) {
   const name = raw?.name != null ? String(raw.name) : `Channel ${index + 1}`;
+  const stableId =
+    raw?.id != null && String(raw.id).length > 0 ? String(raw.id) : `ch-${index}-${name.slice(0, 24)}`;
+  const isLive = raw?.isLive !== undefined ? Boolean(raw.isLive) : Boolean(raw?.live);
+  const isHD = raw?.isHD !== undefined ? Boolean(raw.isHD) : raw?.hd !== false;
+  const isPremiumApi =
+    raw?.accessType === 'premium' || Boolean(raw?.accessPremium === true || raw?.access_premium === true);
+  const isPremium = freeMode ? false : isPremiumApi;
+  const category = raw?.category != null ? String(raw.category) : '';
+  const resolved = resolveStream(raw);
+  const playerChannel = {
+    name,
+    url: typeof raw?.url === 'string' ? raw.url : '',
+    backupStream1: typeof raw?.backupStream1 === 'string' ? raw.backupStream1 : '',
+    backupStream2: typeof raw?.backupStream2 === 'string' ? raw.backupStream2 : '',
+    origin: typeof raw?.origin === 'string' ? raw.origin : '',
+    referer: typeof raw?.referer === 'string' ? raw.referer : '',
+    userAgent: typeof raw?.userAgent === 'string' ? raw.userAgent : '',
+    playerType: raw?.playerType != null ? String(raw.playerType) : 'exo',
+    accessType: freeMode ? 'free' : isPremiumApi ? 'premium' : 'free',
+    accessPremium: freeMode ? false : isPremiumApi,
+  };
   return {
-    id: `ch-${index}-${name.slice(0, 24)}`,
+    id: stableId,
     title: name,
-    subtitle: 'Live Channel',
-    badge: 'LIVE',
-    badgeColor: COLORS.live,
-    image: DEFAULT_CHANNEL_CARD_IMAGE,
-    streamUrl: typeof raw?.url === 'string' && raw.url.length > 0 ? raw.url : DEFAULT_STREAM_URI,
-    isPremium: false,
+    subtitle: category || 'Live Channel',
+    showHD: isHD,
+    liveLabel: isLive ? 'LIVE' : 'OFFLINE',
+    livePillColor: isLive ? '#DC2626' : '#4B5563',
+    accessBadge: isPremium ? 'KULIPIA' : 'BURE',
+    accessBadgeColor: isPremium ? COLORS.yellow : COLORS.free,
+    image: resolveChannelCardImage(raw),
+    bottomTab: String(raw?.bottomTab ?? raw?.bottomTabsDisplay ?? category ?? '').trim(),
+    streamUrl: resolved || DEFAULT_STREAM_URI,
+    playerChannel,
+    isPremium,
   };
 }
 
-function HomeScreen({ navigation }) {
+function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
   const insets = useSafeAreaInsets();
+  const {
+    freeMode,
+    emergencyMode,
+    maintenanceMode,
+    rawChannels,
+    loading,
+    error,
+    refresh,
+    isSubscribed,
+    setIsSubscribed,
+  } = useOsmaniApp();
   const [activeSlide, setActiveSlide] = useState(0);
   const [selectedFilter, setSelectedFilter] = useState('Zote');
-  const [isSubscribed, setIsSubscribed] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
+  const [emergencyModalVisible, setEmergencyModalVisible] = useState(false);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [channels, setChannels] = useState([]);
-  const [channelsLoading, setChannelsLoading] = useState(true);
-  const [channelsError, setChannelsError] = useState(null);
+
+  useEffect(() => {
+    if (!emergencyMode) setEmergencyModalVisible(false);
+  }, [emergencyMode]);
+
   const carouselRef = useRef(null);
   const carouselIndexRef = useRef(0);
   const userDraggingRef = useRef(false);
 
   const listBottomPadding = getScrollContentBottomPadding(insets);
 
+  const displayChannels = useMemo(() => {
+    let rows = rawChannels.filter(channelVisibleInApp);
+    if (bottomTabFilter) {
+      rows = rows.filter((r) => matchesBottomTabRow(r, bottomTabFilter));
+    }
+    if (selectedFilter === 'Trending') {
+      rows = rows.filter((r) => Boolean(r.isLive ?? r.live));
+    } else if (selectedFilter === 'Sports' || selectedFilter === 'Movies') {
+      rows = rows.filter((r) => matchesPillFilter(r, selectedFilter));
+    }
+    return rows.map((raw, i) => mapApiChannelToCard(raw, i, freeMode));
+  }, [rawChannels, bottomTabFilter, selectedFilter, freeMode]);
+
+  const onPullRefresh = useCallback(async () => {
+    setPullRefreshing(true);
+    try {
+      await refresh({ showGlobalLoading: false });
+    } finally {
+      setPullRefreshing(false);
+    }
+  }, [refresh]);
+
   const handleRefresh = useCallback(() => {
     carouselIndexRef.current = 0;
     setActiveSlide(0);
     setSelectedFilter('Zote');
     setRefreshKey((k) => k + 1);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setChannelsLoading(true);
-      setChannelsError(null);
-      try {
-        const res = await fetch(CHANNELS_API_URL);
-        if (!res.ok) {
-          throw new Error(`Could not load channels (${res.status})`);
-        }
-        const data = await res.json();
-        if (cancelled) return;
-        const list = Array.isArray(data) ? data : [];
-        setChannels(list.map((raw, i) => mapApiChannelToCard(raw, i)));
-      } catch (e) {
-        if (!cancelled) {
-          setChannelsError(e?.message ?? 'Failed to load channels');
-          setChannels([]);
-        }
-      } finally {
-        if (!cancelled) setChannelsLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshKey]);
+    refresh({ showGlobalLoading: false });
+  }, [refresh]);
 
   const onScrollCarousel = useCallback((event) => {
     const x = event.nativeEvent.contentOffset.x;
@@ -201,39 +282,50 @@ function HomeScreen({ navigation }) {
   }, [refreshKey]);
 
   const renderCard = ({ item }) => {
-    const locked = item.isPremium && !isSubscribed;
+    const locked = !freeMode && item.isPremium && !isSubscribed;
     return (
       <Pressable
         style={styles.card}
         onPress={() => {
+          if (maintenanceMode) return;
+          if (emergencyMode) {
+            setEmergencyModalVisible(true);
+            return;
+          }
           if (locked) {
             setPremiumModalVisible(true);
           } else {
             navigation.navigate('ChannelPlayer', {
-              channelTitle: item.title,
-              streamUri: item.streamUrl ?? DEFAULT_STREAM_URI,
+              channel: item.playerChannel,
             });
           }
         }}
       >
         <View style={styles.cardImageWrap}>
           <ExpoImage source={item.image} style={styles.cardImage} contentFit="cover" transition={120} />
-          <View
-            style={[
-              styles.liveBadge,
-              item.badge === 'LIVE' || item.badge === 'BURE'
-                ? styles.liveBadgeLiveBure
-                : { backgroundColor: item.badgeColor },
-            ]}
-          >
-            <Text
-              style={[
-                styles.liveBadgeText,
-                item.badge === 'KULIPIA' ? styles.liveBadgeTextOnYellow : null,
-              ]}
-            >
-              {item.badge}
-            </Text>
+          <View style={styles.cardBadgesRow} pointerEvents="none">
+            {item.showHD ? (
+              <View style={styles.hdBadge}>
+                <Text style={styles.hdBadgeText}>HD</Text>
+              </View>
+            ) : (
+              <View style={styles.hdBadgePlaceholder} />
+            )}
+            <View style={styles.cardBadgesRight}>
+              <View style={[styles.statusPill, { backgroundColor: item.livePillColor }]}>
+                <Text style={styles.liveBadgeText}>{item.liveLabel}</Text>
+              </View>
+              <View style={[styles.statusPill, { backgroundColor: item.accessBadgeColor }]}>
+                <Text
+                  style={[
+                    styles.liveBadgeText,
+                    item.accessBadge === 'KULIPIA' ? styles.liveBadgeTextOnYellow : null,
+                  ]}
+                >
+                  {item.accessBadge}
+                </Text>
+              </View>
+            </View>
           </View>
           <LinearGradient
             colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.72)']}
@@ -339,20 +431,18 @@ function HomeScreen({ navigation }) {
           })}
         </ScrollView>
 
-        {channelsLoading ? (
+        {loading ? (
           <View style={styles.channelsStatusRow}>
             <ActivityIndicator color={COLORS.greenButton} />
             <Text style={styles.channelsStatusText}>Inapakia chaneli…</Text>
           </View>
         ) : null}
-        {channelsError && !channelsLoading ? (
-          <Text style={styles.channelsErrorText}>{channelsError}</Text>
-        ) : null}
+        {error && !loading ? <Text style={styles.channelsErrorText}>{error}</Text> : null}
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Michezo na Soka</Text>
           <View style={styles.countBadge}>
-            <Text style={styles.countBadgeText}>{channels.length}</Text>
+            <Text style={styles.countBadgeText}>{displayChannels.length}</Text>
           </View>
         </View>
       </View>
@@ -364,30 +454,50 @@ function HomeScreen({ navigation }) {
       onScrollCarousel,
       onCarouselScrollBegin,
       onCarouselMomentumEnd,
-      channels.length,
-      channelsLoading,
-      channelsError,
+      displayChannels.length,
+      loading,
+      error,
     ]
   );
+
+  if (maintenanceMode) {
+    return (
+      <MaintenanceScreen
+        contentPaddingBottom={listBottomPadding}
+        refreshing={pullRefreshing}
+        onRefresh={onPullRefresh}
+      />
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }} edges={['top']}>
       <StatusBar style="light" />
       <FlatList
         key={String(refreshKey)}
-        data={channels}
+        data={displayChannels}
         renderItem={renderCard}
         keyExtractor={(item) => item.id}
         numColumns={2}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={
-          !channelsLoading ? (
-            <Text style={styles.channelsEmptyText}>Hakuna chaneli bado.</Text>
-          ) : null
+          !loading ? <Text style={styles.channelsEmptyText}>Hakuna chaneli bado.</Text> : null
         }
         contentContainerStyle={[styles.listContent, { paddingBottom: listBottomPadding }]}
-        columnWrapperStyle={channels.length > 0 ? styles.gridRow : null}
+        columnWrapperStyle={displayChannels.length > 0 ? styles.gridRow : null}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={pullRefreshing}
+            onRefresh={onPullRefresh}
+            tintColor={COLORS.greenButton}
+            colors={[COLORS.greenButton]}
+          />
+        }
+      />
+      <EmergencyModal
+        visible={emergencyModalVisible}
+        onSawa={() => setEmergencyModalVisible(false)}
       />
       <PremiumModal
         visible={premiumModalVisible}
@@ -477,9 +587,13 @@ function AppTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Sports">{() => <PlaceholderScreen title="Sports" />}</Tab.Screen>
-      <Tab.Screen name="Tamthilia">{() => <PlaceholderScreen title="Tamthilia" />}</Tab.Screen>
+      <Tab.Screen name="Home">{(props) => <ChannelCatalogScreen {...props} bottomTabFilter={null} />}</Tab.Screen>
+      <Tab.Screen name="Sports">
+        {(props) => <ChannelCatalogScreen {...props} bottomTabFilter="Sports" />}
+      </Tab.Screen>
+      <Tab.Screen name="Tamthilia">
+        {(props) => <ChannelCatalogScreen {...props} bottomTabFilter="Movies" />}
+      </Tab.Screen>
       <Tab.Screen name="Akaunti Yangu" component={AkauntiYanguScreen} />
     </Tab.Navigator>
   );
@@ -488,14 +602,16 @@ function AppTabs() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <NavigationContainer
-        theme={{
-          ...DarkTheme,
-          colors: { ...DarkTheme.colors, background: COLORS.background, card: COLORS.nav },
-        }}
-      >
-        <RootNavigator />
-      </NavigationContainer>
+      <OsmaniAppProvider>
+        <NavigationContainer
+          theme={{
+            ...DarkTheme,
+            colors: { ...DarkTheme.colors, background: COLORS.background, card: COLORS.nav },
+          }}
+        >
+          <RootNavigator />
+        </NavigationContainer>
+      </OsmaniAppProvider>
     </SafeAreaProvider>
   );
 }
@@ -677,17 +793,42 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  liveBadge: {
+  cardBadgesRow: {
     position: 'absolute',
     top: 8,
+    left: 8,
     right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 3,
+  },
+  hdBadgePlaceholder: {
+    minWidth: 0,
+  },
+  hdBadge: {
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    zIndex: 3,
+    backgroundColor: 'rgba(15,23,42,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
-  liveBadgeLiveBure: {
-    backgroundColor: 'red',
+  hdBadgeText: {
+    color: '#E5E7EB',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  cardBadgesRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusPill: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   cardGradient: {
     position: 'absolute',

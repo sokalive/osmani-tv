@@ -1,53 +1,272 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
+import EmergencyModal from '../components/EmergencyModal';
+import MaintenanceScreen from '../components/MaintenanceScreen';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { Audio, Video, ResizeMode } from 'expo-av';
+import { Audio } from 'expo-av';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { Ionicons } from '@expo/vector-icons';
-import Slider from '@react-native-community/slider';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { WebView } from 'react-native-webview';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useOsmaniApp } from '../context/OsmaniAppContext';
+import { buildStreamRequestHeaders, normalizePlayerType, resolveStream } from '../lib/channelStream';
 
 const COLORS = {
-  yellow: '#FFCB3D',
   white: '#FFFFFF',
-  overlay: 'rgba(0,0,0,0.42)',
-  bottomBarBg: 'rgba(0,0,0,0.72)',
+  overlay: 'rgba(0,0,0,0.72)',
 };
 
-const QUALITIES = ['Auto', '1080p', '720p', '480p'];
-const LANGUAGES = ['Kiswahili', 'English', 'Original'];
+function legacyChannelFromRoute(params) {
+  const uri = typeof params?.streamUri === 'string' ? params.streamUri.trim() : '';
+  return {
+    name: params?.channelTitle ?? 'Channel',
+    url: uri,
+    backupStream1: '',
+    backupStream2: '',
+    origin: '',
+    referer: '',
+    userAgent: '',
+    playerType: 'exo',
+    accessType: 'free',
+  };
+}
 
-const FALLBACK_STREAM_URI =
-  'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-
-function BottomControlButton({ icon, label, sublabel, onPress, compact }) {
+function BlockedPlayback({ message, onExit, topPad, leftPad, rightPad }) {
   return (
-    <Pressable
-      style={({ pressed }) => [styles.bottomBtn, pressed && styles.bottomBtnPressed, compact && styles.bottomBtnCompact]}
-      onPress={onPress}
-      hitSlop={8}
-    >
-      <Ionicons name={icon} size={compact ? 20 : 22} color={COLORS.white} />
-      <Text style={[styles.bottomBtnLabel, compact && styles.bottomBtnLabelCompact]} numberOfLines={2}>
-        {label}
-      </Text>
-      {sublabel ? (
-        <Text style={[styles.bottomBtnSublabel, compact && styles.bottomBtnSublabelCompact]} numberOfLines={1}>
-          {sublabel}
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <View
+        style={[
+          styles.topBar,
+          {
+            paddingTop: topPad,
+            paddingLeft: 12 + leftPad,
+            paddingRight: 12 + rightPad,
+          },
+        ]}
+      >
+        <Pressable onPress={onExit} hitSlop={14} style={styles.backHit}>
+          <Ionicons name="chevron-back" size={28} color={COLORS.white} />
+        </Pressable>
+      </View>
+      <View style={styles.blockedBody}>
+        <Text style={styles.blockedTitle}>{message}</Text>
+      </View>
+    </View>
+  );
+}
+
+function VlcPlaceholder({ title, onExit, topPad, leftPad, rightPad }) {
+  return (
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <View
+        style={[
+          styles.topBar,
+          {
+            paddingTop: topPad,
+            paddingLeft: 12 + leftPad,
+            paddingRight: 12 + rightPad,
+          },
+        ]}
+      >
+        <Pressable onPress={onExit} hitSlop={14} style={styles.backHit}>
+          <Ionicons name="chevron-back" size={28} color={COLORS.white} />
+        </Pressable>
+        <Text style={styles.topTitle} numberOfLines={1}>
+          {title}
         </Text>
+      </View>
+      <View style={styles.blockedBody}>
+        <Text style={styles.blockedTitle}>VLC bado haijunganishwa</Text>
+        <Text style={styles.blockedSub}>Chagua Exo au WebView kwenye Admin.</Text>
+      </View>
+    </View>
+  );
+}
+
+function WebPlayer({ uri, headers, title, onExit, topPad, leftPad, rightPad }) {
+  const [webLoading, setWebLoading] = useState(true);
+
+  useEffect(() => {
+    setWebLoading(true);
+  }, [uri]);
+
+  useEffect(() => {
+    if (headers && Platform.OS === 'ios') {
+      console.warn(
+        '[OsmaniTV] WebView on iOS may not apply custom Referer/Origin/User-Agent the same as native players.',
+      );
+    }
+  }, [headers]);
+
+  const source = useMemo(() => {
+    if (headers && Object.keys(headers).length) return { uri, headers };
+    return { uri };
+  }, [uri, headers]);
+
+  return (
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <WebView
+        source={source}
+        style={styles.webFill}
+        allowsFullscreenVideo
+        mediaPlaybackRequiresUserAction={false}
+        originWhitelist={['*']}
+        javaScriptEnabled
+        domStorageEnabled
+        onLoadStart={() => setWebLoading(true)}
+        onLoadEnd={() => setWebLoading(false)}
+        onError={() => setWebLoading(false)}
+      />
+      {webLoading ? (
+        <View style={styles.webLoadingOverlay} pointerEvents="none">
+          <ActivityIndicator size="large" color={COLORS.white} />
+        </View>
       ) : null}
-    </Pressable>
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        <Pressable
+          onPress={onExit}
+          hitSlop={14}
+          style={[
+            styles.backFloating,
+            {
+              top: topPad + 6,
+              left: 12 + leftPad,
+            },
+          ]}
+        >
+          <Ionicons name="chevron-back" size={28} color={COLORS.white} />
+        </Pressable>
+        <Text
+          style={[
+            styles.titleFloating,
+            {
+              top: topPad + 10,
+              left: 52 + leftPad,
+              right: 16 + rightPad,
+            },
+          ]}
+          numberOfLines={1}
+          pointerEvents="none"
+        >
+          {title}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function NativeVideoPlayer({ uri, headers, title, onExit, topPad, leftPad, rightPad }) {
+  const [playerStatus, setPlayerStatus] = useState('loading');
+  const [hasRenderedFrame, setHasRenderedFrame] = useState(false);
+
+  useEffect(() => {
+    if (!headers) return;
+    if (Platform.OS === 'web') {
+      console.warn('[OsmaniTV] expo-video stream headers are not reliable on web; use native builds for origin-locked streams.');
+    }
+  }, [headers]);
+
+  const source = useMemo(() => {
+    if (!uri) return null;
+    return headers && Object.keys(headers).length ? { uri, headers } : uri;
+  }, [uri, headers]);
+
+  const player = useVideoPlayer(source, (p) => {
+    p.loop = false;
+    if (source) {
+      p.play();
+    }
+  });
+
+  useEffect(() => {
+    setHasRenderedFrame(false);
+    setPlayerStatus('loading');
+  }, [uri, source]);
+
+  useEffect(() => {
+    if (!player) return undefined;
+    setPlayerStatus(player.status);
+    const sub = player.addListener('statusChange', ({ status }) => {
+      setPlayerStatus(status);
+    });
+    return () => sub.remove();
+  }, [player]);
+
+  const showLoadingOverlay =
+    !hasRenderedFrame && playerStatus !== 'error';
+
+  if (!uri) {
+    return (
+      <BlockedPlayback
+        message="Hakuna mfululizo."
+        onExit={onExit}
+        topPad={topPad}
+        leftPad={leftPad}
+        rightPad={rightPad}
+      />
+    );
+  }
+
+  return (
+    <View style={styles.root}>
+      <StatusBar style="light" />
+      <VideoView
+        player={player}
+        style={styles.videoFill}
+        nativeControls
+        contentFit="contain"
+        fullscreenOptions={{ enable: true }}
+        allowsPictureInPicture
+        onFirstFrameRender={() => setHasRenderedFrame(true)}
+      />
+      {showLoadingOverlay ? (
+        <View style={styles.nativeLoadingOverlay} pointerEvents="none">
+          <ActivityIndicator size="large" color={COLORS.white} />
+        </View>
+      ) : null}
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        <Pressable
+          onPress={onExit}
+          hitSlop={14}
+          style={[
+            styles.backFloating,
+            {
+              top: topPad + 6,
+              left: 12 + leftPad,
+            },
+          ]}
+        >
+          <Ionicons name="chevron-back" size={28} color={COLORS.white} />
+        </Pressable>
+        <Text
+          style={[
+            styles.titleFloating,
+            {
+              top: topPad + 10,
+              left: 52 + leftPad,
+              right: 16 + rightPad,
+            },
+          ]}
+          numberOfLines={1}
+          pointerEvents="none"
+        >
+          {title}
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -55,21 +274,23 @@ export default function ChannelPlayerScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
-  const videoRef = useRef(null);
-  const compact = windowWidth < 380;
+  const { isSubscribed, freeMode, emergencyMode, maintenanceMode } = useOsmaniApp();
 
-  const channelTitle = route.params?.channelTitle ?? 'Channel';
-  const streamUri = route.params?.streamUri ?? FALLBACK_STREAM_URI;
+  const channel = useMemo(
+    () => route.params?.channel ?? legacyChannelFromRoute(route.params ?? {}),
+    [route.params],
+  );
 
-  const [status, setStatus] = useState({});
-  const [paused, setPaused] = useState(false);
-  const [qualityMenuVisible, setQualityMenuVisible] = useState(false);
-  const [languageMenuVisible, setLanguageMenuVisible] = useState(false);
-  const [quality, setQuality] = useState('Auto');
-  const [language, setLanguage] = useState('Kiswahili');
-  const [resizeMode, setResizeMode] = useState(ResizeMode.CONTAIN);
-  const [chromeHidden, setChromeHidden] = useState(false);
+  const title = typeof channel.name === 'string' && channel.name.trim() ? channel.name.trim() : 'Channel';
+  const streamUrl = resolveStream(channel);
+  const headers = buildStreamRequestHeaders(channel);
+  const playerKind = normalizePlayerType(channel.playerType);
+  const accessType =
+    channel.accessType === 'premium' || channel.accessPremium === true ? 'premium' : 'free';
+
+  const topPad = Math.max(insets.top, 8);
+  const leftPad = Math.max(insets.left, 0);
+  const rightPad = Math.max(insets.right, 0);
 
   const exitPlayer = useCallback(async () => {
     try {
@@ -82,6 +303,8 @@ export default function ChannelPlayerScreen() {
     navigation.goBack();
   }, [navigation]);
 
+  const playbackBlocked = maintenanceMode || emergencyMode;
+
   useFocusEffect(
     useCallback(() => {
       const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -90,6 +313,7 @@ export default function ChannelPlayerScreen() {
       });
 
       const lockLandscape = async () => {
+        if (playbackBlocked) return;
         try {
           await Audio.setAudioModeAsync({
             playsInSilentModeIOS: true,
@@ -110,6 +334,7 @@ export default function ChannelPlayerScreen() {
 
       return () => {
         sub.remove();
+        if (playbackBlocked) return;
         (async () => {
           try {
             if (Platform.OS !== 'web') {
@@ -120,279 +345,137 @@ export default function ChannelPlayerScreen() {
           }
         })();
       };
-    }, [exitPlayer])
+    }, [exitPlayer, playbackBlocked]),
   );
 
-  const onPlaybackStatusUpdate = useCallback((s) => {
-    setStatus(s);
-  }, []);
+  if (maintenanceMode) {
+    return <MaintenanceScreen showBack onBack={exitPlayer} />;
+  }
 
-  const togglePlay = async () => {
-    if (!videoRef.current) return;
-    if (paused) {
-      await videoRef.current.playAsync();
-      setPaused(false);
-    } else {
-      await videoRef.current.pauseAsync();
-      setPaused(true);
-    }
-  };
+  if (emergencyMode) {
+    return (
+      <View style={styles.emergencyHost}>
+        <EmergencyModal visible onSawa={exitPlayer} />
+      </View>
+    );
+  }
 
-  const onSeekComplete = async (value) => {
-    const dur = status.durationMillis;
-    if (!videoRef.current || !dur || dur <= 0) return;
-    await videoRef.current.setPositionAsync(value * dur);
-  };
+  const premiumLocked = !freeMode && accessType === 'premium' && !isSubscribed;
+  if (premiumLocked) {
+    return (
+      <BlockedPlayback
+        message="LIPIA TENA"
+        onExit={exitPlayer}
+        topPad={topPad}
+        leftPad={leftPad}
+        rightPad={rightPad}
+      />
+    );
+  }
 
-  const toggleFill = () => {
-    setResizeMode((m) => (m === ResizeMode.CONTAIN ? ResizeMode.COVER : ResizeMode.CONTAIN));
-  };
+  if (!streamUrl) {
+    return (
+      <BlockedPlayback
+        message="Hakuna mfululizo."
+        onExit={exitPlayer}
+        topPad={topPad}
+        leftPad={leftPad}
+        rightPad={rightPad}
+      />
+    );
+  }
 
-  const toggleFullScreen = () => {
-    setChromeHidden((h) => !h);
-  };
+  if (playerKind === 'webview') {
+    return (
+      <WebPlayer
+        uri={streamUrl}
+        headers={headers}
+        title={title}
+        onExit={exitPlayer}
+        topPad={topPad}
+        leftPad={leftPad}
+        rightPad={rightPad}
+      />
+    );
+  }
 
-  const duration = status.isLoaded ? status.durationMillis ?? 0 : 0;
-  const position = status.isLoaded ? status.positionMillis ?? 0 : 0;
-  const progress = duration > 0 ? position / duration : 0;
-  const hasProgress = duration > 0;
-
-  const isBuffering = Boolean(status.isLoaded && status.isBuffering);
-  const isLoaded = Boolean(status.isLoaded);
-  const showInitialOverlay = !isLoaded;
-  const showBufferSpinner = Boolean(isLoaded && isBuffering);
-
-  const topPad = Math.max(insets.top, 8);
-  const leftPad = Math.max(insets.left, 0);
-  const rightPad = Math.max(insets.right, 0);
-  const bottomInset = Math.max(insets.bottom, 8);
-
-  const isFillActive = resizeMode === ResizeMode.COVER;
+  if (playerKind === 'vlc') {
+    return (
+      <VlcPlaceholder
+        title={title}
+        onExit={exitPlayer}
+        topPad={topPad}
+        leftPad={leftPad}
+        rightPad={rightPad}
+      />
+    );
+  }
 
   return (
-    <View style={styles.root}>
-      <StatusBar hidden={chromeHidden} style="light" />
-
-      <Video
-        ref={videoRef}
-        style={StyleSheet.absoluteFill}
-        source={{ uri: streamUri }}
-        resizeMode={resizeMode}
-        shouldPlay={!paused}
-        isMuted={false}
-        useNativeControls={false}
-        onPlaybackStatusUpdate={onPlaybackStatusUpdate}
-      />
-
-      {chromeHidden ? (
-        <Pressable style={styles.chromeDismissLayer} onPress={() => setChromeHidden(false)} />
-      ) : null}
-
-      <View style={styles.centerLayer} pointerEvents="none">
-        {showInitialOverlay ? (
-          <View style={styles.centerCluster}>
-            <ActivityIndicator size="large" color={COLORS.yellow} />
-            <Text style={styles.loadingChannelText}>Loading channel...</Text>
-          </View>
-        ) : null}
-        {showBufferSpinner ? (
-          <View style={styles.bufferSpinnerWrap}>
-            <ActivityIndicator size="large" color={COLORS.yellow} />
-          </View>
-        ) : null}
-      </View>
-
-      {!chromeHidden ? (
-        <>
-          <View
-            style={[
-              styles.topBar,
-              {
-                paddingTop: topPad,
-                paddingLeft: 12 + leftPad,
-                paddingRight: 12 + rightPad,
-              },
-            ]}
-          >
-            <Pressable onPress={exitPlayer} hitSlop={14} style={styles.backHit}>
-              <Ionicons name="chevron-back" size={28} color={COLORS.white} />
-            </Pressable>
-            <Text style={styles.topTitle} numberOfLines={1}>
-              {channelTitle}
-            </Text>
-          </View>
-
-          {/* Bottom overlay: progress + horizontal controls */}
-          <View
-            style={[
-              styles.bottomOverlay,
-              {
-                paddingLeft: 14 + leftPad,
-                paddingRight: 14 + rightPad,
-                paddingBottom: bottomInset + 6,
-              },
-            ]}
-            pointerEvents="box-none"
-          >
-            {hasProgress ? (
-              <View style={styles.seekRow}>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0}
-                  maximumValue={1}
-                  value={progress}
-                  onSlidingComplete={onSeekComplete}
-                  minimumTrackTintColor={COLORS.yellow}
-                  maximumTrackTintColor="rgba(255,255,255,0.35)"
-                  thumbTintColor={COLORS.yellow}
-                />
-              </View>
-            ) : null}
-
-            <View style={styles.bottomControlsRow}>
-              <View style={styles.bottomBtnSlot}>
-                <BottomControlButton
-                  icon={paused ? 'play' : 'pause'}
-                  label={paused ? 'Play' : 'Pause'}
-                  onPress={togglePlay}
-                  compact={compact}
-                />
-              </View>
-              <View style={styles.bottomBtnSlot}>
-                <BottomControlButton
-                  icon="language"
-                  label="Audio"
-                  sublabel="Badili Lugha"
-                  onPress={() => {
-                    setLanguageMenuVisible(true);
-                  }}
-                  compact={compact}
-                />
-              </View>
-              <View style={styles.bottomBtnSlot}>
-                <BottomControlButton
-                  icon="options"
-                  label="Quality"
-                  onPress={() => setQualityMenuVisible(true)}
-                  compact={compact}
-                />
-              </View>
-              <View style={styles.bottomBtnSlot}>
-                <BottomControlButton
-                  icon={isFillActive ? 'contract' : 'expand'}
-                  label="Fill"
-                  onPress={toggleFill}
-                  compact={compact}
-                />
-              </View>
-              <View style={styles.bottomBtnSlot}>
-                <BottomControlButton
-                  icon="expand-outline"
-                  label="Full Screen"
-                  onPress={toggleFullScreen}
-                  compact={compact}
-                />
-              </View>
-            </View>
-          </View>
-        </>
-      ) : null}
-
-      <Modal
-        visible={qualityMenuVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setQualityMenuVisible(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setQualityMenuVisible(false)} />
-          <View style={styles.qualityCard} pointerEvents="box-none">
-            <Text style={styles.qualityTitle}>Ubora</Text>
-            {QUALITIES.map((q) => (
-              <Pressable
-                key={q}
-                style={[styles.qualityRow, quality === q && styles.qualityRowOn]}
-                onPress={() => {
-                  setQuality(q);
-                  setQualityMenuVisible(false);
-                }}
-              >
-                <Text style={[styles.qualityLabel, quality === q && styles.qualityLabelOn]}>{q}</Text>
-                {quality === q ? <Ionicons name="checkmark" size={20} color={COLORS.yellow} /> : null}
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={languageMenuVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setLanguageMenuVisible(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setLanguageMenuVisible(false)} />
-          <View style={styles.qualityCard} pointerEvents="box-none">
-            <Text style={styles.qualityTitle}>Badili Lugha</Text>
-            {LANGUAGES.map((lang) => (
-              <Pressable
-                key={lang}
-                style={[styles.qualityRow, language === lang && styles.qualityRowOn]}
-                onPress={() => {
-                  setLanguage(lang);
-                  setLanguageMenuVisible(false);
-                }}
-              >
-                <Text style={[styles.qualityLabel, language === lang && styles.qualityLabelOn]}>{lang}</Text>
-                {language === lang ? <Ionicons name="checkmark" size={20} color={COLORS.yellow} /> : null}
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      </Modal>
-    </View>
+    <NativeVideoPlayer
+      uri={streamUrl}
+      headers={headers}
+      title={title}
+      onExit={exitPlayer}
+      topPad={topPad}
+      leftPad={leftPad}
+      rightPad={rightPad}
+    />
   );
 }
 
 const styles = StyleSheet.create({
+  emergencyHost: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
   root: {
     flex: 1,
     backgroundColor: '#000000',
   },
-  chromeDismissLayer: {
+  videoFill: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
+  },
+  webFill: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 50,
+    backgroundColor: '#000000',
   },
-  centerLayer: {
+  webLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 5,
-  },
-  centerCluster: {
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#000000',
   },
-  loadingChannelText: {
-    marginTop: 14,
-    color: COLORS.white,
-    fontSize: 15,
-    fontWeight: '600',
+  nativeLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
-  bufferSpinnerWrap: {
+  backFloating: {
     position: 'absolute',
-    alignSelf: 'center',
+    zIndex: 10,
+    padding: 8,
+    borderRadius: 22,
+    backgroundColor: COLORS.overlay,
+  },
+  titleFloating: {
+    position: 'absolute',
+    zIndex: 9,
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.overlay,
-    zIndex: 20,
     minHeight: 48,
     paddingBottom: 10,
   },
@@ -405,112 +488,22 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
   },
-  bottomOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 25,
-    backgroundColor: COLORS.bottomBarBg,
-    paddingTop: 10,
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
-  },
-  seekRow: {
-    marginBottom: 6,
-    paddingHorizontal: 4,
-  },
-  slider: {
-    width: '100%',
-    height: 36,
-  },
-  bottomControlsRow: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 72,
-  },
-  bottomBtnSlot: {
+  blockedBody: {
     flex: 1,
-    minWidth: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bottomBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 2,
-    width: '100%',
-  },
-  bottomBtnCompact: {
-    paddingHorizontal: 0,
-  },
-  bottomBtnPressed: {
-    opacity: 0.75,
-  },
-  bottomBtnLabel: {
-    marginTop: 4,
-    color: COLORS.white,
-    fontSize: 11,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  bottomBtnLabelCompact: {
-    fontSize: 9,
-    marginTop: 2,
-  },
-  bottomBtnSublabel: {
-    marginTop: 1,
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 9,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  bottomBtnSublabelCompact: {
-    fontSize: 8,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
-  qualityCard: {
-    width: '100%',
-    maxWidth: 320,
-    backgroundColor: '#1A1D23',
-    borderRadius: 16,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(250,204,21,0.15)',
-    zIndex: 2,
-  },
-  qualityTitle: {
+  blockedTitle: {
     color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '700',
-    paddingHorizontal: 16,
-    paddingBottom: 10,
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
   },
-  qualityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-  },
-  qualityRowOn: {
-    backgroundColor: 'rgba(255,203,61,0.12)',
-  },
-  qualityLabel: {
-    color: '#A1A8B5',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  qualityLabelOn: {
-    color: COLORS.white,
+  blockedSub: {
+    marginTop: 10,
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 14,
+    textAlign: 'center',
   },
 });

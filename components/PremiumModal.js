@@ -164,7 +164,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess }) {
                   >
                     {step === 1 && (
                       <View>
-                        <Text style={styles.title}>Fungua Premium</Text>
+                        <Text style={styles.title}>LIPIA TENA</Text>
                         {PLANS.map((plan) => {
                           const selected = selectedPlan.id === plan.id;
                           return (
