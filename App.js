@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -27,6 +27,9 @@ import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
 import { BASE_URL } from './api';
 import { resolveStream } from './lib/channelStream';
+import { normalizeBanner } from './lib/normalizeBanner';
+import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
+import BannerCarousel, { BannerCarouselSkeleton } from './components/BannerCarousel';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -55,29 +58,6 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-const carouselData = [
-  {
-    id: '1',
-    title: 'Live Match 1',
-    image: 'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=1400&q=80',
-  },
-  {
-    id: '2',
-    title: 'Live Match 2',
-    image: 'https://images.unsplash.com/photo-1577223625816-7546f13df25d?auto=format&fit=crop&w=1400&q=80',
-  },
-  {
-    id: '3',
-    title: 'Live Match 3',
-    image: 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&w=1400&q=80',
-  },
-  {
-    id: '4',
-    title: 'Live Match 4',
-    image: 'https://images.unsplash.com/photo-1602074819641-9436cc804f2f?auto=format&fit=crop&w=1400&q=80',
-  },
-];
-
 const filters = ['Zote', 'Trending', 'Sports', 'Movies'];
 
 const TAB_BAR_HEIGHT = 76;
@@ -92,18 +72,28 @@ function getScrollContentBottomPadding(insets) {
   return Math.max(100, reserved);
 }
 
-/** Placeholder art when the API does not send a poster URL */
-const DEFAULT_CHANNEL_CARD_IMAGE =
-  'https://images.unsplash.com/photo-1518091043644-c1d4457512c6?auto=format&fit=crop&w=900&q=80';
-
-function resolveChannelCardImage(raw) {
-  const rel = raw?.thumbnail != null ? String(raw.thumbnail).trim() : '';
+/** Full image URL for API `thumbnail` (absolute or `/uploads/...`). */
+function resolveChannelThumbnailUri(raw) {
+  const rel =
+    raw?.thumbnail != null
+      ? String(raw.thumbnail).trim()
+      : raw?.thumbnail_url != null
+        ? String(raw.thumbnail_url).trim()
+        : '';
   const abs = raw?.thumbnailUrl != null ? String(raw.thumbnailUrl).trim() : '';
   if (abs.startsWith('http')) return abs;
   if (rel.startsWith('http')) return rel;
   if (rel.startsWith('/')) return `${BASE_URL}${rel}`;
   if (rel.length > 0) return `${BASE_URL}/${rel}`;
-  return DEFAULT_CHANNEL_CARD_IMAGE;
+  return null;
+}
+
+function placeholderLetterFromName(name) {
+  const s = String(name ?? '').trim();
+  for (let i = 0; i < s.length; i++) {
+    if (/[a-zA-Z0-9]/.test(s[i])) return s[i].toUpperCase();
+  }
+  return '?';
 }
 
 function channelVisibleInApp(raw) {
@@ -150,18 +140,8 @@ function mapApiChannelToCard(raw, index, freeMode = false) {
   const isPremium = freeMode ? false : isPremiumApi;
   const category = raw?.category != null ? String(raw.category) : '';
   const resolved = resolveStream(raw);
-  const playerChannel = {
-    name,
-    url: typeof raw?.url === 'string' ? raw.url : '',
-    backupStream1: typeof raw?.backupStream1 === 'string' ? raw.backupStream1 : '',
-    backupStream2: typeof raw?.backupStream2 === 'string' ? raw.backupStream2 : '',
-    origin: typeof raw?.origin === 'string' ? raw.origin : '',
-    referer: typeof raw?.referer === 'string' ? raw.referer : '',
-    userAgent: typeof raw?.userAgent === 'string' ? raw.userAgent : '',
-    playerType: raw?.playerType != null ? String(raw.playerType) : 'exo',
-    accessType: freeMode ? 'free' : isPremiumApi ? 'premium' : 'free',
-    accessPremium: freeMode ? false : isPremiumApi,
-  };
+  const thumbnailUri = resolveChannelThumbnailUri(raw);
+  const playerChannel = buildPlayerChannelFromRow(raw, index, freeMode);
   return {
     id: stableId,
     title: name,
@@ -171,7 +151,8 @@ function mapApiChannelToCard(raw, index, freeMode = false) {
     livePillColor: isLive ? '#DC2626' : '#4B5563',
     accessBadge: isPremium ? 'KULIPIA' : 'BURE',
     accessBadgeColor: isPremium ? COLORS.yellow : COLORS.free,
-    image: resolveChannelCardImage(raw),
+    thumbnailUri,
+    placeholderLetter: placeholderLetterFromName(name),
     bottomTab: String(raw?.bottomTab ?? raw?.bottomTabsDisplay ?? category ?? '').trim(),
     streamUrl: resolved || DEFAULT_STREAM_URI,
     playerChannel,
@@ -186,13 +167,13 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
     emergencyMode,
     maintenanceMode,
     rawChannels,
+    rawBanners,
     loading,
     error,
     refresh,
     isSubscribed,
     setIsSubscribed,
   } = useOsmaniApp();
-  const [activeSlide, setActiveSlide] = useState(0);
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [emergencyModalVisible, setEmergencyModalVisible] = useState(false);
@@ -202,10 +183,6 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
   useEffect(() => {
     if (!emergencyMode) setEmergencyModalVisible(false);
   }, [emergencyMode]);
-
-  const carouselRef = useRef(null);
-  const carouselIndexRef = useRef(0);
-  const userDraggingRef = useRef(false);
 
   const listBottomPadding = getScrollContentBottomPadding(insets);
 
@@ -222,6 +199,11 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
     return rows.map((raw, i) => mapApiChannelToCard(raw, i, freeMode));
   }, [rawChannels, bottomTabFilter, selectedFilter, freeMode]);
 
+  const bannerSlides = useMemo(
+    () => (Array.isArray(rawBanners) ? rawBanners.map((b, i) => normalizeBanner(b, i)) : []),
+    [rawBanners],
+  );
+
   const onPullRefresh = useCallback(async () => {
     setPullRefreshing(true);
     try {
@@ -232,54 +214,18 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
   }, [refresh]);
 
   const handleRefresh = useCallback(() => {
-    carouselIndexRef.current = 0;
-    setActiveSlide(0);
     setSelectedFilter('Zote');
     setRefreshKey((k) => k + 1);
     refresh({ showGlobalLoading: false });
   }, [refresh]);
 
-  const onScrollCarousel = useCallback((event) => {
-    const x = event.nativeEvent.contentOffset.x;
-    const idx = Math.min(
-      carouselData.length - 1,
-      Math.max(0, Math.round(x / CAROUSEL_SLIDE_WIDTH))
-    );
-    carouselIndexRef.current = idx;
-    setActiveSlide((prev) => (prev === idx ? prev : idx));
+  const onBannerEmergency = useCallback(() => {
+    setEmergencyModalVisible(true);
   }, []);
 
-  const onCarouselScrollBegin = useCallback(() => {
-    userDraggingRef.current = true;
+  const onBannerPremiumRequired = useCallback(() => {
+    setPremiumModalVisible(true);
   }, []);
-
-  const onCarouselMomentumEnd = useCallback((event) => {
-    userDraggingRef.current = false;
-    const x = event.nativeEvent.contentOffset.x;
-    const idx = Math.min(
-      carouselData.length - 1,
-      Math.max(0, Math.round(x / CAROUSEL_SLIDE_WIDTH))
-    );
-    carouselIndexRef.current = idx;
-    setActiveSlide(idx);
-  }, []);
-
-  useEffect(() => {
-    const n = carouselData.length;
-    if (n === 0) return undefined;
-    const id = setInterval(() => {
-      if (userDraggingRef.current) return;
-      const next = (carouselIndexRef.current + 1) % n;
-      carouselIndexRef.current = next;
-      setActiveSlide(next);
-      carouselRef.current?.scrollTo({
-        x: next * CAROUSEL_SLIDE_WIDTH,
-        y: 0,
-        animated: true,
-      });
-    }, 3000);
-    return () => clearInterval(id);
-  }, [refreshKey]);
 
   const renderCard = ({ item }) => {
     const locked = !freeMode && item.isPremium && !isSubscribed;
@@ -302,7 +248,18 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
         }}
       >
         <View style={styles.cardImageWrap}>
-          <ExpoImage source={item.image} style={styles.cardImage} contentFit="cover" transition={120} />
+          {item.thumbnailUri ? (
+            <ExpoImage
+              source={{ uri: item.thumbnailUri }}
+              style={styles.cardImage}
+              contentFit="cover"
+              transition={120}
+            />
+          ) : (
+            <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
+              <Text style={styles.cardImagePlaceholderText}>{item.placeholderLetter}</Text>
+            </View>
+          )}
           <View style={styles.cardBadgesRow} pointerEvents="none">
             {item.showHD ? (
               <View style={styles.hdBadge}>
@@ -372,42 +329,23 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
           </View>
         </View>
 
-        <View style={styles.carouselWrap}>
-          <ScrollView
-            ref={carouselRef}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onScroll={onScrollCarousel}
-            onScrollBeginDrag={onCarouselScrollBegin}
-            onMomentumScrollEnd={onCarouselMomentumEnd}
-            scrollEventThrottle={16}
-            decelerationRate="fast"
-          >
-            {carouselData.map((slide) => (
-              <View key={slide.id} style={styles.carouselSlide}>
-                <ExpoImage source={slide.image} style={styles.carouselImage} contentFit="cover" transition={140} />
-                <LinearGradient
-                  colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.68)']}
-                  start={{ x: 0.5, y: 0.3 }}
-                  end={{ x: 0.5, y: 1 }}
-                  style={styles.carouselGradient}
-                />
-                <View style={styles.carouselOverlay}>
-                  <Text style={styles.carouselTitle}>{slide.title}</Text>
-                </View>
-              </View>
-            ))}
-          </ScrollView>
-          <View style={styles.dotsRow}>
-            {carouselData.map((dot, index) => (
-              <View
-                key={dot.id}
-                style={[styles.dot, activeSlide === index ? styles.dotActive : styles.dotInactive]}
-              />
-            ))}
-          </View>
-        </View>
+        {loading && bannerSlides.length === 0 ? (
+          <BannerCarouselSkeleton slideWidth={CAROUSEL_SLIDE_WIDTH} />
+        ) : bannerSlides.length > 0 ? (
+          <BannerCarousel
+            resetKey={refreshKey}
+            slides={bannerSlides}
+            slideWidth={CAROUSEL_SLIDE_WIDTH}
+            rawChannels={rawChannels}
+            freeMode={freeMode}
+            isSubscribed={isSubscribed}
+            maintenanceMode={maintenanceMode}
+            emergencyMode={emergencyMode}
+            navigation={navigation}
+            onEmergency={onBannerEmergency}
+            onPremiumRequired={onBannerPremiumRequired}
+          />
+        ) : null}
 
         <ScrollView
           horizontal
@@ -448,15 +386,21 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
       </View>
     ),
     [
-      activeSlide,
       selectedFilter,
       handleRefresh,
-      onScrollCarousel,
-      onCarouselScrollBegin,
-      onCarouselMomentumEnd,
       displayChannels.length,
+      bannerSlides,
       loading,
       error,
+      refreshKey,
+      rawChannels,
+      freeMode,
+      isSubscribed,
+      maintenanceMode,
+      emergencyMode,
+      navigation,
+      onBannerEmergency,
+      onBannerPremiumRequired,
     ]
   );
 
@@ -664,53 +608,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
-  carouselWrap: {
-    marginTop: 12,
-  },
-  carouselSlide: {
-    width: CAROUSEL_SLIDE_WIDTH,
-    height: 210,
-    borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: '#242B3A',
-  },
-  carouselImage: {
-    width: '100%',
-    height: '100%',
-  },
-  carouselGradient: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  carouselOverlay: {
-    position: 'absolute',
-    left: 16,
-    bottom: 16,
-  },
-  carouselTitle: {
-    color: COLORS.white,
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  dotsRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dot: {
-    borderRadius: 20,
-    marginHorizontal: 4,
-  },
-  dotActive: {
-    width: 9,
-    height: 9,
-    backgroundColor: COLORS.white,
-  },
-  dotInactive: {
-    width: 7,
-    height: 7,
-    backgroundColor: 'rgba(255,255,255,0.4)',
-  },
   filterRow: {
     marginTop: 12,
     paddingRight: 16,
@@ -792,6 +689,16 @@ const styles = StyleSheet.create({
   cardImage: {
     width: '100%',
     height: '100%',
+  },
+  cardImagePlaceholder: {
+    backgroundColor: '#283246',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardImagePlaceholderText: {
+    fontSize: 40,
+    fontWeight: '800',
+    color: COLORS.mutedText,
   },
   cardBadgesRow: {
     position: 'absolute',

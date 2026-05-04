@@ -1,509 +1,270 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  ActivityIndicator,
-  BackHandler,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
   View,
+  Text,
+  StyleSheet,
+  Pressable,
+  StatusBar,
+  BackHandler,
+  Alert,
 } from 'react-native';
-import EmergencyModal from '../components/EmergencyModal';
-import MaintenanceScreen from '../components/MaintenanceScreen';
-import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
-import { Audio } from 'expo-av';
-import * as ScreenOrientation from 'expo-screen-orientation';
-import { StatusBar } from 'expo-status-bar';
-import { VideoView, useVideoPlayer } from 'expo-video';
-import { WebView } from 'react-native-webview';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Video } from 'expo-av';
+import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
-import { useOsmaniApp } from '../context/OsmaniAppContext';
-import { buildStreamRequestHeaders, normalizePlayerType, resolveStream } from '../lib/channelStream';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { WebView } from 'react-native-webview';
 
-const COLORS = {
-  white: '#FFFFFF',
-  overlay: 'rgba(0,0,0,0.72)',
-};
+function formatTime(ms = 0) {
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+}
 
-function legacyChannelFromRoute(params) {
-  const uri = typeof params?.streamUri === 'string' ? params.streamUri.trim() : '';
-  return {
-    name: params?.channelTitle ?? 'Channel',
-    url: uri,
-    backupStream1: '',
-    backupStream2: '',
-    origin: '',
-    referer: '',
-    userAgent: '',
-    playerType: 'exo',
-    accessType: 'free',
+export default function ChannelPlayerScreen({ route, navigation }) {
+
+  const channel = route?.params?.channel;
+
+  const streams = [
+    channel?.url,
+    channel?.backupStream1,
+    channel?.backupStream2,
+  ].filter(Boolean);
+
+  const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
+  const uri = streams[currentUrlIndex];
+
+  const headers = {
+    ...(channel?.referer && { Referer: channel.referer }),
+    ...(channel?.origin && { Origin: channel.origin }),
+    ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
   };
-}
 
-function BlockedPlayback({ message, onExit, topPad, leftPad, rightPad }) {
-  return (
-    <View style={styles.root}>
-      <StatusBar style="light" />
-      <View
-        style={[
-          styles.topBar,
-          {
-            paddingTop: topPad,
-            paddingLeft: 12 + leftPad,
-            paddingRight: 12 + rightPad,
-          },
-        ]}
-      >
-        <Pressable onPress={onExit} hitSlop={14} style={styles.backHit}>
-          <Ionicons name="chevron-back" size={28} color={COLORS.white} />
-        </Pressable>
-      </View>
-      <View style={styles.blockedBody}>
-        <Text style={styles.blockedTitle}>{message}</Text>
-      </View>
-    </View>
-  );
-}
+  const playerType = channel?.playerType || 'exo';
 
-function VlcPlaceholder({ title, onExit, topPad, leftPad, rightPad }) {
-  return (
-    <View style={styles.root}>
-      <StatusBar style="light" />
-      <View
-        style={[
-          styles.topBar,
-          {
-            paddingTop: topPad,
-            paddingLeft: 12 + leftPad,
-            paddingRight: 12 + rightPad,
-          },
-        ]}
-      >
-        <Pressable onPress={onExit} hitSlop={14} style={styles.backHit}>
-          <Ionicons name="chevron-back" size={28} color={COLORS.white} />
-        </Pressable>
-        <Text style={styles.topTitle} numberOfLines={1}>
-          {title}
-        </Text>
-      </View>
-      <View style={styles.blockedBody}>
-        <Text style={styles.blockedTitle}>VLC bado haijunganishwa</Text>
-        <Text style={styles.blockedSub}>Chagua Exo au WebView kwenye Admin.</Text>
-      </View>
-    </View>
-  );
-}
+  const videoRef = useRef(null);
+  const hideTimer = useRef(null);
 
-function WebPlayer({ uri, headers, title, onExit, topPad, leftPad, rightPad }) {
-  const [webLoading, setWebLoading] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [controlsVisible, setControlsVisible] = useState(true);
 
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [sliderValue, setSliderValue] = useState(0);
+
+  const [resizeMode, setResizeMode] = useState('contain');
+
+  // LOG
   useEffect(() => {
-    setWebLoading(true);
+    if (!uri) {
+      Alert.alert('ERROR', 'Hakuna stream URL 😢');
+    }
   }, [uri]);
 
-  useEffect(() => {
-    if (headers && Platform.OS === 'ios') {
-      console.warn(
-        '[OsmaniTV] WebView on iOS may not apply custom Referer/Origin/User-Agent the same as native players.',
-      );
+  // FALLBACK STREAM
+  const onError = () => {
+    if (currentUrlIndex < streams.length - 1) {
+      setCurrentUrlIndex((i) => i + 1);
+    } else {
+      Alert.alert('ERROR', 'Stream zote zimegoma 😢');
     }
-  }, [headers]);
+  };
 
-  const source = useMemo(() => {
-    if (headers && Object.keys(headers).length) return { uri, headers };
-    return { uri };
-  }, [uri, headers]);
+  // ROTATION
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    StatusBar.setHidden(true);
+
+    return () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
+      StatusBar.setHidden(false);
+    };
+  }, []);
+
+  // BACK
+  useEffect(() => {
+    const backAction = () => {
+      navigation.goBack();
+      return true;
+    };
+
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, []);
+
+  // AUTO HIDE CONTROLS
+  const startHideTimer = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      setControlsVisible(false);
+    }, 3000);
+  }, []);
+
+  const showControls = () => {
+    setControlsVisible(true);
+    startHideTimer();
+  };
+
+  // STATUS
+  const onStatusUpdate = (status) => {
+    if (!status.isLoaded) return;
+
+    setDuration(status.durationMillis || 0);
+
+    if (!isSeeking) {
+      setPosition(status.positionMillis || 0);
+      setSliderValue(status.positionMillis || 0);
+    }
+
+    setIsPlaying(status.isPlaying);
+
+    if (status.isPlaying) startHideTimer();
+  };
+
+  // PLAY / PAUSE
+  const onPlayPause = async () => {
+    const s = await videoRef.current.getStatusAsync();
+    if (s.isPlaying) {
+      await videoRef.current.pauseAsync();
+    } else {
+      await videoRef.current.playAsync();
+    }
+    showControls();
+  };
+
+  // SEEK
+  const onSeekStart = () => setIsSeeking(true);
+
+  const onSeekComplete = async (value) => {
+    setIsSeeking(false);
+    await videoRef.current.setPositionAsync(value);
+  };
 
   return (
     <View style={styles.root}>
-      <StatusBar style="light" />
-      <WebView
-        source={source}
-        style={styles.webFill}
-        allowsFullscreenVideo
-        mediaPlaybackRequiresUserAction={false}
-        originWhitelist={['*']}
-        javaScriptEnabled
-        domStorageEnabled
-        onLoadStart={() => setWebLoading(true)}
-        onLoadEnd={() => setWebLoading(false)}
-        onError={() => setWebLoading(false)}
-      />
-      {webLoading ? (
-        <View style={styles.webLoadingOverlay} pointerEvents="none">
-          <ActivityIndicator size="large" color={COLORS.white} />
-        </View>
-      ) : null}
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-        <Pressable
-          onPress={onExit}
-          hitSlop={14}
-          style={[
-            styles.backFloating,
-            {
-              top: topPad + 6,
-              left: 12 + leftPad,
-            },
-          ]}
-        >
-          <Ionicons name="chevron-back" size={28} color={COLORS.white} />
-        </Pressable>
-        <Text
-          style={[
-            styles.titleFloating,
-            {
-              top: topPad + 10,
-              left: 52 + leftPad,
-              right: 16 + rightPad,
-            },
-          ]}
-          numberOfLines={1}
-          pointerEvents="none"
-        >
-          {title}
-        </Text>
-      </View>
+
+      {/* VIDEO / WEBVIEW */}
+      <Pressable style={{ flex: 1 }} onPress={showControls}>
+
+        {playerType === 'webview' ? (
+          <WebView source={{ uri }} style={styles.video} />
+        ) : (
+          <Video
+            ref={videoRef}
+            source={{ uri, headers }}
+            style={styles.video}
+            resizeMode={resizeMode}
+            shouldPlay
+            onPlaybackStatusUpdate={onStatusUpdate}
+            onError={onError}
+            useNativeControls={false}
+          />
+        )}
+
+        {/* CONTROLS */}
+        {controlsVisible && (
+          <View style={styles.controls} pointerEvents="box-none">
+
+            {/* TOP */}
+            <View style={styles.topBar}>
+              <Pressable onPress={() => navigation.goBack()}>
+                <Ionicons name="arrow-back" size={26} color="#fff" />
+              </Pressable>
+              <Text style={styles.title}>{channel?.name || 'Live'}</Text>
+            </View>
+
+            {/* CENTER */}
+            <View style={styles.center}>
+              <Pressable onPress={onPlayPause} style={styles.playBtn}>
+                <Ionicons
+                  name={isPlaying ? 'pause' : 'play'}
+                  size={44}
+                  color="#000"
+                />
+              </Pressable>
+            </View>
+
+            {/* BOTTOM */}
+            <View style={styles.bottom}>
+              <Text style={styles.time}>{formatTime(position)}</Text>
+
+              <Slider
+                style={{ flex: 1 }}
+                minimumValue={0}
+                maximumValue={duration || 1}
+                value={sliderValue}
+                onSlidingStart={onSeekStart}
+                onSlidingComplete={onSeekComplete}
+                onValueChange={setSliderValue}
+                minimumTrackTintColor="#fff"
+                maximumTrackTintColor="#777"
+                thumbTintColor="#fff"
+              />
+
+              <Text style={styles.time}>{formatTime(duration)}</Text>
+            </View>
+
+          </View>
+        )}
+      </Pressable>
     </View>
-  );
-}
-
-function NativeVideoPlayer({ uri, headers, title, onExit, topPad, leftPad, rightPad }) {
-  const [playerStatus, setPlayerStatus] = useState('loading');
-  const [hasRenderedFrame, setHasRenderedFrame] = useState(false);
-
-  useEffect(() => {
-    if (!headers) return;
-    if (Platform.OS === 'web') {
-      console.warn('[OsmaniTV] expo-video stream headers are not reliable on web; use native builds for origin-locked streams.');
-    }
-  }, [headers]);
-
-  const source = useMemo(() => {
-    if (!uri) return null;
-    return headers && Object.keys(headers).length ? { uri, headers } : uri;
-  }, [uri, headers]);
-
-  const player = useVideoPlayer(source, (p) => {
-    p.loop = false;
-    if (source) {
-      p.play();
-    }
-  });
-
-  useEffect(() => {
-    setHasRenderedFrame(false);
-    setPlayerStatus('loading');
-  }, [uri, source]);
-
-  useEffect(() => {
-    if (!player) return undefined;
-    setPlayerStatus(player.status);
-    const sub = player.addListener('statusChange', ({ status }) => {
-      setPlayerStatus(status);
-    });
-    return () => sub.remove();
-  }, [player]);
-
-  const showLoadingOverlay =
-    !hasRenderedFrame && playerStatus !== 'error';
-
-  if (!uri) {
-    return (
-      <BlockedPlayback
-        message="Hakuna mfululizo."
-        onExit={onExit}
-        topPad={topPad}
-        leftPad={leftPad}
-        rightPad={rightPad}
-      />
-    );
-  }
-
-  return (
-    <View style={styles.root}>
-      <StatusBar style="light" />
-      <VideoView
-        player={player}
-        style={styles.videoFill}
-        nativeControls
-        contentFit="contain"
-        fullscreenOptions={{ enable: true }}
-        allowsPictureInPicture
-        onFirstFrameRender={() => setHasRenderedFrame(true)}
-      />
-      {showLoadingOverlay ? (
-        <View style={styles.nativeLoadingOverlay} pointerEvents="none">
-          <ActivityIndicator size="large" color={COLORS.white} />
-        </View>
-      ) : null}
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-        <Pressable
-          onPress={onExit}
-          hitSlop={14}
-          style={[
-            styles.backFloating,
-            {
-              top: topPad + 6,
-              left: 12 + leftPad,
-            },
-          ]}
-        >
-          <Ionicons name="chevron-back" size={28} color={COLORS.white} />
-        </Pressable>
-        <Text
-          style={[
-            styles.titleFloating,
-            {
-              top: topPad + 10,
-              left: 52 + leftPad,
-              right: 16 + rightPad,
-            },
-          ]}
-          numberOfLines={1}
-          pointerEvents="none"
-        >
-          {title}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-export default function ChannelPlayerScreen() {
-  const navigation = useNavigation();
-  const route = useRoute();
-  const insets = useSafeAreaInsets();
-  const { isSubscribed, freeMode, emergencyMode, maintenanceMode } = useOsmaniApp();
-
-  const channel = useMemo(
-    () => route.params?.channel ?? legacyChannelFromRoute(route.params ?? {}),
-    [route.params],
-  );
-
-  const title = typeof channel.name === 'string' && channel.name.trim() ? channel.name.trim() : 'Channel';
-  const streamUrl = resolveStream(channel);
-  const headers = buildStreamRequestHeaders(channel);
-  const playerKind = normalizePlayerType(channel.playerType);
-  const accessType =
-    channel.accessType === 'premium' || channel.accessPremium === true ? 'premium' : 'free';
-
-  const topPad = Math.max(insets.top, 8);
-  const leftPad = Math.max(insets.left, 0);
-  const rightPad = Math.max(insets.right, 0);
-
-  const exitPlayer = useCallback(async () => {
-    try {
-      if (Platform.OS !== 'web') {
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-      }
-    } catch {
-      /* ignore */
-    }
-    navigation.goBack();
-  }, [navigation]);
-
-  const playbackBlocked = maintenanceMode || emergencyMode;
-
-  useFocusEffect(
-    useCallback(() => {
-      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-        exitPlayer();
-        return true;
-      });
-
-      const lockLandscape = async () => {
-        if (playbackBlocked) return;
-        try {
-          await Audio.setAudioModeAsync({
-            playsInSilentModeIOS: true,
-            staysActiveInBackground: false,
-          });
-        } catch {
-          /* ignore */
-        }
-        try {
-          if (Platform.OS !== 'web') {
-            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-          }
-        } catch {
-          /* ignore */
-        }
-      };
-      lockLandscape();
-
-      return () => {
-        sub.remove();
-        if (playbackBlocked) return;
-        (async () => {
-          try {
-            if (Platform.OS !== 'web') {
-              await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-            }
-          } catch {
-            /* ignore */
-          }
-        })();
-      };
-    }, [exitPlayer, playbackBlocked]),
-  );
-
-  if (maintenanceMode) {
-    return <MaintenanceScreen showBack onBack={exitPlayer} />;
-  }
-
-  if (emergencyMode) {
-    return (
-      <View style={styles.emergencyHost}>
-        <EmergencyModal visible onSawa={exitPlayer} />
-      </View>
-    );
-  }
-
-  const premiumLocked = !freeMode && accessType === 'premium' && !isSubscribed;
-  if (premiumLocked) {
-    return (
-      <BlockedPlayback
-        message="LIPIA TENA"
-        onExit={exitPlayer}
-        topPad={topPad}
-        leftPad={leftPad}
-        rightPad={rightPad}
-      />
-    );
-  }
-
-  if (!streamUrl) {
-    return (
-      <BlockedPlayback
-        message="Hakuna mfululizo."
-        onExit={exitPlayer}
-        topPad={topPad}
-        leftPad={leftPad}
-        rightPad={rightPad}
-      />
-    );
-  }
-
-  if (playerKind === 'webview') {
-    return (
-      <WebPlayer
-        uri={streamUrl}
-        headers={headers}
-        title={title}
-        onExit={exitPlayer}
-        topPad={topPad}
-        leftPad={leftPad}
-        rightPad={rightPad}
-      />
-    );
-  }
-
-  if (playerKind === 'vlc') {
-    return (
-      <VlcPlaceholder
-        title={title}
-        onExit={exitPlayer}
-        topPad={topPad}
-        leftPad={leftPad}
-        rightPad={rightPad}
-      />
-    );
-  }
-
-  return (
-    <NativeVideoPlayer
-      uri={streamUrl}
-      headers={headers}
-      title={title}
-      onExit={exitPlayer}
-      topPad={topPad}
-      leftPad={leftPad}
-      rightPad={rightPad}
-    />
   );
 }
 
 const styles = StyleSheet.create({
-  emergencyHost: {
-    flex: 1,
-    backgroundColor: '#000000',
-  },
-  root: {
-    flex: 1,
-    backgroundColor: '#000000',
-  },
-  videoFill: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#000000',
-  },
-  webFill: {
+  root: { flex: 1, backgroundColor: '#000' },
+
+  video: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000000',
   },
-  webLoadingOverlay: {
+
+  controls: {
     ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#000000',
-  },
-  nativeLoadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  backFloating: {
-    position: 'absolute',
     zIndex: 10,
-    padding: 8,
-    borderRadius: 22,
-    backgroundColor: COLORS.overlay,
+    elevation: 10,
   },
-  titleFloating: {
-    position: 'absolute',
-    zIndex: 9,
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '700',
-    textShadowColor: 'rgba(0,0,0,0.85)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
+
   topBar: {
+    position: 'absolute',
+    top: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.overlay,
-    minHeight: 48,
-    paddingBottom: 10,
+    padding: 12,
   },
-  backHit: {
-    marginRight: 8,
-  },
-  topTitle: {
-    flex: 1,
-    color: COLORS.white,
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  blockedBody: {
+
+  center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
   },
-  blockedTitle: {
-    color: COLORS.white,
-    fontSize: 20,
-    fontWeight: '800',
+
+  playBtn: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: '#FFD700',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  bottom: {
+    position: 'absolute',
+    bottom: 20,
+    left: 10,
+    right: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  time: {
+    color: '#fff',
+    width: 50,
     textAlign: 'center',
   },
-  blockedSub: {
-    marginTop: 10,
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 14,
-    textAlign: 'center',
+
+  title: {
+    color: '#fff',
+    marginLeft: 10,
   },
 });

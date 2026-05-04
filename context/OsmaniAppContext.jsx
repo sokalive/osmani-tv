@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { getChannels } from '../api';
+import { getBanners, getChannels } from '../api';
 import { getSettings } from '../api/settings';
+import { readBannersCache, writeBannersCache } from '../lib/bannersCache';
 
 const defaultSettings = {
   freeMode: false,
@@ -13,9 +14,21 @@ const OsmaniAppContext = createContext(null);
 export function OsmaniAppProvider({ children }) {
   const [settings, setSettings] = useState(defaultSettings);
   const [rawChannels, setRawChannels] = useState([]);
+  const [rawBanners, setRawBanners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    readBannersCache().then((cached) => {
+      if (cancelled || !cached?.banners?.length) return;
+      setRawBanners(cached.banners);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /**
    * Reload settings + channels.
@@ -26,13 +39,22 @@ export function OsmaniAppProvider({ children }) {
     if (showGlobalLoading) setLoading(true);
     setError(null);
     try {
-      const [s, list] = await Promise.all([getSettings(), getChannels()]);
+      const [s, list, bannersResult] = await Promise.all([
+        getSettings(),
+        getChannels(),
+        getBanners().catch(() => null),
+      ]);
       setSettings({
         freeMode: Boolean(s.freeMode),
         emergencyMode: Boolean(s.emergencyMode),
         maintenanceMode: Boolean(s.maintenanceMode),
       });
       setRawChannels(Array.isArray(list) ? list : []);
+      const nextBanners = Array.isArray(bannersResult) ? bannersResult : null;
+      setRawBanners((prev) => (nextBanners != null ? nextBanners : prev));
+      if (nextBanners != null) {
+        writeBannersCache(nextBanners).catch(() => {});
+      }
     } catch (e) {
       setError(e?.message ?? 'Failed to load');
       setRawChannels([]);
@@ -52,13 +74,14 @@ export function OsmaniAppProvider({ children }) {
       emergencyMode: settings.emergencyMode,
       maintenanceMode: settings.maintenanceMode,
       rawChannels,
+      rawBanners,
       loading,
       error,
       refresh,
       isSubscribed,
       setIsSubscribed,
     }),
-    [settings, rawChannels, loading, error, refresh, isSubscribed],
+    [settings, rawChannels, rawBanners, loading, error, refresh, isSubscribed],
   );
 
   return <OsmaniAppContext.Provider value={value}>{children}</OsmaniAppContext.Provider>;
