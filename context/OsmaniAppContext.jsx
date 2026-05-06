@@ -1,7 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getBanners, getChannels } from '../api';
 import { getSettings } from '../api/settings';
+import { fetchSubscription, verifySubscriptionActive } from '../api/payment';
 import { readBannersCache, writeBannersCache } from '../lib/bannersCache';
+import { getDeviceIdentity } from '../lib/deviceIdentity';
 
 const defaultSettings = {
   freeMode: false,
@@ -18,6 +20,52 @@ export function OsmaniAppProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
+  const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState(null);
+  /** Bumps after subscription fetch so consumers can invalidate memos tied to premium access. */
+  const [subscriptionVersion, setSubscriptionVersion] = useState(0);
+
+  const refreshSubscription = useCallback(async () => {
+    try {
+      const { deviceId } = await getDeviceIdentity();
+      const sub = await fetchSubscription(deviceId);
+      const expiresAt = sub.expiresAt != null ? String(sub.expiresAt) : null;
+      const expiryTs = expiresAt ? Date.parse(expiresAt) : NaN;
+      const isActive = sub.active === true && Number.isFinite(expiryTs) && expiryTs > Date.now();
+      /** Always derive from this fetch — do not read React state here. */
+      const subscription = { isActive, expiresAt };
+      if (isActive) {
+        setIsSubscribed(true);
+        setSubscriptionExpiresAt(expiresAt);
+      } else {
+        setIsSubscribed(false);
+        setSubscriptionExpiresAt(null);
+      }
+      setSubscriptionVersion((v) => v + 1);
+      return subscription;
+    } catch {
+      const subscription = { isActive: false, expiresAt: null };
+      setIsSubscribed(false);
+      setSubscriptionExpiresAt(null);
+      setSubscriptionVersion((v) => v + 1);
+      return subscription;
+    }
+  }, []);
+
+  /** Apply the same object returned from `refreshSubscription` / API (strict `isActive`). */
+  const unlockChannels = useCallback((subscription) => {
+    if (!subscription || subscription.isActive !== true) return;
+    setIsSubscribed(true);
+    if (subscription.expiresAt != null) setSubscriptionExpiresAt(String(subscription.expiresAt));
+  }, []);
+
+  const verifySubscriptionBeforePlay = useCallback(async () => {
+    try {
+      const { deviceId } = await getDeviceIdentity();
+      return await verifySubscriptionActive(deviceId);
+    } catch {
+      return false;
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,6 +115,10 @@ export function OsmaniAppProvider({ children }) {
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    refreshSubscription();
+  }, [refreshSubscription]);
+
   const value = useMemo(
     () => ({
       settings,
@@ -80,8 +132,26 @@ export function OsmaniAppProvider({ children }) {
       refresh,
       isSubscribed,
       setIsSubscribed,
+      subscriptionExpiresAt,
+      subscriptionVersion,
+      refreshSubscription,
+      unlockChannels,
+      verifySubscriptionBeforePlay,
     }),
-    [settings, rawChannels, rawBanners, loading, error, refresh, isSubscribed],
+    [
+      settings,
+      rawChannels,
+      rawBanners,
+      loading,
+      error,
+      refresh,
+      isSubscribed,
+      subscriptionExpiresAt,
+      subscriptionVersion,
+      refreshSubscription,
+      unlockChannels,
+      verifySubscriptionBeforePlay,
+    ],
   );
 
   return <OsmaniAppContext.Provider value={value}>{children}</OsmaniAppContext.Provider>;

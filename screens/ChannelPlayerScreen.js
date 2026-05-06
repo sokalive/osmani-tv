@@ -13,6 +13,7 @@ import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
+import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
 
 function formatTime(ms = 0) {
   const total = Math.floor(ms / 1000);
@@ -54,6 +55,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [sliderValue, setSliderValue] = useState(0);
 
   const [resizeMode, setResizeMode] = useState('contain');
+  const sessionDeviceIdRef = useRef('');
+  const pingTimerRef = useRef(null);
+  const stopSentRef = useRef(false);
 
   // LOG
   useEffect(() => {
@@ -92,6 +96,35 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
   }, []);
+
+  // ANALYTICS: start session + heartbeat + stop on exit
+  useEffect(() => {
+    let cancelled = false;
+    const channelId = channel?.id ?? channel?.channel_id ?? channel?.name ?? 'unknown';
+
+    (async () => {
+      const deviceId = await startLiveSession(channelId);
+      if (cancelled) return;
+      sessionDeviceIdRef.current = deviceId;
+      stopSentRef.current = false;
+
+      pingTimerRef.current = setInterval(() => {
+        void pingLiveSession(sessionDeviceIdRef.current);
+      }, PING_MS);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (pingTimerRef.current) {
+        clearInterval(pingTimerRef.current);
+        pingTimerRef.current = null;
+      }
+      if (!stopSentRef.current) {
+        stopSentRef.current = true;
+        void stopLiveSession(sessionDeviceIdRef.current);
+      }
+    };
+  }, [channel?.id, channel?.channel_id, channel?.name]);
 
   // AUTO HIDE CONTROLS
   const startHideTimer = useCallback(() => {

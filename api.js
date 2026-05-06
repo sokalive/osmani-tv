@@ -1,3 +1,7 @@
+/**
+ * Production Render API host for the mobile app.
+ * All HTTP modules (`api.js`, `api/payment.js`, `api/settings.js`, etc.) must use this `BASE_URL`.
+ */
 export const BASE_URL = 'https://osmani-admin-api.onrender.com';
 
 export async function getChannels() {

@@ -57,11 +57,13 @@ function useBadgePulse(enabled) {
 
 const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, showCountdown, nowMs }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const badgeOpacity = useBadgePulse(slide.badgeBlink && slide.badgeEnabled);
+  const badgeOpacity = useBadgePulse(
+    slide.badgeBlink && slide.badgeEnabled && slide.badgeText.length > 0,
+  );
 
   useEffect(() => {
     setImageFailed(false);
-  }, [slide.imageUri, slide.id]);
+  }, [slide.imageUrl, slide.id]);
 
   const countdown = useMemo(() => {
     if (!showCountdown) return null;
@@ -74,9 +76,9 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, showCou
 
   return (
     <View style={[styles.slide, { width: slideWidth }]}>
-      {!imageFailed && slide.imageUri ? (
+      {!imageFailed && slide.imageUrl ? (
         <Image
-          source={{ uri: slide.imageUri }}
+          source={{ uri: slide.imageUrl }}
           style={styles.image}
           contentFit="cover"
           transition={140}
@@ -96,23 +98,26 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, showCou
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      {slide.badgeEnabled && slide.badgeText ? (
-        <Animated.View
-          style={[
-            styles.badge,
-            { backgroundColor: slide.badgeColor, opacity: slide.badgeBlink ? badgeOpacity : 1 },
-          ]}
-        >
-          <Text style={styles.badgeText} numberOfLines={1}>
-            {slide.badgeText}
-          </Text>
-        </Animated.View>
-      ) : null}
       <View style={styles.overlay}>
         {countdownLabel ? (
           <Text style={styles.countdown} numberOfLines={1}>
             {countdownLabel}
           </Text>
+        ) : null}
+        {slide.badgeEnabled && slide.badgeText.length > 0 ? (
+          <Animated.View
+            style={[
+              styles.badge,
+              {
+                backgroundColor: slide.badgeColor,
+                opacity: slide.badgeBlink ? badgeOpacity : 1,
+              },
+            ]}
+          >
+            <Text style={styles.badgeText} numberOfLines={1}>
+              {slide.badgeText}
+            </Text>
+          </Animated.View>
         ) : null}
         <Text style={styles.title} numberOfLines={2}>
           {slide.title}
@@ -162,6 +167,7 @@ function BannerCarousel({
   navigation,
   onEmergency,
   onPremiumRequired,
+  verifySubscriptionBeforePlay,
   resetKey = 0,
 }) {
   const scrollRef = useRef(null);
@@ -208,7 +214,7 @@ function BannerCarousel({
   const preloadNext = useMemo(() => {
     if (n <= 1) return null;
     const next = (activeSlide + 1) % n;
-    const uri = slides[next]?.imageUri;
+    const uri = slides[next]?.imageUrl;
     return uri || null;
   }, [activeSlide, n, slides]);
 
@@ -245,7 +251,7 @@ function BannerCarousel({
   );
 
   const tryOpenChannel = useCallback(
-    (slide) => {
+    async (slide) => {
       if (!slide.redirectChannelId) return;
       if (maintenanceMode) return;
       if (emergencyMode) {
@@ -265,6 +271,13 @@ function BannerCarousel({
         onPremiumRequired?.();
         return;
       }
+      if (isPremium && !freeMode && typeof verifySubscriptionBeforePlay === 'function') {
+        const ok = await verifySubscriptionBeforePlay();
+        if (!ok) {
+          onPremiumRequired?.();
+          return;
+        }
+      }
       navigation.navigate('ChannelPlayer', { channel: playerChannel });
     },
     [
@@ -276,6 +289,7 @@ function BannerCarousel({
       navigation,
       onEmergency,
       onPremiumRequired,
+      verifySubscriptionBeforePlay,
     ],
   );
 
@@ -315,7 +329,9 @@ function BannerCarousel({
             <Pressable
               key={slide.id}
               style={styles.slideTouch}
-              onPress={() => tryOpenChannel(slide)}
+              onPress={() => {
+                void tryOpenChannel(slide);
+              }}
             >
               {inner}
             </Pressable>
@@ -353,16 +369,40 @@ const styles = StyleSheet.create({
   },
   overlay: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 16,
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    paddingLeft: 16,
+    paddingRight: 16,
+    paddingBottom: 20,
+    justifyContent: 'flex-end',
   },
   countdown: {
     color: COLORS.greenButton,
     fontSize: 12,
     fontWeight: '700',
-    marginBottom: 6,
+    marginBottom: 8,
     letterSpacing: 0.5,
+  },
+  badge: {
+    alignSelf: 'flex-start',
+    maxWidth: '92%',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 999,
+    marginBottom: 7,
+    elevation: 4,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+  },
+  badgeText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.25,
   },
   title: {
     color: COLORS.white,
@@ -370,24 +410,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   desc: {
-    marginTop: 4,
+    marginTop: 6,
     color: 'rgba(255,255,255,0.85)',
     fontSize: 13,
     fontWeight: '500',
-  },
-  badge: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    maxWidth: '72%',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  badgeText: {
-    color: COLORS.white,
-    fontSize: 12,
-    fontWeight: '700',
   },
   dotsRow: {
     marginTop: 10,

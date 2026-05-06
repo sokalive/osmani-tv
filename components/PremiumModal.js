@@ -4,6 +4,7 @@ import {
   Alert,
   Animated,
   Dimensions,
+  InteractionManager,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,40 +16,84 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import EventSource from 'react-native-sse';
+import {
+  createPayment,
+  fetchSubscription,
+  getPaymentStatus,
+  getPlans,
+} from '../api/payment';
+import { BASE_URL } from '../api';
+import { useOsmaniApp } from '../context/OsmaniAppContext';
+import { getDeviceIdentity } from '../lib/deviceIdentity';
+import { formatSubscriptionExpiry } from '../lib/formatExpiry';
 
 const ACCENT = '#FACC15';
+const CARD_BG = '#1E222B';
+const CARD_BG_ACTIVE = '#2A2F3A';
+const TEXT_MUTED = '#9CA3AF';
 
-const PLANS = [
-  { id: 'w1', label: 'Wiki 1 (7 siku)', amount: 3000, amountFormatted: '3,000' },
-  { id: 'm1', label: 'Mwezi 1 (30 siku)', amount: 5000, amountFormatted: '5,000' },
-  { id: 'm2', label: 'Miezi 2 (60 siku)', amount: 15000, amountFormatted: '15,000' },
-  { id: 'y1', label: 'Mwaka (365 siku)', amount: 40000, amountFormatted: '40,000' },
-];
+const WINDOW_HEIGHT = Dimensions.get('window').height;
+const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
+
+const POLL_MS = 3000;
 
 const NETWORKS = ['Tigo', 'M-Pesa', 'Airtel', 'HaloPesa'];
 
-const STEP_WAIT_SECONDS = 120;
-
-const WINDOW_HEIGHT = Dimensions.get('window').height;
-/** 85% viewport — modal shell must not extend behind tab bar */
-const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
-
 function formatCountdown(totalSeconds) {
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-export default function PremiumModal({ visible, onClose, onUnlockSuccess }) {
+function formatPriceTz(n) {
+  const num = Number(n);
+  if (!Number.isFinite(num)) return '0';
+  try {
+    return new Intl.NumberFormat('en-TZ', { maximumFractionDigits: 0 }).format(num);
+  } catch {
+    return String(Math.round(num));
+  }
+}
+
+function normalizePlanRow(raw) {
+  const active = raw?.is_active === true || raw?.isActive === true;
+  return {
+    id: String(raw?.id ?? raw?.plan_id ?? '').trim(),
+    name: String(raw?.name ?? raw?.title ?? '').trim(),
+    price: Number(raw?.price ?? raw?.amount ?? 0),
+    duration: String(raw?.duration ?? raw?.duration_label ?? raw?.duration_text ?? '').trim(),
+    isActive: active,
+  };
+}
+
+/**
+ * @param {{ visible: boolean; onClose: () => void; onUnlockSuccess?: () => void }} props
+ */
+export default function PremiumModal({ visible, onClose, onUnlockSuccess, channelName = 'Chaneli Uliyofungua' }) {
   const insets = useSafeAreaInsets();
+  const { refreshSubscription, unlockChannels } = useOsmaniApp();
   const [step, setStep] = useState(1);
-  const [selectedPlan, setSelectedPlan] = useState(PLANS[0]);
+  const [plans, setPlans] = useState([]);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [plansError, setPlansError] = useState('');
+  const [selectedPlan, setSelectedPlan] = useState(null);
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [remainingSeconds, setRemainingSeconds] = useState(STEP_WAIT_SECONDS);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [orderId, setOrderId] = useState(null);
+  const [waitingDeviceId, setWaitingDeviceId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [failureReason, setFailureReason] = useState('');
+  const [successExpiresAt, setSuccessExpiresAt] = useState(null);
+  const [finalizingSuccess, setFinalizingSuccess] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
-  const unlockDoneRef = useRef(false);
+  const pollTimerRef = useRef(null);
+  const countdownTimerRef = useRef(null);
+  const sseRef = useRef(null);
+  const doneRef = useRef(false);
 
   const animateStepChange = useCallback(() => {
     fadeAnim.setValue(0);
@@ -67,67 +112,296 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess }) {
     ]).start();
   }, [fadeAnim, slideAnim]);
 
+  const clearTimers = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+  }, []);
+
+  const closeSse = useCallback(() => {
+    if (sseRef.current) {
+      try {
+        sseRef.current.close();
+      } catch {
+        // no-op
+      }
+      sseRef.current = null;
+    }
+  }, []);
+
   useLayoutEffect(() => {
     if (!visible) return;
+    clearTimers();
+    doneRef.current = false;
     setStep(1);
-    setSelectedPlan(PLANS[0]);
+    setPlans([]);
+    setPlansError('');
+    setSelectedPlan(null);
     setPhoneNumber('');
-    setRemainingSeconds(STEP_WAIT_SECONDS);
-    unlockDoneRef.current = false;
+    setRemainingSeconds(0);
+    setOrderId(null);
+    setWaitingDeviceId('');
+    setSubmitting(false);
+    setFailureReason('');
+    setSuccessExpiresAt(null);
+    setFinalizingSuccess(false);
     fadeAnim.setValue(1);
     slideAnim.setValue(0);
-  }, [visible, fadeAnim, slideAnim]);
+  }, [visible, clearTimers, fadeAnim, slideAnim]);
+
+  useEffect(() => {
+    if (!visible) {
+      clearTimers();
+      closeSse();
+      doneRef.current = false;
+    }
+  }, [visible, clearTimers, closeSse]);
 
   useEffect(() => {
     animateStepChange();
   }, [step, animateStepChange]);
 
   useEffect(() => {
-    if (!visible) {
-      unlockDoneRef.current = false;
-    }
+    if (!visible) return undefined;
+    let cancelled = false;
+    (async () => {
+      setPlansLoading(true);
+      setPlansError('');
+      try {
+        const raw = await getPlans();
+        if (cancelled) return;
+        const list = Array.isArray(raw) ? raw.map(normalizePlanRow).filter((p) => p.isActive === true) : [];
+        setPlans(list);
+        setSelectedPlan((prev) => {
+          if (prev && list.some((x) => x.id === prev.id)) return prev;
+          return list[0] ?? null;
+        });
+      } catch (e) {
+        if (!cancelled) setPlansError(e?.message ?? 'Imeshindwa kupakia mipango');
+      } finally {
+        if (!cancelled) setPlansLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [visible]);
 
+  /** When modal opens, always sync subscription from server (do not trust stale context). */
   useEffect(() => {
-    if (!visible || step !== 3) return undefined;
-    const id = setInterval(() => {
-      setRemainingSeconds((prev) => (prev <= 1 ? 0 : prev - 1));
+    if (!visible) return undefined;
+    void refreshSubscription();
+  }, [visible, refreshSubscription]);
+
+  /** After ZenoPay reports SUCCESS: show success UI only; global unlock runs on ENDELEA via `handleCompleted`. */
+  const moveToSuccessStep = useCallback(async () => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    clearTimers();
+    closeSse();
+    try {
+      const { deviceId } = await getDeviceIdentity();
+      const sub = await fetchSubscription(deviceId);
+      setSuccessExpiresAt(sub.expiresAt);
+    } catch {
+      setSuccessExpiresAt(null);
+    }
+    setStep(4);
+  }, [clearTimers, closeSse]);
+
+  /** ENDELEA: always await fresh API via context; branch only on returned object (never stale context). */
+  const handleCompleted = useCallback(async () => {
+    setFinalizingSuccess(true);
+    try {
+      const subscription = await refreshSubscription();
+      console.log('AFTER REFRESH:', subscription);
+      console.log('SUBSCRIPTION AFTER CLICK:', subscription);
+      if (subscription?.isActive === true) {
+        unlockChannels(subscription);
+        onUnlockSuccess?.();
+        await new Promise((resolve) => {
+          InteractionManager.runAfterInteractions(() => resolve(null));
+        });
+        onClose?.();
+      } else {
+        Alert.alert('Kifurushi', 'Sub bado haija-activate, jaribu tena sekunde chache');
+      }
+    } catch (e) {
+      Alert.alert('Kifurushi', e?.message ?? 'Imeshindwa kusasisha kifurushi');
+    } finally {
+      setFinalizingSuccess(false);
+    }
+  }, [refreshSubscription, unlockChannels, onUnlockSuccess, onClose]);
+
+  const handleFailed = useCallback(
+    (reason) => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      clearTimers();
+      setFailureReason(reason || 'Malipo hayajafanikiwa');
+      setStep(5);
+    },
+    [clearTimers],
+  );
+
+  const pollOnce = useCallback(
+    async (oid) => {
+      if (doneRef.current) return;
+      try {
+        const latestSubscription = await refreshSubscription();
+        if (latestSubscription?.isActive === true) {
+          await moveToSuccessStep();
+          return;
+        }
+
+        const { status, reason } = await getPaymentStatus(oid);
+        if (doneRef.current) return;
+        if (status === 'SUCCESS') {
+          await moveToSuccessStep();
+          return;
+        }
+        if (status === 'FAILED') {
+          handleFailed(reason);
+        }
+      } catch {
+        // transient network — keep polling
+      }
+    },
+    [moveToSuccessStep, handleFailed, refreshSubscription],
+  );
+
+  useEffect(() => {
+    if (!visible || step !== 3 || !orderId || doneRef.current) return undefined;
+
+    (async () => {
+      await pollOnce(orderId);
+    })();
+
+    pollTimerRef.current = setInterval(() => {
+      if (doneRef.current) return;
+      pollOnce(orderId);
+    }, POLL_MS);
+
+    countdownTimerRef.current = setInterval(() => {
+      setRemainingSeconds((prev) => {
+        return prev > 0 ? prev - 1 : 0;
+      });
     }, 1000);
-    return () => clearInterval(id);
-  }, [visible, step]);
+
+    return () => clearTimers();
+  }, [visible, step, orderId, clearTimers, pollOnce, handleFailed]);
 
   useEffect(() => {
-    if (!visible || step !== 3 || remainingSeconds > 0 || unlockDoneRef.current) return;
-    unlockDoneRef.current = true;
-    onUnlockSuccess?.();
-    onClose?.();
-  }, [visible, step, remainingSeconds, onUnlockSuccess, onClose]);
+    if (!visible || step !== 3 || !waitingDeviceId || doneRef.current) return undefined;
+    closeSse();
+    const url = `${BASE_URL}/api/subscription-stream?device_id=${encodeURIComponent(waitingDeviceId)}`;
+    const stream = new EventSource(url, { pollingInterval: 0 });
+    sseRef.current = stream;
 
-  const goStep2 = () => setStep(2);
-  const goStep3 = () => {
-    setRemainingSeconds(STEP_WAIT_SECONDS);
-    setStep(3);
-  };
+    const onMessage = (event) => {
+      if (doneRef.current) return;
+      try {
+        const payload = JSON.parse(event?.data ?? '{}');
+        const isActive = payload?.isActive === true || payload?.active === true;
+        const expiresAt = payload?.expiresAt ?? payload?.expires_at ?? null;
+        const expTs = expiresAt ? Date.parse(String(expiresAt)) : NaN;
+        const isValid = Number.isFinite(expTs) && expTs > Date.now();
+        if (isActive && isValid) {
+          unlockChannels({ isActive: true, expiresAt: String(expiresAt) });
+          void moveToSuccessStep();
+        }
+      } catch {
+        // ignore malformed stream payloads
+      }
+    };
+
+    stream.addEventListener('message', onMessage);
+    stream.addEventListener('error', () => {
+      // Keep polling fallback active; no modal failure on SSE issues.
+    });
+
+    return () => {
+      try {
+        stream.removeAllEventListeners();
+      } catch {
+        // no-op
+      }
+      closeSse();
+    };
+  }, [visible, step, waitingDeviceId, closeSse, unlockChannels, moveToSuccessStep]);
 
   const handleCancel = () => {
+    clearTimers();
     onClose?.();
   };
-
-  const selectedAmountDisplay = `TSh ${selectedPlan.amountFormatted}`;
 
   const isPhoneValid =
     !!phoneNumber && phoneNumber.length === 10 && phoneNumber.startsWith('0');
 
-  const handleStep2Continue = () => {
+  const selectedAmountDisplay =
+    selectedPlan && Number.isFinite(selectedPlan.price)
+      ? `TSh ${formatPriceTz(selectedPlan.price)}`
+      : 'TSh —';
+
+  const handleStep2Pay = async () => {
+    console.log('PAYMENT TRIGGERED');
     if (!isPhoneValid) {
       Alert.alert('', 'Weka namba sahihi ya simu');
       return;
     }
-    goStep3();
+    if (!selectedPlan?.id) {
+      Alert.alert('', 'Chagua mpango');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+      const { order_id: oid, expiresInSeconds } = await createPayment({
+        phone: phoneNumber.replace(/\s/g, ''),
+        plan_id: selectedPlan.id,
+        amount: selectedPlan.price,
+        device_id: deviceId,
+        device_fingerprint: deviceFingerprint,
+      });
+      doneRef.current = false;
+      setWaitingDeviceId(deviceId);
+      setOrderId(oid);
+      const wait =
+        typeof expiresInSeconds === 'number' && expiresInSeconds > 0
+          ? Math.floor(expiresInSeconds)
+          : 0;
+      setRemainingSeconds(wait);
+      setStep(3);
+    } catch (e) {
+      Alert.alert('Malipo', e?.message ?? 'Imeshindwa kuanzisha malipo');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const goStep2 = () => {
+    if (!selectedPlan) {
+      Alert.alert('', 'Hakuna mpango wa kulipa');
+      return;
+    }
+    setStep(2);
+  };
+
+  const handleRetry = () => {
+    doneRef.current = false;
+    setFailureReason('');
+    setOrderId(null);
+    setRemainingSeconds(0);
+    setStep(2);
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleCancel}>
       <KeyboardAvoidingView
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -164,9 +438,19 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess }) {
                   >
                     {step === 1 && (
                       <View>
-                        <Text style={styles.title}>LIPIA TENA</Text>
-                        {PLANS.map((plan) => {
-                          const selected = selectedPlan.id === plan.id;
+                        <Text style={styles.title}>Fungua Premium</Text>
+                        <Text style={styles.subtitle} numberOfLines={1}>
+                          {channelName}
+                        </Text>
+                        {plansLoading ? (
+                          <ActivityIndicator size="large" color={ACCENT} style={styles.plansSpinner} />
+                        ) : null}
+                        {plansError ? <Text style={styles.errorText}>{plansError}</Text> : null}
+                        {!plansLoading && !plansError && plans.length === 0 ? (
+                          <Text style={styles.mutedCenter}>Hakuna mipango inayopatikana kwa sasa.</Text>
+                        ) : null}
+                        {plans.map((plan) => {
+                          const selected = selectedPlan?.id === plan.id;
                           return (
                             <Pressable
                               key={plan.id}
@@ -177,8 +461,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess }) {
                                 {selected ? <View style={styles.radioInner} /> : null}
                               </View>
                               <View style={styles.planTextCol}>
-                                <Text style={styles.planLabel}>{plan.label}</Text>
-                                <Text style={styles.planPrice}>TSh {plan.amountFormatted}</Text>
+                                <Text style={styles.planLabel}>{plan.name}</Text>
+                                <Text style={styles.planMeta}>{plan.duration || '—'}</Text>
+                                <Text style={styles.planPrice}>TSh {formatPriceTz(plan.price)}</Text>
                               </View>
                             </Pressable>
                           );
@@ -190,6 +475,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess }) {
                       <View style={styles.step2OuterPadding}>
                         <View style={styles.step2TopSection}>
                           <Text style={[styles.title, styles.step2GapClear]}>Weka Namba ya Simu</Text>
+                          <Text style={styles.subtitleNetworks}>Tigo, M-Pesa, Airtel, HaloPesa</Text>
                           <TextInput
                             style={[styles.input, styles.step2GapClear]}
                             placeholder="0712345678"
@@ -199,9 +485,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess }) {
                             value={phoneNumber}
                             onChangeText={setPhoneNumber}
                           />
-                          <Text style={[styles.networksLabel, styles.step2GapClear]}>
-                            Mitandao inayokubaliwa
-                          </Text>
+                          <Text style={[styles.networksLabel, styles.step2GapClear]}>Mitandao inayokubaliwa</Text>
                           <View style={[styles.networksRow, styles.step2GapClear]}>
                             {NETWORKS.map((n) => (
                               <View key={n} style={styles.networkChip}>
@@ -213,15 +497,19 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess }) {
                         <View style={styles.step2FlexSpacer} />
                         <View style={styles.step2BottomSection}>
                           <Pressable
-                            disabled={!isPhoneValid}
+                            disabled={!isPhoneValid || submitting}
                             style={[
                               styles.cta,
                               styles.ctaDockBtn,
-                              !isPhoneValid && styles.ctaDisabled,
+                              (!isPhoneValid || submitting) && styles.ctaDisabled,
                             ]}
-                            onPress={handleStep2Continue}
+                            onPress={handleStep2Pay}
                           >
-                            <Text style={styles.ctaText}>LIPIA SASA</Text>
+                            {submitting ? (
+                              <ActivityIndicator color="#111827" />
+                            ) : (
+                              <Text style={styles.ctaText}>LIPIA SASA</Text>
+                            )}
                           </Pressable>
                         </View>
                       </View>
@@ -232,16 +520,64 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess }) {
                         <ActivityIndicator size="large" color={ACCENT} style={styles.spinner} />
                         <Text style={styles.waitTitle}>Inasubiri uthibitisho wa malipo</Text>
                         <Text style={styles.waitPin}>
-                          Weka PIN kuthibitisha malipo ya {selectedAmountDisplay}
+                          Thibitisha malipo ya {selectedAmountDisplay} kwenye simu yako (PIN).
                         </Text>
-                        <Text style={styles.countdown}>{formatCountdown(remainingSeconds)}</Text>
+                        <Text style={styles.countdown}>{remainingSeconds > 0 ? formatCountdown(remainingSeconds) : '--:--'}</Text>
+                        <Text style={styles.orderHint} numberOfLines={1}>
+                          {orderId ? `Order: ${orderId}` : ''}
+                        </Text>
+                      </View>
+                    )}
+
+                    {step === 4 && (
+                      <View style={styles.resultWrap}>
+                        <Text style={styles.successIcon}>✓</Text>
+                        <Text style={styles.successTitle}>Malipo yamefanikiwa</Text>
+                        <Text style={styles.successBody}>
+                          Kifurushi chako kinaisha:{'\n'}
+                          <Text style={styles.successHighlight}>
+                            {formatSubscriptionExpiry(successExpiresAt)}
+                          </Text>
+                        </Text>
+                        <Pressable
+                          style={[styles.cta, styles.resultCta, finalizingSuccess && styles.ctaDisabled]}
+                          disabled={finalizingSuccess}
+                          onPress={() => void handleCompleted()}
+                        >
+                          {finalizingSuccess ? (
+                            <ActivityIndicator color="#111827" />
+                          ) : (
+                            <Text style={styles.ctaText}>ENDELEA</Text>
+                          )}
+                        </Pressable>
+                      </View>
+                    )}
+
+                    {step === 5 && (
+                      <View style={styles.resultWrap}>
+                        <Text style={styles.failIcon}>!</Text>
+                        <Text style={styles.failTitle}>Malipo hayajakamilika</Text>
+                        <Text style={styles.failBody}>{failureReason}</Text>
+                        <Pressable style={[styles.cta, styles.resultCta]} onPress={handleRetry}>
+                          <Text style={styles.ctaText}>JARIBU TENA</Text>
+                        </Pressable>
+                        <Pressable style={[styles.cancelBtn, styles.resultSecondary]} onPress={handleCancel}>
+                          <Text style={styles.cancelBtnText}>FUNGA</Text>
+                        </Pressable>
                       </View>
                     )}
                   </Animated.View>
                 </ScrollView>
-                <View style={styles.ctaDock} pointerEvents="box-none">
+                <View
+                  style={styles.ctaDock}
+                  pointerEvents={step === 1 || step === 3 ? 'box-none' : 'none'}
+                >
                   {step === 1 ? (
-                    <Pressable style={[styles.cta, styles.ctaDockBtn]} onPress={goStep2}>
+                    <Pressable
+                      style={[styles.cta, styles.ctaDockBtn, (!selectedPlan || plansLoading) && styles.ctaDisabled]}
+                      disabled={!selectedPlan || plansLoading}
+                      onPress={goStep2}
+                    >
                       <Text style={styles.ctaText}>LIPIA — {selectedAmountDisplay}</Text>
                     </Pressable>
                   ) : null}
@@ -362,24 +698,51 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#FFFFFF',
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
-    marginBottom: 18,
+    marginBottom: 8,
+  },
+  subtitle: {
+    color: TEXT_MUTED,
+    fontSize: 14,
+    marginBottom: 16,
+    fontWeight: '500',
+  },
+  subtitleNetworks: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    marginTop: -2,
+    marginBottom: 10,
+  },
+  plansSpinner: {
+    marginVertical: 24,
+  },
+  errorText: {
+    color: '#F87171',
+    fontSize: 14,
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  mutedCenter: {
+    color: '#9CA3AF',
+    fontSize: 15,
+    textAlign: 'center',
+    marginVertical: 16,
   },
   planRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderRadius: 16,
     marginBottom: 10,
-    backgroundColor: '#1F2229',
-    borderWidth: 2,
-    borderColor: 'transparent',
+    backgroundColor: CARD_BG,
+    borderWidth: 1.5,
+    borderColor: '#343B48',
   },
   planRowSelected: {
     borderColor: ACCENT,
-    backgroundColor: '#252A33',
+    backgroundColor: CARD_BG_ACTIVE,
   },
   radioOuter: {
     width: 22,
@@ -406,19 +769,26 @@ const styles = StyleSheet.create({
   planLabel: {
     color: '#F3F4F6',
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  planMeta: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 4,
   },
   planPrice: {
     color: ACCENT,
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     marginTop: 4,
   },
   cta: {
     backgroundColor: ACCENT,
     width: '100%',
-    height: 58,
-    paddingHorizontal: 18,
+    minHeight: 56,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
@@ -438,13 +808,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   input: {
-    backgroundColor: '#1F2229',
+    backgroundColor: '#232833',
     borderRadius: 14,
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 16,
     fontSize: 17,
     color: '#FFFFFF',
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#353D4D',
   },
   networksLabel: {
     color: '#9CA3AF',
@@ -477,41 +849,120 @@ const styles = StyleSheet.create({
   },
   waitTitle: {
     color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   waitPin: {
     color: '#D1D5DB',
-    fontSize: 15,
+    fontSize: 14,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 21,
     paddingHorizontal: 8,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   countdown: {
     color: ACCENT,
     fontSize: 36,
     fontWeight: '800',
     letterSpacing: 2,
+    marginBottom: 12,
+  },
+  orderHint: {
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '500',
+    paddingHorizontal: 12,
+  },
+  resultWrap: {
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+  },
+  successIcon: {
+    alignSelf: 'center',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    lineHeight: 44,
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#0F172A',
+    backgroundColor: '#4ADE80',
+    marginBottom: 10,
+  },
+  successTitle: {
+    color: '#4ADE80',
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  successBody: {
+    color: '#D1D5DB',
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: 'center',
     marginBottom: 24,
+  },
+  successHighlight: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  failTitle: {
+    color: '#F87171',
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  failIcon: {
+    alignSelf: 'center',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    lineHeight: 44,
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    backgroundColor: '#EF4444',
+    marginBottom: 10,
+  },
+  failBody: {
+    color: '#E5E7EB',
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  resultCta: {
+    marginTop: 0,
+    marginBottom: 12,
+  },
+  resultSecondary: {
+    marginTop: 0,
+    marginBottom: 8,
   },
   cancelBtn: {
     width: '100%',
-    height: 58,
-    paddingHorizontal: 18,
+    minHeight: 56,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#4B5563',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'stretch',
-    elevation: 4,
+    elevation: 2,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
   },
   cancelBtnText: {
     color: '#E5E7EB',
@@ -520,3 +971,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+

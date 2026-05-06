@@ -1,5 +1,6 @@
 const { Pool } = require("pg");
 const express = require("express");
+const createPaymentsRouter = require("./routes/payments");
 
 const app = express();
 app.use(express.json());
@@ -31,6 +32,70 @@ app.get("/", (req, res) => {
 // API TEST
 app.get("/api", (req, res) => {
   res.json({ message: "API inafanya kazi 🔥" });
+});
+
+// ======================
+// PAYMENTS (mounted at /api/payments/* — matches mobile app)
+// ======================
+app.use("/api/payments", createPaymentsRouter(pool));
+
+// Payment status for client polling (maps DB row → SUCCESS | PENDING | FAILED)
+app.get("/api/payment-status/:orderId", async (req, res) => {
+  const orderId = String(req.params.orderId ?? "").trim();
+  if (!orderId) {
+    return res.status(400).json({ status: "FAILED", error: "Missing order id" });
+  }
+  try {
+    const result = await pool.query(
+      "SELECT status, zenopay_response FROM payment_transactions WHERE order_id = $1",
+      [orderId],
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        status: "FAILED",
+        reason: "Order not found",
+      });
+    }
+    const raw = String(result.rows[0].status || "").toUpperCase();
+    const zp = result.rows[0].zenopay_response;
+    const reasonFromJson =
+      zp && typeof zp === "object"
+        ? String(zp.body?.message ?? zp.body?.error ?? zp.message ?? "").trim()
+        : "";
+
+    const successSet = new Set([
+      "COMPLETED",
+      "COMPLETE",
+      "SUCCESS",
+      "PAID",
+      "SUCCEEDED",
+      "PAID_OUT",
+    ]);
+    const failedSet = new Set([
+      "FAILED",
+      "ZENOPAY_ERROR",
+      "ZENOPAY_NETWORK_ERROR",
+      "CANCELLED",
+      "CANCELED",
+      "EXPIRED",
+      "REJECTED",
+      "DECLINED",
+    ]);
+
+    let status = "PENDING";
+    if (successSet.has(raw)) status = "SUCCESS";
+    else if (failedSet.has(raw)) status = "FAILED";
+
+    const reason =
+      status === "FAILED"
+        ? reasonFromJson || (raw === "ZENOPAY_ERROR" ? "Payment provider error" : raw)
+        : "";
+
+    return res.json({ status, order_id: orderId, ...(reason ? { reason } : {}) });
+  } catch (err) {
+    console.error("ERROR /api/payment-status:", err);
+    return res.status(500).json({ status: "FAILED", error: "Could not read payment status" });
+  }
 });
 
 // ======================
@@ -96,6 +161,20 @@ async function createTable() {
       url TEXT NOT NULL,
       category TEXT DEFAULT 'Sports',
       created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS payment_transactions (
+      id SERIAL PRIMARY KEY,
+      order_id TEXT UNIQUE NOT NULL,
+      phone TEXT NOT NULL,
+      plan_id TEXT NOT NULL,
+      amount NUMERIC NOT NULL,
+      device_id TEXT NOT NULL,
+      device_fingerprint TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      zenopay_response JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
 }

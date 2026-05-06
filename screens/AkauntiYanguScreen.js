@@ -12,12 +12,15 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import HamishaKifurushiModal from '../components/HamishaKifurushiModal';
 import PremiumModal from '../components/PremiumModal';
+import { useOsmaniApp } from '../context/OsmaniAppContext';
+import { formatSubscriptionExpiry } from '../lib/formatExpiry';
+import { getDeviceIdentity } from '../lib/deviceIdentity';
 
 /** Matches App.js theme — do not diverge */
 const COLORS = {
@@ -45,8 +48,6 @@ function scrollBottomPad(insets) {
   return Math.max(100, reserved);
 }
 
-const DEVICE_ID_FULL = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
-
 function StatCard({ icon, value, label }) {
   return (
     <View style={styles.statCard}>
@@ -63,13 +64,31 @@ export default function AkauntiYanguScreen() {
   const bottomPad = scrollBottomPad(insets);
   const [hamishaModalVisible, setHamishaModalVisible] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
+  const [deviceIdFull, setDeviceIdFull] = useState('');
+  const { isSubscribed, subscriptionExpiresAt, refreshSubscription } = useOsmaniApp();
 
-  const deviceShort = DEVICE_ID_FULL.slice(0, 8).toUpperCase();
+  const deviceShort =
+    deviceIdFull.length >= 8 ? deviceIdFull.slice(0, 8).toUpperCase() : deviceIdFull || '—';
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshSubscription();
+      (async () => {
+        try {
+          const { deviceId } = await getDeviceIdentity();
+          setDeviceIdFull(deviceId);
+        } catch {
+          setDeviceIdFull('');
+        }
+      })();
+    }, [refreshSubscription]),
+  );
 
   const handleCopyDeviceId = useCallback(async () => {
-    await Clipboard.setStringAsync(DEVICE_ID_FULL);
+    if (!deviceIdFull) return;
+    await Clipboard.setStringAsync(deviceIdFull);
     Alert.alert('', 'Device ID imenakiliwa');
-  }, []);
+  }, [deviceIdFull]);
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -95,7 +114,7 @@ export default function AkauntiYanguScreen() {
             </View>
             <View style={styles.headerTextCol}>
               <Text style={styles.companyTitle} numberOfLines={2}>
-                Google Inc. Mobile
+                Osmani TV
               </Text>
               <Text style={styles.deviceSubtitle}>ID: {deviceShort}</Text>
             </View>
@@ -104,18 +123,36 @@ export default function AkauntiYanguScreen() {
 
         <View style={styles.statsGrid}>
           <View style={styles.statsRow}>
-            <StatCard icon="wallet-outline" value="TSh 0" label="Malipo ya Kifurushi" />
-            <StatCard icon="tv-outline" value="2" label="Channel Zilizofunguka" />
+            <StatCard
+              icon="wallet-outline"
+              value={isSubscribed ? 'Ndiyo' : 'Hapana'}
+              label="Malipo / Kifurushi"
+            />
+            <StatCard
+              icon="tv-outline"
+              value={isSubscribed ? 'Hai' : 'Hakuna'}
+              label="Hali ya ufikiaji"
+            />
           </View>
           <View style={styles.statsRow}>
-            <StatCard icon="hourglass-outline" value="-" label="Muda wa Kifurushi" />
-            <StatCard icon="calendar-outline" value="-" label="Kuisha Tarehe" />
+            <StatCard
+              icon="hourglass-outline"
+              value={isSubscribed ? 'Hai' : '—'}
+              label="Muda wa Kifurushi"
+            />
+            <StatCard
+              icon="calendar-outline"
+              value={formatSubscriptionExpiry(subscriptionExpiresAt)}
+              label="Kuisha Tarehe"
+            />
           </View>
         </View>
 
         <View style={styles.infoCard}>
           <Text style={styles.infoCardTitle}>Hali ya Usajili</Text>
-          <Text style={styles.statusBad}>HAKUNA</Text>
+          <Text style={[styles.statusBad, isSubscribed && styles.statusGood]}>
+            {isSubscribed ? 'KIFURUSHI HAI' : 'HAKUNA'}
+          </Text>
         </View>
 
         <Pressable
@@ -143,9 +180,13 @@ export default function AkauntiYanguScreen() {
           <Text style={styles.deviceSectionTitle}>Device ID ya kifaa hiki</Text>
           <View style={styles.deviceRow}>
             <Text style={styles.deviceIdText} selectable>
-              {DEVICE_ID_FULL}
+              {deviceIdFull || 'Inapakia…'}
             </Text>
-            <Pressable style={styles.copyBtn} onPress={handleCopyDeviceId}>
+            <Pressable
+              style={[styles.copyBtn, !deviceIdFull && styles.copyBtnDisabled]}
+              onPress={handleCopyDeviceId}
+              disabled={!deviceIdFull}
+            >
               <Text style={styles.copyBtnText}>Nakili</Text>
             </Pressable>
           </View>
@@ -163,7 +204,9 @@ export default function AkauntiYanguScreen() {
       <PremiumModal
         visible={premiumModalVisible}
         onClose={() => setPremiumModalVisible(false)}
-        onUnlockSuccess={() => {}}
+        onUnlockSuccess={() => {
+          navigation.navigate('Home');
+        }}
       />
     </SafeAreaView>
   );
@@ -291,6 +334,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
   },
+  statusGood: {
+    color: '#4ADE80',
+  },
   infoCardBody: {
     color: COLORS.white,
     fontSize: 15,
@@ -349,6 +395,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     backgroundColor: COLORS.greenButton,
+  },
+  copyBtnDisabled: {
+    opacity: 0.45,
   },
   copyBtnText: {
     color: '#000000',

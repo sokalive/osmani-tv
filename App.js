@@ -8,6 +8,7 @@ import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
   Pressable,
@@ -26,15 +27,16 @@ import AkauntiYanguScreen from './screens/AkauntiYanguScreen';
 import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
 import { BASE_URL } from './api';
+import { trackInstallOnce } from './api/analytics';
 import { resolveStream } from './lib/channelStream';
-import { normalizeBanner } from './lib/normalizeBanner';
+import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import BannerCarousel, { BannerCarouselSkeleton } from './components/BannerCarousel';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-/** Demo stream when card has no `streamUrl` — replace with live URLs per channel */
+/** Used only when channel API omits stream URLs (playback fallback). */
 const DEFAULT_STREAM_URI =
   'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
 const { width } = Dimensions.get('window');
@@ -172,17 +174,25 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
     error,
     refresh,
     isSubscribed,
-    setIsSubscribed,
+    subscriptionVersion,
+    verifySubscriptionBeforePlay,
   } = useOsmaniApp();
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [emergencyModalVisible, setEmergencyModalVisible] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [bannerVisibilityClock, setBannerVisibilityClock] = useState(() => Date.now());
 
   useEffect(() => {
     if (!emergencyMode) setEmergencyModalVisible(false);
   }, [emergencyMode]);
+
+  useEffect(() => {
+    if (!Array.isArray(rawBanners) || rawBanners.length === 0) return undefined;
+    const id = setInterval(() => setBannerVisibilityClock(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [rawBanners]);
 
   const listBottomPadding = getScrollContentBottomPadding(insets);
 
@@ -199,10 +209,12 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
     return rows.map((raw, i) => mapApiChannelToCard(raw, i, freeMode));
   }, [rawChannels, bottomTabFilter, selectedFilter, freeMode]);
 
-  const bannerSlides = useMemo(
-    () => (Array.isArray(rawBanners) ? rawBanners.map((b, i) => normalizeBanner(b, i)) : []),
-    [rawBanners],
-  );
+  const bannerSlides = useMemo(() => {
+    if (!Array.isArray(rawBanners)) return [];
+    return rawBanners
+      .map((b, i) => normalizeBanner(b, i))
+      .filter((s) => isBannerVisibleAt(s, bannerVisibilityClock));
+  }, [rawBanners, bannerVisibilityClock]);
 
   const onPullRefresh = useCallback(async () => {
     setPullRefreshing(true);
@@ -227,24 +239,50 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
     setPremiumModalVisible(true);
   }, []);
 
+  const handleCardPress = useCallback(
+    async (item) => {
+      const locked = !freeMode && item.isPremium && !isSubscribed;
+      if (maintenanceMode) return;
+      if (emergencyMode) {
+        setEmergencyModalVisible(true);
+        return;
+      }
+      if (locked) {
+        setPremiumModalVisible(true);
+        return;
+      }
+      if (item.isPremium && !freeMode) {
+        const ok = await verifySubscriptionBeforePlay();
+        if (!ok) {
+          Alert.alert(
+            'Kifurushi',
+            'Hakuna malipo halali au kifurushi kimekwisha. Lipa ili kuendelea.',
+          );
+          setPremiumModalVisible(true);
+          return;
+        }
+      }
+      navigation.navigate('ChannelPlayer', {
+        channel: item.playerChannel,
+      });
+    },
+    [
+      freeMode,
+      isSubscribed,
+      maintenanceMode,
+      emergencyMode,
+      verifySubscriptionBeforePlay,
+      navigation,
+    ],
+  );
+
   const renderCard = ({ item }) => {
     const locked = !freeMode && item.isPremium && !isSubscribed;
     return (
       <Pressable
         style={styles.card}
         onPress={() => {
-          if (maintenanceMode) return;
-          if (emergencyMode) {
-            setEmergencyModalVisible(true);
-            return;
-          }
-          if (locked) {
-            setPremiumModalVisible(true);
-          } else {
-            navigation.navigate('ChannelPlayer', {
-              channel: item.playerChannel,
-            });
-          }
+          void handleCardPress(item);
         }}
       >
         <View style={styles.cardImageWrap}>
@@ -344,6 +382,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
             navigation={navigation}
             onEmergency={onBannerEmergency}
             onPremiumRequired={onBannerPremiumRequired}
+            verifySubscriptionBeforePlay={verifySubscriptionBeforePlay}
           />
         ) : null}
 
@@ -396,11 +435,14 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
       rawChannels,
       freeMode,
       isSubscribed,
+      subscriptionVersion,
       maintenanceMode,
       emergencyMode,
       navigation,
       onBannerEmergency,
       onBannerPremiumRequired,
+      verifySubscriptionBeforePlay,
+      handleCardPress,
     ]
   );
 
@@ -420,6 +462,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
       <FlatList
         key={String(refreshKey)}
         data={displayChannels}
+        extraData={{ isSubscribed, subscriptionVersion }}
         renderItem={renderCard}
         keyExtractor={(item) => item.id}
         numColumns={2}
@@ -446,7 +489,9 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
       <PremiumModal
         visible={premiumModalVisible}
         onClose={() => setPremiumModalVisible(false)}
-        onUnlockSuccess={() => setIsSubscribed(true)}
+        onUnlockSuccess={() => {
+          navigation.navigate('Home');
+        }}
       />
     </SafeAreaView>
   );
@@ -544,6 +589,10 @@ function AppTabs() {
 }
 
 export default function App() {
+  useEffect(() => {
+    void trackInstallOnce();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <OsmaniAppProvider>
