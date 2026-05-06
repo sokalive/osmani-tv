@@ -1,9 +1,43 @@
 const { Pool } = require("pg");
 const express = require("express");
 const createPaymentsRouter = require("./routes/payments");
+const cors = require("cors");
 
 const app = express();
 app.use(express.json());
+
+// ======================
+// CORS (web preflight)
+// ======================
+// Expo web runs in a browser, so we must explicitly allow the deployed web origin.
+// Mobile apps are not subject to CORS, but we keep `origin` checks permissive for non-browser calls.
+const allowedOrigins = [
+  "https://osmani-tv-web.onrender.com",
+  // Common Expo dev origins (keep for local testing)
+  "http://localhost:19006",
+  "http://127.0.0.1:19006",
+  "http://localhost:19000",
+  "http://127.0.0.1:19000",
+  "http://localhost:8081",
+  "http://127.0.0.1:8081",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests without an Origin header (e.g. mobile apps, curl).
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(null, false);
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 const PORT = process.env.PORT || 10000;
 
