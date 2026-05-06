@@ -28,6 +28,23 @@ function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
 }
 
+function normalizePlaybackUrl(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  if (/^http:\/\//i.test(s) && /ycn-redirect\.com/i.test(s)) {
+    return s.replace(/^http:\/\//i, 'https://');
+  }
+  return s;
+}
+
+function resolveM3u8Url(baseUrl, line) {
+  try {
+    return new URL(line, baseUrl).toString();
+  } catch {
+    return line;
+  }
+}
+
 function buildWebViewSource(url) {
   if (!looksLikeHlsUrl(url)) return { uri: url };
   const escaped = JSON.stringify(String(url));
@@ -126,7 +143,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     channel?.url ?? channel?.stream_url,
     channel?.backupStream1 ?? channel?.backup_stream_1,
     channel?.backupStream2 ?? channel?.backup_stream_2,
-  ].filter(Boolean);
+  ].map(normalizePlaybackUrl).filter(Boolean);
 
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   const uri = streams[currentUrlIndex];
@@ -150,7 +167,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [qualityLevels, setQualityLevels] = useState([]);
   const [audioTracks, setAudioTracks] = useState([]);
   const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
-  const usesNativeVideo = effectivePlayerType !== 'webview';
+  const usesNativeVideo = effectivePlayerType === 'exo' || effectivePlayerType === 'native';
+  const usesWebEngine =
+    effectivePlayerType === 'webview' || effectivePlayerType === 'vlc' || effectivePlayerType === 'ijk';
   const liveLabel = 'LIVE';
 
   const videoRef = useRef(null);
@@ -211,10 +230,51 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       uri,
       headers,
       player_type: normalizedPlayerType,
+      effective_player_type: effectivePlayerType,
       backup_1: streams[1] ?? null,
       backup_2: streams[2] ?? null,
     });
   }, [uri, headers, normalizedPlayerType, effectivePlayerType]);
+
+  const runHlsFailureDiagnostics = useCallback(async () => {
+    if (!uri || !looksLikeHlsUrl(uri)) return;
+    try {
+      console.log('[player][diag] start m3u8 diagnostics:', uri);
+      const masterRes = await fetch(uri, { headers });
+      const masterText = await masterRes.text();
+      console.log('[player][diag] master status:', masterRes.status, 'url:', masterRes.url || uri);
+      if (!masterRes.ok) return;
+      const masterLines = String(masterText)
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith('#'));
+      const firstChildCandidate = masterLines.find((l) => /\.m3u8(\?|$)/i.test(l));
+      if (!firstChildCandidate) {
+        const firstSegment = masterLines.find((l) => /\.(ts|m4s|mp4)(\?|$)/i.test(l));
+        if (!firstSegment) return;
+        const segUrl = resolveM3u8Url(masterRes.url || uri, firstSegment);
+        const segRes = await fetch(segUrl, { headers });
+        console.log('[player][diag] first segment status:', segRes.status, 'url:', segRes.url || segUrl);
+        return;
+      }
+      const childUrl = resolveM3u8Url(masterRes.url || uri, firstChildCandidate);
+      const childRes = await fetch(childUrl, { headers });
+      const childText = await childRes.text();
+      console.log('[player][diag] child playlist status:', childRes.status, 'url:', childRes.url || childUrl);
+      if (!childRes.ok) return;
+      const childLines = String(childText)
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith('#'));
+      const firstSegment = childLines.find((l) => /\.(ts|m4s|mp4)(\?|$)/i.test(l));
+      if (!firstSegment) return;
+      const segUrl = resolveM3u8Url(childRes.url || childUrl, firstSegment);
+      const segRes = await fetch(segUrl, { headers });
+      console.log('[player][diag] first segment status:', segRes.status, 'url:', segRes.url || segUrl);
+    } catch (err) {
+      console.log('[player][diag] diagnostics error:', String(err));
+    }
+  }, [uri, headers]);
 
   // Keep local channel snapshot in sync when route params change.
   useEffect(() => {
@@ -301,7 +361,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       try {
         setPlaybackError('');
         setIsBuffering(true);
-        if (effectivePlayerType === 'webview') {
+        if (usesWebEngine) {
           webviewRef.current?.postMessage(JSON.stringify({ type: 'play' }));
           webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
         } else {
@@ -322,7 +382,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       }
       setPlayerEpoch((e) => e + 1);
     }, waitMs);
-  }, [currentUrlIndex, effectivePlayerType, uri, usesNativeVideo, streams.length]);
+  }, [currentUrlIndex, usesWebEngine, uri, usesNativeVideo, streams.length]);
 
   // FALLBACK STREAM
   const onError = (error) => {
@@ -334,6 +394,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       total_streams: streams.length,
       error,
     });
+    void runHlsFailureDiagnostics();
     scheduleRecovery('onError');
   };
 
@@ -507,7 +568,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   // PLAY / PAUSE
   const onPlayPause = async () => {
-    if (effectivePlayerType === 'webview') {
+    if (usesWebEngine) {
       const cmd = isPlaying ? { type: 'pause' } : { type: 'play' };
       webviewRef.current?.postMessage(JSON.stringify(cmd));
       setIsPlaying((v) => !v);
@@ -548,7 +609,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       icon: 'language',
       label: 'Badili Lugha',
       onPress: () => {
-        if (effectivePlayerType === 'webview') {
+        if (usesWebEngine) {
           if (!audioTracks.length) {
             Alert.alert('Lugha', 'No alternate audio');
             return;
@@ -574,7 +635,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       icon: 'speedometer',
       label: 'Quality',
       onPress: () => {
-        if (effectivePlayerType === 'webview') {
+        if (usesWebEngine) {
           if (!qualityLevels.length) {
             webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
             Alert.alert('Quality', 'Auto (default)');
@@ -604,7 +665,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       onPress: () =>
         setResizeMode((m) => {
           const next = m === 'contain' ? 'cover' : 'contain';
-          if (effectivePlayerType === 'webview') {
+          if (usesWebEngine) {
             webviewRef.current?.postMessage(JSON.stringify({ type: 'set-fit', mode: next }));
           }
           return next;
@@ -626,7 +687,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       {/* VIDEO / WEBVIEW */}
       <Pressable style={{ flex: 1 }} onPress={showControls}>
 
-        {effectivePlayerType === 'webview' ? (
+        {usesWebEngine ? (
           <WebView
             key={`wv-${playerEpoch}`}
             ref={webviewRef}
