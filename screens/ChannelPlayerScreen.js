@@ -153,6 +153,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const reconnectTimerRef = useRef(null);
   const stallTimerRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
+  const liveEdgeSyncedRef = useRef(false);
   const lastStatusRef = useRef({
     isLoaded: null,
     isBuffering: null,
@@ -183,6 +184,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setRetryMessage('');
     setPlaybackError('');
     reconnectAttemptsRef.current = 0;
+    liveEdgeSyncedRef.current = false;
     setQualityLevels([]);
     setAudioTracks([]);
     setPlayerEpoch((e) => e + 1);
@@ -489,6 +491,22 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       }, STALL_TIMEOUT_MS);
     }
 
+    if (
+      effectivePlayerType !== 'webview' &&
+      looksLikeHlsUrl(uri) &&
+      !liveEdgeSyncedRef.current &&
+      typeof status.playableDurationMillis === 'number' &&
+      status.playableDurationMillis > 0
+    ) {
+      const liveEdge = Math.max(status.playableDurationMillis - 800, 0);
+      const position = typeof status.positionMillis === 'number' ? status.positionMillis : 0;
+      // Prevent DVR-like resume: always jump to live edge when (re)opening a live HLS stream.
+      if (position + 2000 < liveEdge) {
+        void videoRef.current?.setPositionAsync?.(liveEdge, { toleranceMillisAfter: 0, toleranceMillisBefore: 0 });
+      }
+      liveEdgeSyncedRef.current = true;
+    }
+
     if (status.isPlaying) startHideTimer();
   };
 
@@ -519,6 +537,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     clearStallTimer();
     setPlaybackError('');
     setRetryMessage((m) => (m.startsWith('Inajaribu') || m.startsWith('Inabadili') ? m : ''));
+    liveEdgeSyncedRef.current = false;
   }, [uri, effectivePlayerType, playerEpoch, clearStallTimer]);
 
   const bottomActions = [
