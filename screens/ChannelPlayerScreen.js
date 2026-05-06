@@ -39,19 +39,41 @@ function buildWebViewSource(url) {
     </style>
   </head>
   <body>
-    <video id="video" controls autoplay playsinline webkit-playsinline></video>
+    <video id="video" autoplay playsinline webkit-playsinline></video>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
     <script>
       (function () {
         var src = ${escaped};
         var video = document.getElementById('video');
+        var hls = null;
+        var fitMode = 'contain';
         function post(kind, payload) {
           try {
             window.ReactNativeWebView.postMessage(JSON.stringify({ kind: kind, payload: payload || null }));
           } catch (e) {}
         }
+        function setFit(mode) {
+          fitMode = mode === 'cover' ? 'cover' : 'contain';
+          video.style.objectFit = fitMode;
+        }
+        setFit('contain');
         if (window.Hls && window.Hls.isSupported()) {
-          var hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+          hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            backBufferLength: 90,
+          });
+          hls.on(Hls.Events.MANIFEST_PARSED, function () {
+            post('hls_manifest', {
+              levels: hls.levels ? hls.levels.map(function (l, i) {
+                return { index: i, height: l.height || 0, bitrate: l.bitrate || 0 };
+              }) : [],
+              audioTracks: hls.audioTracks || [],
+            });
+          });
+          hls.on(Hls.Events.LEVEL_LOADED, function () {
+            post('hls_ready', null);
+          });
           hls.on(Hls.Events.ERROR, function (event, data) { post('hls_error', data); });
           hls.loadSource(src);
           hls.attachMedia(video);
@@ -60,6 +82,27 @@ function buildWebViewSource(url) {
         }
         video.addEventListener('error', function () {
           post('video_error', { code: video.error ? video.error.code : null });
+        });
+        video.addEventListener('playing', function () { post('video_playing', null); });
+        video.addEventListener('waiting', function () { post('video_waiting', null); });
+        window.addEventListener('message', function (e) {
+          var raw = e && e.data ? e.data : '';
+          var cmd = null;
+          try { cmd = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) {}
+          if (!cmd || !cmd.type) return;
+          if (cmd.type === 'play') video.play().catch(function(){});
+          if (cmd.type === 'pause') video.pause();
+          if (cmd.type === 'set-fit') setFit(cmd.mode);
+          if (cmd.type === 'set-level' && hls && typeof cmd.level === 'number') hls.currentLevel = cmd.level;
+          if (cmd.type === 'set-audio' && hls && typeof cmd.track === 'number') hls.audioTrack = cmd.track;
+          if (cmd.type === 'get-meta') {
+            post('hls_manifest', {
+              levels: hls && hls.levels ? hls.levels.map(function (l, i) {
+                return { index: i, height: l.height || 0, bitrate: l.bitrate || 0 };
+              }) : [],
+              audioTracks: hls && hls.audioTracks ? hls.audioTracks : [],
+            });
+          }
         });
       })();
     </script>
@@ -89,12 +132,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [fallbackWebView, setFallbackWebView] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const [retryMessage, setRetryMessage] = useState('');
+  const [qualityLevels, setQualityLevels] = useState([]);
+  const [audioTracks, setAudioTracks] = useState([]);
   const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
   const usesNativeVideo = effectivePlayerType !== 'webview';
   const liveLabel = 'LIVE';
 
   const videoRef = useRef(null);
+  const webviewRef = useRef(null);
   const hideTimer = useRef(null);
+  const reconnectTimerRef = useRef(null);
+  const reconnectAttemptsRef = useRef(0);
   const controlsOpacity = useRef(new Animated.Value(1)).current;
 
   const [isPlaying, setIsPlaying] = useState(true);
@@ -118,7 +166,16 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setFallbackWebView(false);
     setIsBuffering(true);
     setRetryMessage('');
+    reconnectAttemptsRef.current = 0;
+    setQualityLevels([]);
+    setAudioTracks([]);
   }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
+
+  useEffect(() => {
+    return () => {
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+    };
+  }, []);
 
   // Temporary diagnostics for stream compatibility failures.
   useEffect(() => {
@@ -214,6 +271,38 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       total_streams: streams.length,
       error,
     });
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    if (usesNativeVideo && reconnectAttemptsRef.current < 3) {
+      const attempt = reconnectAttemptsRef.current + 1;
+      reconnectAttemptsRef.current = attempt;
+      const waitMs = Math.min(1200 * attempt, 4500);
+      setRetryMessage(`Inajaribu kuunganisha tena... (${attempt}/3)`);
+      reconnectTimerRef.current = setTimeout(async () => {
+        try {
+          setIsBuffering(true);
+          await videoRef.current?.replayAsync?.();
+          setRetryMessage('');
+          return;
+        } catch {
+          // continue fallback chain
+        }
+        if (currentUrlIndex < streams.length - 1) {
+          setRetryMessage('Inajaribu stream nyingine...');
+          setCurrentUrlIndex((i) => i + 1);
+          return;
+        }
+        if (looksLikeHlsUrl(uri)) {
+          setRetryMessage('Inabadili player mode...');
+          setFallbackWebView(true);
+          return;
+        }
+        Alert.alert('ERROR', 'Stream zote zimegoma 😢');
+      }, waitMs);
+      return;
+    }
     if (currentUrlIndex < streams.length - 1) {
       setRetryMessage('Inajaribu stream nyingine...');
       setCurrentUrlIndex((i) => i + 1);
@@ -363,6 +452,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
     setIsBuffering(Boolean(status.isBuffering));
     if (!status.isBuffering) setRetryMessage('');
+    if (status.isPlaying) reconnectAttemptsRef.current = 0;
     setIsPlaying(status.isPlaying);
 
     if (status.isPlaying) startHideTimer();
@@ -370,11 +460,18 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   // PLAY / PAUSE
   const onPlayPause = async () => {
-    const s = await videoRef.current.getStatusAsync();
-    if (s.isPlaying) {
-      await videoRef.current.pauseAsync();
+    if (effectivePlayerType === 'webview') {
+      const cmd = isPlaying ? { type: 'pause' } : { type: 'play' };
+      webviewRef.current?.postMessage(JSON.stringify(cmd));
+      setIsPlaying((v) => !v);
+      showControls();
+      return;
+    }
+    const s = await videoRef.current?.getStatusAsync?.();
+    if (s?.isPlaying) {
+      await videoRef.current?.pauseAsync?.();
     } else {
-      await videoRef.current.playAsync();
+      await videoRef.current?.playAsync?.();
     }
     showControls();
   };
@@ -392,19 +489,68 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       key: 'language',
       icon: 'language',
       label: 'Badili Lugha',
-      onPress: () => Alert.alert('Lugha', 'Hakuna chaguo la lugha kwa sasa.'),
+      onPress: () => {
+        if (effectivePlayerType === 'webview') {
+          if (!audioTracks.length) {
+            Alert.alert('Lugha', 'No alternate audio');
+            return;
+          }
+          Alert.alert(
+            'Chagua Lugha',
+            'Audio tracks',
+            audioTracks
+              .slice(0, 3)
+              .map((t, i) => ({
+                text: t?.name || t?.lang || `Track ${i + 1}`,
+                onPress: () => webviewRef.current?.postMessage(JSON.stringify({ type: 'set-audio', track: i })),
+              }))
+              .concat([{ text: 'Close', style: 'cancel' }]),
+          );
+          return;
+        }
+        Alert.alert('Lugha', 'No alternate audio');
+      },
     },
     {
       key: 'quality',
       icon: 'speedometer',
       label: 'Quality',
-      onPress: () => Alert.alert('Quality', 'Auto (default)'),
+      onPress: () => {
+        if (effectivePlayerType === 'webview') {
+          if (!qualityLevels.length) {
+            webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
+            Alert.alert('Quality', 'Auto (default)');
+            return;
+          }
+          Alert.alert(
+            'Chagua Quality',
+            'HLS levels',
+            [{ text: 'Auto', onPress: () => webviewRef.current?.postMessage(JSON.stringify({ type: 'set-level', level: -1 })) }]
+              .concat(
+                qualityLevels.slice(0, 4).map((l) => ({
+                  text: l.height ? `${l.height}p` : `${Math.round((l.bitrate || 0) / 1000)} kbps`,
+                  onPress: () => webviewRef.current?.postMessage(JSON.stringify({ type: 'set-level', level: l.index })),
+                })),
+              )
+              .concat([{ text: 'Close', style: 'cancel' }]),
+          );
+          return;
+        }
+        Alert.alert('Quality', 'Auto (default)');
+      },
     },
     {
       key: 'fill',
       icon: resizeMode === 'cover' ? 'scan' : 'expand',
       label: 'Fill',
-      onPress: () => setResizeMode((m) => (m === 'contain' ? 'cover' : 'contain')),
+      onPress: () =>
+        setResizeMode((m) => {
+          const next = m === 'contain' ? 'cover' : 'contain';
+          if (effectivePlayerType === 'webview') {
+            webviewRef.current?.postMessage(JSON.stringify({ type: 'set-fit', mode: next }));
+          }
+          return next;
+        }),
     },
     {
       key: 'fullscreen',
@@ -424,10 +570,32 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
         {effectivePlayerType === 'webview' ? (
           <WebView
+            ref={webviewRef}
             source={buildWebViewSource(uri)}
             style={styles.video}
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
             onMessage={(event) => {
-              console.log('[player][debug] webview player message:', event?.nativeEvent?.data ?? '');
+              const raw = event?.nativeEvent?.data ?? '';
+              console.log('[player][debug] webview player message:', raw);
+              try {
+                const msg = JSON.parse(raw);
+                if (msg?.kind === 'hls_manifest') {
+                  setQualityLevels(Array.isArray(msg?.payload?.levels) ? msg.payload.levels : []);
+                  setAudioTracks(Array.isArray(msg?.payload?.audioTracks) ? msg.payload.audioTracks : []);
+                } else if (msg?.kind === 'hls_ready' || msg?.kind === 'video_playing') {
+                  setIsBuffering(false);
+                  setRetryMessage('');
+                  reconnectAttemptsRef.current = 0;
+                  setIsPlaying(true);
+                } else if (msg?.kind === 'video_waiting') {
+                  setIsBuffering(true);
+                } else if (msg?.kind === 'hls_error' || msg?.kind === 'video_error') {
+                  onError(msg?.payload ?? msg);
+                }
+              } catch {
+                // ignore parse errors
+              }
             }}
           />
         ) : (
