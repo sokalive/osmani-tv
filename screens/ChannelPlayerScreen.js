@@ -15,6 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
+import { useOsmaniApp } from '../context/OsmaniAppContext';
+import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 
 function formatTime(ms = 0) {
   const total = Math.floor(ms / 1000);
@@ -24,8 +26,11 @@ function formatTime(ms = 0) {
 }
 
 export default function ChannelPlayerScreen({ route, navigation }) {
-
-  const channel = route?.params?.channel;
+  const initialChannel = route?.params?.channel ?? null;
+  const [liveChannel, setLiveChannel] = useState(initialChannel);
+  const [channelDisabledNotified, setChannelDisabledNotified] = useState(false);
+  const { rawChannels, freeMode } = useOsmaniApp();
+  const channel = liveChannel ?? initialChannel;
 
   const streams = [
     channel?.url,
@@ -67,6 +72,55 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       Alert.alert('ERROR', 'Hakuna stream URL 😢');
     }
   }, [uri]);
+
+  // Keep local channel snapshot in sync when route params change.
+  useEffect(() => {
+    setLiveChannel(route?.params?.channel ?? null);
+    setChannelDisabledNotified(false);
+  }, [route?.params?.channel]);
+
+  // Realtime stream/channel updates from live app catalog.
+  useEffect(() => {
+    const current = liveChannel ?? route?.params?.channel;
+    if (!current) return;
+    const cid = String(current?.id ?? current?.channel_id ?? '').trim();
+    if (!cid) return;
+    const found = findRawChannelById(rawChannels, cid);
+    if (!found) return;
+    const { raw, index } = found;
+    const showInApp =
+      raw?.showInApp !== undefined
+        ? Boolean(raw.showInApp)
+        : raw?.show_in_app !== undefined
+          ? Boolean(raw.show_in_app)
+          : true;
+    const isActive =
+      raw?.isActive !== undefined
+        ? Boolean(raw.isActive)
+        : raw?.active !== undefined
+          ? Boolean(raw.active)
+          : true;
+    if ((!showInApp || !isActive) && !channelDisabledNotified) {
+      setChannelDisabledNotified(true);
+      Alert.alert('Taarifa', 'Channel hii imezuiwa au kufichwa na admin.');
+      navigation.goBack();
+      return;
+    }
+    const next = buildPlayerChannelFromRow(raw, index, freeMode);
+    setLiveChannel((prev) => {
+      const p = prev ?? {};
+      const changed =
+        String(p.name ?? '') !== String(next.name ?? '') ||
+        String(p.url ?? '') !== String(next.url ?? '') ||
+        String(p.backupStream1 ?? '') !== String(next.backupStream1 ?? '') ||
+        String(p.backupStream2 ?? '') !== String(next.backupStream2 ?? '') ||
+        String(p.origin ?? '') !== String(next.origin ?? '') ||
+        String(p.referer ?? '') !== String(next.referer ?? '') ||
+        String(p.userAgent ?? '') !== String(next.userAgent ?? '') ||
+        String(p.playerType ?? '') !== String(next.playerType ?? '');
+      return changed ? next : prev;
+    });
+  }, [rawChannels, freeMode, liveChannel, route?.params?.channel, navigation, channelDisabledNotified]);
 
   // FALLBACK STREAM
   const onError = () => {

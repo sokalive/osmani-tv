@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { AppState } from 'react-native';
 import { getBanners, getChannels } from '../api';
 import { getSettings } from '../api/settings';
 import { fetchSubscription, verifySubscriptionActive } from '../api/payment';
@@ -10,6 +11,8 @@ const defaultSettings = {
   emergencyMode: false,
   maintenanceMode: false,
 };
+const LIVE_SYNC_BASE_MS = 15000;
+const LIVE_SYNC_MAX_MS = 120000;
 
 const OsmaniAppContext = createContext(null);
 
@@ -84,6 +87,7 @@ export function OsmaniAppProvider({ children }) {
    */
   const refresh = useCallback(async (opts = {}) => {
     const showGlobalLoading = opts.showGlobalLoading !== false;
+    const preserveDataOnError = opts.preserveDataOnError === true;
     if (showGlobalLoading) setLoading(true);
     setError(null);
     try {
@@ -105,7 +109,9 @@ export function OsmaniAppProvider({ children }) {
       }
     } catch (e) {
       setError(e?.message ?? 'Failed to load');
-      setRawChannels([]);
+      if (!preserveDataOnError) {
+        setRawChannels([]);
+      }
     } finally {
       if (showGlobalLoading) setLoading(false);
     }
@@ -118,6 +124,60 @@ export function OsmaniAppProvider({ children }) {
   useEffect(() => {
     refreshSubscription();
   }, [refreshSubscription]);
+
+  // Realtime sync via efficient foreground polling with automatic reconnect/backoff.
+  useEffect(() => {
+    let stopped = false;
+    let timer = null;
+    let inFlight = false;
+    let failCount = 0;
+    let appState = AppState.currentState;
+
+    const nextDelay = () => {
+      if (failCount <= 0) return LIVE_SYNC_BASE_MS;
+      return Math.min(LIVE_SYNC_BASE_MS * 2 ** failCount, LIVE_SYNC_MAX_MS);
+    };
+
+    const schedule = (ms) => {
+      if (stopped) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(tick, ms);
+    };
+
+    const tick = async () => {
+      if (stopped) return;
+      if (appState !== 'active' || inFlight) {
+        schedule(LIVE_SYNC_BASE_MS);
+        return;
+      }
+      inFlight = true;
+      try {
+        await refresh({ showGlobalLoading: false, preserveDataOnError: true });
+        await refreshSubscription();
+        failCount = 0;
+      } catch {
+        failCount += 1;
+      } finally {
+        inFlight = false;
+        schedule(nextDelay());
+      }
+    };
+
+    const sub = AppState.addEventListener('change', (next) => {
+      appState = next;
+      if (next === 'active') {
+        schedule(1000);
+      }
+    });
+
+    schedule(LIVE_SYNC_BASE_MS);
+
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      sub.remove();
+    };
+  }, [refresh, refreshSubscription]);
 
   const value = useMemo(
     () => ({
