@@ -7,6 +7,7 @@ import {
   StatusBar,
   BackHandler,
   Alert,
+  AppState,
 } from 'react-native';
 import { Video } from 'expo-av';
 import Slider from '@react-native-community/slider';
@@ -56,6 +57,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const [resizeMode, setResizeMode] = useState('contain');
   const sessionDeviceIdRef = useRef('');
+  const sessionChannelIdRef = useRef('');
   const pingTimerRef = useRef(null);
   const stopSentRef = useRef(false);
 
@@ -101,15 +103,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   useEffect(() => {
     let cancelled = false;
     const channelId = channel?.id ?? channel?.channel_id ?? channel?.name ?? 'unknown';
+    const channelName = channel?.name ?? '';
+    sessionChannelIdRef.current = String(channelId);
 
     (async () => {
-      const deviceId = await startLiveSession(channelId);
+      const deviceId = await startLiveSession(channelId, channelName);
       if (cancelled) return;
       sessionDeviceIdRef.current = deviceId;
       stopSentRef.current = false;
 
       pingTimerRef.current = setInterval(() => {
-        void pingLiveSession(sessionDeviceIdRef.current);
+        void pingLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
       }, PING_MS);
     })();
 
@@ -121,10 +125,26 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       }
       if (!stopSentRef.current) {
         stopSentRef.current = true;
-        void stopLiveSession(sessionDeviceIdRef.current);
+        void stopLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
       }
     };
   }, [channel?.id, channel?.channel_id, channel?.name]);
+
+  // If app goes to background while player is open, close analytics session safely.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') return;
+      if (pingTimerRef.current) {
+        clearInterval(pingTimerRef.current);
+        pingTimerRef.current = null;
+      }
+      if (!stopSentRef.current) {
+        stopSentRef.current = true;
+        void stopLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   // AUTO HIDE CONTROLS
   const startHideTimer = useCallback(() => {
