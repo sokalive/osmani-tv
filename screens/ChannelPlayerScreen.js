@@ -21,6 +21,9 @@ import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { buildStreamRequestHeaders, normalizePlayerType } from '../lib/channelStream';
 
+const STALL_TIMEOUT_MS = 15000;
+const MAX_RECOVERY_ATTEMPTS = 6;
+
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
 }
@@ -132,6 +135,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [fallbackWebView, setFallbackWebView] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const [retryMessage, setRetryMessage] = useState('');
+  const [playbackError, setPlaybackError] = useState('');
+  const [playerEpoch, setPlayerEpoch] = useState(0);
   const [qualityLevels, setQualityLevels] = useState([]);
   const [audioTracks, setAudioTracks] = useState([]);
   const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
@@ -142,7 +147,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const webviewRef = useRef(null);
   const hideTimer = useRef(null);
   const reconnectTimerRef = useRef(null);
+  const stallTimerRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
+  const lastStatusRef = useRef({
+    isLoaded: null,
+    isBuffering: null,
+    isPlaying: null,
+  });
   const controlsOpacity = useRef(new Animated.Value(1)).current;
 
   const [isPlaying, setIsPlaying] = useState(true);
@@ -166,14 +177,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setFallbackWebView(false);
     setIsBuffering(true);
     setRetryMessage('');
+    setPlaybackError('');
     reconnectAttemptsRef.current = 0;
     setQualityLevels([]);
     setAudioTracks([]);
+    setPlayerEpoch((e) => e + 1);
   }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
 
   useEffect(() => {
     return () => {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
     };
   }, []);
 
@@ -261,6 +275,57 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     });
   }, [rawChannels, freeMode, liveChannel, route?.params?.channel, navigation, channelDisabledNotified]);
 
+  const clearStallTimer = useCallback(() => {
+    if (stallTimerRef.current) {
+      clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleRecovery = useCallback((reason) => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    const attempt = reconnectAttemptsRef.current + 1;
+    reconnectAttemptsRef.current = attempt;
+    if (attempt > MAX_RECOVERY_ATTEMPTS) {
+      setIsBuffering(false);
+      setRetryMessage('');
+      setPlaybackError('Imeshindwa kuendelea live stream. Jaribu tena.');
+      console.log('[player][debug] recovery exhausted:', { reason, attempt });
+      return;
+    }
+    const waitMs = Math.min(1200 * 2 ** (attempt - 1), 12000);
+    setRetryMessage(`Inajaribu kuunganisha tena... (${attempt}/${MAX_RECOVERY_ATTEMPTS})`);
+    console.log('[player][debug] schedule recovery:', { reason, attempt, waitMs });
+    reconnectTimerRef.current = setTimeout(async () => {
+      try {
+        setPlaybackError('');
+        setIsBuffering(true);
+        if (effectivePlayerType === 'webview') {
+          webviewRef.current?.postMessage(JSON.stringify({ type: 'play' }));
+          webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
+        } else {
+          await videoRef.current?.replayAsync?.();
+        }
+      } catch (err) {
+        console.log('[player][debug] recovery replay error:', String(err));
+      }
+      if (attempt >= 3 && currentUrlIndex < streams.length - 1) {
+        setRetryMessage('Inajaribu stream nyingine...');
+        setCurrentUrlIndex((i) => i + 1);
+        return;
+      }
+      if (attempt >= 4 && usesNativeVideo && looksLikeHlsUrl(uri)) {
+        setRetryMessage('Inabadili player mode...');
+        setFallbackWebView(true);
+        return;
+      }
+      setPlayerEpoch((e) => e + 1);
+    }, waitMs);
+  }, [currentUrlIndex, effectivePlayerType, uri, usesNativeVideo, streams.length]);
+
   // FALLBACK STREAM
   const onError = (error) => {
     console.log('[player][debug] playback error:', {
@@ -271,53 +336,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       total_streams: streams.length,
       error,
     });
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    if (usesNativeVideo && reconnectAttemptsRef.current < 3) {
-      const attempt = reconnectAttemptsRef.current + 1;
-      reconnectAttemptsRef.current = attempt;
-      const waitMs = Math.min(1200 * attempt, 4500);
-      setRetryMessage(`Inajaribu kuunganisha tena... (${attempt}/3)`);
-      reconnectTimerRef.current = setTimeout(async () => {
-        try {
-          setIsBuffering(true);
-          await videoRef.current?.replayAsync?.();
-          setRetryMessage('');
-          return;
-        } catch {
-          // continue fallback chain
-        }
-        if (currentUrlIndex < streams.length - 1) {
-          setRetryMessage('Inajaribu stream nyingine...');
-          setCurrentUrlIndex((i) => i + 1);
-          return;
-        }
-        if (looksLikeHlsUrl(uri)) {
-          setRetryMessage('Inabadili player mode...');
-          setFallbackWebView(true);
-          return;
-        }
-        Alert.alert('ERROR', 'Stream zote zimegoma 😢');
-      }, waitMs);
-      return;
-    }
-    if (currentUrlIndex < streams.length - 1) {
-      setRetryMessage('Inajaribu stream nyingine...');
-      setCurrentUrlIndex((i) => i + 1);
-      setIsBuffering(true);
-      return;
-    }
-    // Compatibility fallback: tokenized/redirected HLS may fail in native engine on some devices.
-    if (usesNativeVideo && looksLikeHlsUrl(uri)) {
-      console.log('[player][debug] switching fallback engine to webview/hls.js');
-      setRetryMessage('Inabadili player mode...');
-      setFallbackWebView(true);
-      setIsBuffering(true);
-    } else {
-      Alert.alert('ERROR', 'Stream zote zimegoma 😢');
-    }
+    scheduleRecovery('onError');
   };
 
   // ROTATION
@@ -447,13 +466,43 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (!status.isLoaded) {
       if (status?.error) {
         console.log('[player][debug] status load error:', status.error);
+        scheduleRecovery('status-load-error');
       }
       return;
+    }
+    const prev = lastStatusRef.current;
+    const nextState = {
+      isLoaded: Boolean(status.isLoaded),
+      isBuffering: Boolean(status.isBuffering),
+      isPlaying: Boolean(status.isPlaying),
+    };
+    if (
+      prev.isLoaded !== nextState.isLoaded ||
+      prev.isBuffering !== nextState.isBuffering ||
+      prev.isPlaying !== nextState.isPlaying
+    ) {
+      console.log('[player][debug] playback state:', {
+        state: nextState,
+        didJustFinish: Boolean(status.didJustFinish),
+        positionMillis: status.positionMillis ?? null,
+        playableDurationMillis: status.playableDurationMillis ?? null,
+      });
+      lastStatusRef.current = nextState;
     }
     setIsBuffering(Boolean(status.isBuffering));
     if (!status.isBuffering) setRetryMessage('');
     if (status.isPlaying) reconnectAttemptsRef.current = 0;
     setIsPlaying(status.isPlaying);
+    setPlaybackError('');
+    if (status.isPlaying && !status.isBuffering) {
+      clearStallTimer();
+    } else if (status.isBuffering) {
+      clearStallTimer();
+      stallTimerRef.current = setTimeout(() => {
+        console.log('[player][debug] stall timeout reached');
+        scheduleRecovery('stall-timeout');
+      }, STALL_TIMEOUT_MS);
+    }
 
     if (status.isPlaying) startHideTimer();
   };
@@ -475,6 +524,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
     showControls();
   };
+
+  useEffect(() => {
+    if (!uri) return;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    clearStallTimer();
+    setPlaybackError('');
+    setRetryMessage((m) => (m.startsWith('Inajaribu') || m.startsWith('Inabadili') ? m : ''));
+  }, [uri, effectivePlayerType, playerEpoch, clearStallTimer]);
 
   const bottomActions = [
     {
@@ -570,6 +630,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
         {effectivePlayerType === 'webview' ? (
           <WebView
+            key={`wv-${playerEpoch}`}
             ref={webviewRef}
             source={buildWebViewSource(uri)}
             style={styles.video}
@@ -586,11 +647,18 @@ export default function ChannelPlayerScreen({ route, navigation }) {
                 } else if (msg?.kind === 'hls_ready' || msg?.kind === 'video_playing') {
                   setIsBuffering(false);
                   setRetryMessage('');
+                  setPlaybackError('');
                   reconnectAttemptsRef.current = 0;
                   setIsPlaying(true);
+                  clearStallTimer();
                 } else if (msg?.kind === 'video_waiting') {
                   setIsBuffering(true);
+                  clearStallTimer();
+                  stallTimerRef.current = setTimeout(() => {
+                    scheduleRecovery('webview-waiting-stall');
+                  }, STALL_TIMEOUT_MS);
                 } else if (msg?.kind === 'hls_error' || msg?.kind === 'video_error') {
+                  console.log('[player][debug] webview hls/video error payload:', msg?.payload ?? null);
                   onError(msg?.payload ?? msg);
                 }
               } catch {
@@ -600,11 +668,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           />
         ) : (
           <Video
+            key={`native-${playerEpoch}`}
             ref={videoRef}
-            source={{ uri, headers }}
+            source={{
+              uri,
+              headers,
+              ...(looksLikeHlsUrl(uri) ? { overrideFileExtensionAndroid: 'm3u8' } : {}),
+            }}
             style={styles.video}
             resizeMode={resizeMode}
             shouldPlay
+            progressUpdateIntervalMillis={1000}
             onPlaybackStatusUpdate={onStatusUpdate}
             onError={onError}
             useNativeControls={false}
@@ -637,6 +711,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
                   <Text style={styles.bufferingText}>
                     {retryMessage || 'Inapakia moja kwa moja...'}
                   </Text>
+                  {playbackError ? (
+                    <Text style={styles.bufferingError}>{playbackError}</Text>
+                  ) : null}
                 </View>
               ) : null}
             </View>
@@ -714,6 +791,13 @@ const styles = StyleSheet.create({
     color: '#E5E7EB',
     fontSize: 13,
     fontWeight: '500',
+  },
+  bufferingError: {
+    color: '#FCA5A5',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 2,
   },
 
   bottom: {
