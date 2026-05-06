@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
-import { normalizePlayerType } from '../lib/channelStream';
+import { buildStreamRequestHeaders, normalizePlayerType } from '../lib/channelStream';
 
 const STALL_TIMEOUT_MS = 15000;
 const MAX_RECOVERY_ATTEMPTS = 6;
@@ -49,11 +49,44 @@ function normalizePlaybackUrl(raw) {
 }
 
 function choosePlaybackRoute(url, declaredPlayerType) {
-  if (looksLikeHlsUrl(url)) return 'native-exo';
   const pt = String(declaredPlayerType ?? '').toLowerCase();
   if (looksLikeEmbedUrl(url)) return 'embed-webview';
   if (pt === 'webview' || pt === 'vlc' || pt === 'ijk') return 'embed-webview';
+  if (looksLikeHlsUrl(url)) return 'native-exo';
   return 'native-exo';
+}
+
+function classifyPlaybackError(raw) {
+  const text = String(raw ?? '').toLowerCase();
+  if (!text) return 'unknown';
+  if (/403|forbidden|unauthorized/.test(text)) return 'auth-or-hotlink-block';
+  if (/404|not.?found/.test(text)) return 'not-found';
+  if (/ssl|tls|certificate|handshake/.test(text)) return 'tls-network';
+  if (/codec|decoder|format|unsupported/.test(text)) return 'codec-or-container';
+  if (/manifest|m3u8|playlist|hls/.test(text)) return 'manifest-or-hls';
+  if (/timeout|network|connection|dns|host/.test(text)) return 'network-connectivity';
+  return 'unknown';
+}
+
+async function probeRedirectChain(startUrl, headers = {}) {
+  const hops = [];
+  let current = startUrl;
+  for (let i = 0; i < 6; i++) {
+    try {
+      const res = await fetch(current, { method: 'GET', redirect: 'manual', headers });
+      const location = res.headers?.get?.('location') || '';
+      hops.push({ status: res.status, url: current, location: location || null });
+      if (location && res.status >= 300 && res.status < 400) {
+        current = resolveM3u8Url(current, location);
+        continue;
+      }
+      break;
+    } catch (err) {
+      hops.push({ status: 0, url: current, error: String(err) });
+      break;
+    }
+  }
+  return hops;
 }
 
 function resolveM3u8Url(baseUrl, line) {
@@ -356,17 +389,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   const uri = streams[currentUrlIndex];
-  const headers = {
-    ...(isHttpUrl(channel?.referer ?? channel?.referrer) && {
-      Referer: String(channel?.referer ?? channel?.referrer).trim(),
-    }),
-    ...(isHttpUrl(channel?.origin ?? channel?.stream_origin) && {
-      Origin: String(channel?.origin ?? channel?.stream_origin).trim(),
-    }),
-    ...((channel?.userAgent ?? channel?.user_agent) && {
-      'User-Agent': channel?.userAgent ?? channel?.user_agent,
-    }),
-  };
+  const headers = buildStreamRequestHeaders({
+    referer: channel?.referer ?? channel?.referrer,
+    origin: channel?.origin ?? channel?.stream_origin,
+    userAgent: channel?.userAgent ?? channel?.user_agent,
+    accept: channel?.accept,
+    connection: channel?.connection,
+    headers: channel?.headers,
+  }) ?? {};
   const normalizedPlayerType = normalizePlayerType(channel?.playerType ?? channel?.player_type);
   const [fallbackWebView, setFallbackWebView] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
@@ -453,9 +483,16 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (!playbackUri || !looksLikeHlsUrl(uri)) return;
     try {
       console.log('[player][diag] start m3u8 diagnostics:', playbackUri);
+      const redirects = await probeRedirectChain(playbackUri, headers);
+      console.log('[player][diag] redirect chain:', redirects);
       const masterRes = await fetch(playbackUri, { headers: {} });
       const masterText = await masterRes.text();
-      console.log('[player][diag] master status:', masterRes.status, 'url:', masterRes.url || playbackUri);
+      const masterHeaders = {
+        contentType: masterRes.headers?.get?.('content-type') || '',
+        server: masterRes.headers?.get?.('server') || '',
+        cacheControl: masterRes.headers?.get?.('cache-control') || '',
+      };
+      console.log('[player][diag] master status:', masterRes.status, 'url:', masterRes.url || playbackUri, 'headers:', masterHeaders);
       if (!masterRes.ok) return;
       const masterLines = String(masterText)
         .split('\n')
@@ -473,7 +510,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       const childUrl = resolveM3u8Url(masterRes.url || playbackUri, firstChildCandidate);
       const childRes = await fetch(childUrl, { headers: {} });
       const childText = await childRes.text();
-      console.log('[player][diag] child playlist status:', childRes.status, 'url:', childRes.url || childUrl);
+      console.log(
+        '[player][diag] child playlist status:',
+        childRes.status,
+        'url:',
+        childRes.url || childUrl,
+        'content-type:',
+        childRes.headers?.get?.('content-type') || '',
+      );
       if (!childRes.ok) return;
       const childLines = String(childText)
         .split('\n')
@@ -483,11 +527,18 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       if (!firstSegment) return;
       const segUrl = resolveM3u8Url(childRes.url || childUrl, firstSegment);
       const segRes = await fetch(segUrl, { headers: {} });
-      console.log('[player][diag] first segment status:', segRes.status, 'url:', segRes.url || segUrl);
+      console.log(
+        '[player][diag] first segment status:',
+        segRes.status,
+        'url:',
+        segRes.url || segUrl,
+        'content-type:',
+        segRes.headers?.get?.('content-type') || '',
+      );
     } catch (err) {
-      console.log('[player][diag] diagnostics error:', String(err));
+      console.log('[player][diag] diagnostics error:', String(err), 'kind:', classifyPlaybackError(err));
     }
-  }, [uri, playbackUri]);
+  }, [uri, playbackUri, headers]);
 
   // Keep local channel snapshot in sync when route params change.
   useEffect(() => {
@@ -599,16 +650,18 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   // FALLBACK STREAM
   const onError = (error) => {
+    const errorText = typeof error === 'string' ? error : JSON.stringify(error ?? {});
     console.log('[player][debug] playback error:', {
       player_type: effectivePlayerType,
       selected_player: normalizedPlayerType,
       url: uri,
       current_index: currentUrlIndex,
       total_streams: streams.length,
+      classification: classifyPlaybackError(errorText),
       error,
     });
     void runHlsFailureDiagnostics();
-    scheduleRecovery('onError');
+    scheduleRecovery(`onError:${errorText}`);
   };
 
   // ROTATION
@@ -737,7 +790,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const onStatusUpdate = (status) => {
     if (!status.isLoaded) {
       if (status?.error) {
-        console.log('[player][debug] status load error:', status.error);
+        console.log('[player][debug] status load error:', status.error, 'kind:', classifyPlaybackError(status.error));
         scheduleRecovery(`status-load-error:${String(status.error)}`);
       }
       return;
