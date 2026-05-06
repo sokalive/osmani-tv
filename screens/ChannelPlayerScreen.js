@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
   Animated,
 } from 'react-native';
-import { Video } from 'expo-av';
+import Video from 'react-native-video';
 import { Ionicons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
@@ -20,6 +20,7 @@ import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
+import { buildRnVideoSource, EXO_LIVE_BUFFER_CONFIG } from '../lib/rnVideoSource';
 
 const STALL_TIMEOUT_MS = 15000;
 const MAX_RECOVERY_ATTEMPTS = 6;
@@ -139,6 +140,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     ...(channel?.origin && { Origin: channel.origin }),
     ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
   };
+  const rnVideoSource = useMemo(
+    () => buildRnVideoSource(uri, headers),
+    [uri, channel?.referer, channel?.origin, channel?.userAgent],
+  );
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
   const [fallbackWebView, setFallbackWebView] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
@@ -147,8 +152,15 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [playerEpoch, setPlayerEpoch] = useState(0);
   const [qualityLevels, setQualityLevels] = useState([]);
   const [audioTracks, setAudioTracks] = useState([]);
-  const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
-  const usesNativeVideo = effectivePlayerType !== 'webview';
+  /** HLS never uses WebView; non-HLS may use WebView fallback or channel preference. */
+  const useWebViewPlayer =
+    !looksLikeHlsUrl(uri) && (fallbackWebView || normalizedPlayerType === 'webview');
+  const effectivePlayerType = useWebViewPlayer
+    ? 'webview'
+    : looksLikeHlsUrl(uri)
+      ? 'native-rn-video'
+      : normalizedPlayerType;
+  const usesNativeVideo = !useWebViewPlayer;
   const liveLabel = 'LIVE';
 
   const videoRef = useRef(null);
@@ -163,6 +175,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const lastProgressAtRef = useRef(0);
   const freezeRecoveryTriggeredRef = useRef(false);
   const lastPlaybackDiagAtRef = useRef(0);
+  const videoLoadedRef = useRef(false);
+  const videoBufferingRef = useRef(false);
+  const isPlayingNativeRef = useRef(true);
+  const lastProgressRef = useRef({
+    positionMillis: 0,
+    playableDurationMillis: 0,
+  });
   const lastStatusRef = useRef({
     isLoaded: null,
     isBuffering: null,
@@ -199,6 +218,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     lastProgressAtRef.current = Date.now();
     freezeRecoveryTriggeredRef.current = false;
     lastPlaybackDiagAtRef.current = 0;
+    videoLoadedRef.current = false;
+    videoBufferingRef.current = false;
+    isPlayingNativeRef.current = true;
+    lastProgressRef.current = { positionMillis: 0, playableDurationMillis: 0 };
+    isPlayingNativeRef.current = true;
     setQualityLevels([]);
     setAudioTracks([]);
     setPlayerEpoch((e) => e + 1);
@@ -305,7 +329,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       try {
         setPlaybackError('');
         setIsBuffering(true);
-        if (effectivePlayerType === 'webview') {
+        if (useWebViewPlayer) {
           webviewRef.current?.postMessage(JSON.stringify({ type: 'play' }));
           webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
         } else {
@@ -318,10 +342,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
               attempt,
               hardRecovery,
               remountReason: hardRecovery ? 'frozen-playback' : 'fatal-error',
+              exoLiveConfig: EXO_LIVE_BUFFER_CONFIG.live,
             });
             setPlayerEpoch((e) => e + 1);
           } else {
-            await videoRef.current?.replayAsync?.();
+            console.log('[player][diag][recovery] native remount', { reason, attempt });
+            setPlayerEpoch((e) => e + 1);
           }
         }
       } catch (err) {
@@ -332,17 +358,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         setCurrentUrlIndex((i) => i + 1);
         return;
       }
-      if (attempt >= 4 && usesNativeVideo && looksLikeHlsUrl(uri)) {
-        setRetryMessage('Inabadili player mode...');
-        setFallbackWebView(true);
-        return;
-      }
-      // Native live HLS already bumped epoch inside try.
-      if (!(looksLikeHlsUrl(uri) && effectivePlayerType !== 'webview')) {
+      if (useWebViewPlayer) {
         setPlayerEpoch((e) => e + 1);
       }
     }, waitMs);
-  }, [currentUrlIndex, effectivePlayerType, uri, usesNativeVideo, streams.length]);
+  }, [currentUrlIndex, uri, usesNativeVideo, useWebViewPlayer, streams.length]);
 
   // FALLBACK STREAM
   const onError = (error) => {
@@ -479,8 +499,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     startHideTimer();
   };
 
-  // STATUS
-  const onStatusUpdate = (status) => {
+  // STATUS (expo-av-shaped payload; emitted from react-native-video handlers on native path)
+  const applyPlaybackStatus = (status) => {
     if (!status.isLoaded) {
       if (status?.error) {
         console.log('[player][debug] status load error:', status.error);
@@ -510,7 +530,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setIsBuffering(Boolean(status.isBuffering));
     if (!status.isBuffering) setRetryMessage('');
     if (status.isPlaying) reconnectAttemptsRef.current = 0;
-    setIsPlaying(status.isPlaying);
     setPlaybackError('');
     const now = Date.now();
     const hasPosition = typeof status.positionMillis === 'number';
@@ -553,7 +572,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
 
     if (
-      effectivePlayerType !== 'webview' &&
+      usesNativeVideo &&
       looksLikeHlsUrl(uri) &&
       typeof status.playableDurationMillis === 'number' &&
       status.playableDurationMillis > 0
@@ -576,10 +595,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           lagBehindLiveEdgeMillis: lagBehindLiveEdge,
           seekCountThisSession: liveEdgeSeekCountRef.current,
         });
-        void videoRef.current?.setPositionAsync?.(seekTarget, {
-          toleranceMillisAfter: 0,
-          toleranceMillisBefore: 0,
-        });
+        const seekSec = Math.max(0, seekTarget / 1000);
+        videoRef.current?.seek?.(seekSec, 0);
       } else if (now - lastPlaybackDiagAtRef.current >= PLAYBACK_DIAG_INTERVAL_MS) {
         lastPlaybackDiagAtRef.current = now;
         console.log('[player][diag][playback-progress]', {
@@ -599,21 +616,103 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (status.isPlaying) startHideTimer();
   };
 
+  const onRnLoadStart = () => {
+    videoLoadedRef.current = false;
+    videoBufferingRef.current = true;
+    setIsBuffering(true);
+  };
+
+  const onRnLoad = (data) => {
+    videoLoadedRef.current = true;
+    reconnectAttemptsRef.current = 0;
+    const currentTimeMs = (data.currentTime ?? 0) * 1000;
+    const durationMs =
+      typeof data.duration === 'number' && Number.isFinite(data.duration) ? data.duration * 1000 : 0;
+    lastProgressRef.current = {
+      positionMillis: currentTimeMs,
+      playableDurationMillis: durationMs > 0 ? durationMs : lastProgressRef.current.playableDurationMillis,
+    };
+    isPlayingNativeRef.current = true;
+    setIsPlaying(true);
+    if (looksLikeHlsUrl(uri)) {
+      console.log('[player][diag][exo-live] Media3 LiveConfiguration (via source.bufferConfig.live)', {
+        bufferConfigLive: EXO_LIVE_BUFFER_CONFIG.live,
+      });
+    }
+    applyPlaybackStatus({
+      isLoaded: true,
+      isBuffering: videoBufferingRef.current,
+      isPlaying: true,
+      positionMillis: lastProgressRef.current.positionMillis,
+      playableDurationMillis: lastProgressRef.current.playableDurationMillis || undefined,
+    });
+  };
+
+  const onRnBuffer = (ev) => {
+    videoBufferingRef.current = Boolean(ev.isBuffering);
+    setIsBuffering(Boolean(ev.isBuffering));
+    applyPlaybackStatus({
+      isLoaded: videoLoadedRef.current,
+      isBuffering: Boolean(ev.isBuffering),
+      isPlaying: isPlayingNativeRef.current,
+      positionMillis: lastProgressRef.current.positionMillis,
+      playableDurationMillis: lastProgressRef.current.playableDurationMillis || undefined,
+    });
+  };
+
+  const onRnProgress = (ev) => {
+    if (!videoLoadedRef.current) return;
+    const playableSec = Math.max(ev.playableDuration ?? 0, ev.seekableDuration ?? 0);
+    lastProgressRef.current = {
+      positionMillis: ev.currentTime * 1000,
+      playableDurationMillis: playableSec * 1000,
+    };
+    applyPlaybackStatus({
+      isLoaded: true,
+      isBuffering: videoBufferingRef.current,
+      isPlaying: isPlayingNativeRef.current,
+      positionMillis: lastProgressRef.current.positionMillis,
+      playableDurationMillis:
+        lastProgressRef.current.playableDurationMillis > 0
+          ? lastProgressRef.current.playableDurationMillis
+          : undefined,
+    });
+  };
+
+  const onRnPlaybackStateChanged = (ev) => {
+    isPlayingNativeRef.current = Boolean(ev.isPlaying);
+    setIsPlaying(Boolean(ev.isPlaying));
+    applyPlaybackStatus({
+      isLoaded: videoLoadedRef.current,
+      isBuffering: videoBufferingRef.current,
+      isPlaying: Boolean(ev.isPlaying),
+      positionMillis: lastProgressRef.current.positionMillis,
+      playableDurationMillis:
+        lastProgressRef.current.playableDurationMillis > 0
+          ? lastProgressRef.current.playableDurationMillis
+          : undefined,
+    });
+  };
+
+  const onRnError = (e) => {
+    videoLoadedRef.current = false;
+    onError(e);
+  };
+
   // PLAY / PAUSE
   const onPlayPause = async () => {
-    if (effectivePlayerType === 'webview') {
+    if (useWebViewPlayer) {
       const cmd = isPlaying ? { type: 'pause' } : { type: 'play' };
       webviewRef.current?.postMessage(JSON.stringify(cmd));
       setIsPlaying((v) => !v);
       showControls();
       return;
     }
-    const s = await videoRef.current?.getStatusAsync?.();
-    if (s?.isPlaying) {
-      await videoRef.current?.pauseAsync?.();
-    } else {
-      await videoRef.current?.playAsync?.();
-    }
+    setIsPlaying((v) => {
+      const next = !v;
+      isPlayingNativeRef.current = next;
+      return next;
+    });
     showControls();
   };
 
@@ -631,6 +730,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     lastProgressAtRef.current = Date.now();
     freezeRecoveryTriggeredRef.current = false;
     lastPlaybackDiagAtRef.current = 0;
+    videoLoadedRef.current = false;
   }, [uri, effectivePlayerType, playerEpoch, clearStallTimer]);
 
   const bottomActions = [
@@ -647,7 +747,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       icon: 'language',
       label: 'Badili Lugha',
       onPress: () => {
-        if (effectivePlayerType === 'webview') {
+        if (useWebViewPlayer) {
           if (!audioTracks.length) {
             Alert.alert('Lugha', 'No alternate audio');
             return;
@@ -673,7 +773,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       icon: 'speedometer',
       label: 'Quality',
       onPress: () => {
-        if (effectivePlayerType === 'webview') {
+        if (useWebViewPlayer) {
           if (!qualityLevels.length) {
             webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
             Alert.alert('Quality', 'Auto (default)');
@@ -703,7 +803,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       onPress: () =>
         setResizeMode((m) => {
           const next = m === 'contain' ? 'cover' : 'contain';
-          if (effectivePlayerType === 'webview') {
+          if (useWebViewPlayer) {
             webviewRef.current?.postMessage(JSON.stringify({ type: 'set-fit', mode: next }));
           }
           return next;
@@ -725,7 +825,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       {/* VIDEO / WEBVIEW */}
       <Pressable style={{ flex: 1 }} onPress={showControls}>
 
-        {effectivePlayerType === 'webview' ? (
+        {useWebViewPlayer ? (
           <WebView
             key={`wv-${playerEpoch}`}
             ref={webviewRef}
@@ -767,18 +867,20 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           <Video
             key={`native-${playerEpoch}`}
             ref={videoRef}
-            source={{
-              uri,
-              headers,
-              ...(looksLikeHlsUrl(uri) ? { overrideFileExtensionAndroid: 'm3u8' } : {}),
-            }}
+            source={rnVideoSource}
             style={styles.video}
             resizeMode={resizeMode}
-            shouldPlay
-            progressUpdateIntervalMillis={1000}
-            onPlaybackStatusUpdate={onStatusUpdate}
-            onError={onError}
-            useNativeControls={false}
+            paused={!isPlaying}
+            controls={false}
+            progressUpdateInterval={1000}
+            playInBackground={false}
+            ignoreSilentSwitch="ignore"
+            onLoadStart={onRnLoadStart}
+            onLoad={onRnLoad}
+            onBuffer={onRnBuffer}
+            onProgress={onRnProgress}
+            onPlaybackStateChanged={onRnPlaybackStateChanged}
+            onError={onRnError}
           />
         )}
 
