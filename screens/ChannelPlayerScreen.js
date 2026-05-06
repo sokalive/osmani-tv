@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 import { Video } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
@@ -25,6 +26,18 @@ const MAX_RECOVERY_ATTEMPTS = 6;
 
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
+}
+
+/** Direct streams → expo-av. Everything else (player.php, embed pages, HTML) → plain WebView. */
+function isDirectMediaStreamUrl(url) {
+  const s = String(url ?? '');
+  if (!s.trim()) return false;
+  const u = s.split(/[#?]/)[0].toLowerCase();
+  return (
+    /\.m3u8$/i.test(u) ||
+    /\.mp4$/i.test(u) ||
+    /\.(?:m2ts|mts|ts)$/i.test(u)
+  );
 }
 
 export default function ChannelPlayerScreen({ route, navigation }) {
@@ -48,8 +61,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     ...(channel?.origin && { Origin: channel.origin }),
     ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
   };
-  /** Kept for debug logs only; playback is always expo-av (direct URL from Admin API). */
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
+  const useNativePlayer = useMemo(() => isDirectMediaStreamUrl(uri), [uri]);
+  const webViewSource = useMemo(() => {
+    const hEntries = Object.entries(headers).filter(([, v]) => v != null && String(v).trim() !== '');
+    if (!hEntries.length) return { uri };
+    return { uri, headers: Object.fromEntries(hEntries) };
+  }, [uri, channel?.referer, channel?.origin, channel?.userAgent]);
   const [isBuffering, setIsBuffering] = useState(true);
   const [retryMessage, setRetryMessage] = useState('');
   const [playbackError, setPlaybackError] = useState('');
@@ -57,6 +75,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const liveLabel = 'LIVE';
 
   const videoRef = useRef(null);
+  const embedWebRef = useRef(null);
   const hideTimer = useRef(null);
   const reconnectTimerRef = useRef(null);
   const stallTimerRef = useRef(null);
@@ -102,11 +121,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!uri) return;
-    console.log('[player][debug] selected player type:', normalizedPlayerType);
-    console.log('[player][debug] channel playerType (ignored for routing):', normalizedPlayerType);
-    console.log('[player][debug] final playback URL:', uri);
-    console.log('[player][debug] request headers:', headers ?? {});
-  }, [uri, headers, normalizedPlayerType]);
+    console.log('[player][debug] hybrid route:', {
+      native_expo_av: useNativePlayer,
+      webview_embed: !useNativePlayer,
+      api_playerType: normalizedPlayerType,
+      url: uri,
+      headers_present: Boolean(webViewSource?.headers && Object.keys(webViewSource.headers).length),
+    });
+  }, [uri, normalizedPlayerType, useNativePlayer, webViewSource?.headers]);
 
   // Keep local channel snapshot in sync when route params change.
   useEffect(() => {
@@ -193,7 +215,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       try {
         setPlaybackError('');
         setIsBuffering(true);
-        await videoRef.current?.replayAsync?.();
+        if (useNativePlayer) {
+          await videoRef.current?.replayAsync?.();
+        }
       } catch (err) {
         console.log('[player][debug] recovery replay error:', String(err));
       }
@@ -204,13 +228,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       }
       setPlayerEpoch((e) => e + 1);
     }, waitMs);
-  }, [currentUrlIndex, uri, streams.length]);
+  }, [currentUrlIndex, uri, streams.length, useNativePlayer]);
 
   // FALLBACK STREAM
   const onError = (error) => {
     console.log('[player][debug] playback error:', {
-      player_type: normalizedPlayerType,
-      selected_player: normalizedPlayerType,
+      player_type: useNativePlayer ? 'native-expo-av' : 'webview',
+      declared_player_type: normalizedPlayerType,
       url: uri,
       current_index: currentUrlIndex,
       total_streams: streams.length,
@@ -387,13 +411,49 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (status.isPlaying) startHideTimer();
   };
 
+  const onEmbedLoadStart = () => {
+    setIsBuffering(true);
+    clearStallTimer();
+    stallTimerRef.current = setTimeout(() => {
+      console.log('[player][debug] embed load stall timeout');
+      scheduleRecovery('embed-load-stall');
+    }, STALL_TIMEOUT_MS);
+  };
+
+  const onEmbedLoadEnd = () => {
+    clearStallTimer();
+    setIsBuffering(false);
+    setRetryMessage('');
+    setPlaybackError('');
+    reconnectAttemptsRef.current = 0;
+    startHideTimer();
+  };
+
+  const onEmbedHttpError = (ev) => {
+    const status = ev?.nativeEvent?.statusCode;
+    console.log('[player][debug] embed http error:', status);
+    scheduleRecovery(`embed-http:${status}`);
+  };
+
+  const onEmbedError = (ev) => {
+    clearStallTimer();
+    const desc = ev?.nativeEvent?.description ?? ev?.nativeEvent?.message ?? 'unknown';
+    console.log('[player][debug] embed load error:', desc);
+    scheduleRecovery(`webview-error:${String(desc)}`);
+  };
+
   // PLAY / PAUSE
   const onPlayPause = async () => {
-    const s = await videoRef.current?.getStatusAsync?.();
-    if (s?.isPlaying) {
-      await videoRef.current?.pauseAsync?.();
+    if (useNativePlayer) {
+      const s = await videoRef.current?.getStatusAsync?.();
+      if (s?.isPlaying) {
+        await videoRef.current?.pauseAsync?.();
+      } else {
+        await videoRef.current?.playAsync?.();
+      }
     } else {
-      await videoRef.current?.playAsync?.();
+      embedWebRef.current?.injectJavaScript(`(function(){try{var v=document.querySelector('video');if(v){if(v.paused)v.play().catch(function(){});else v.pause();}}catch(e){}})();true;`);
+      setIsPlaying((v) => !v);
     }
     showControls();
   };
@@ -407,7 +467,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     clearStallTimer();
     setPlaybackError('');
     setRetryMessage((m) => (m.startsWith('Inajaribu') || m.startsWith('Inabadili') ? m : ''));
-  }, [uri, playerEpoch, clearStallTimer]);
+  }, [uri, playerEpoch, useNativePlayer, clearStallTimer]);
 
   const bottomActions = [
     {
@@ -423,7 +483,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       icon: 'language',
       label: 'Badili Lugha',
       onPress: () => {
-        Alert.alert('Lugha', 'No alternate audio');
+        Alert.alert('Lugha', useNativePlayer ? 'No alternate audio' : 'Tumia mipangilio kwenye embed page.');
       },
     },
     {
@@ -431,7 +491,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       icon: 'speedometer',
       label: 'Quality',
       onPress: () => {
-        Alert.alert('Quality', 'Auto (default)');
+        Alert.alert(
+          'Quality',
+          useNativePlayer ? 'Auto (default)' : 'Quality hurekebishwa katika embed/page ya tovuti.',
+        );
       },
     },
     {
@@ -457,25 +520,44 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   return (
     <View style={styles.root}>
 
-      {/* VIDEO — direct channel URL via expo-av (Admin API /api/channels) */}
+      {/* Hybrid: direct media → expo-av; embed/player pages → plain WebView (no hls.js shell) */}
       <Pressable style={{ flex: 1 }} onPress={showControls}>
 
-        <Video
-          key={`native-${playerEpoch}`}
-          ref={videoRef}
-          source={{
-            uri,
-            headers,
-            ...(looksLikeHlsUrl(uri) ? { overrideFileExtensionAndroid: 'm3u8' } : {}),
-          }}
-          style={styles.video}
-          resizeMode={resizeMode}
-          shouldPlay
-          progressUpdateIntervalMillis={1000}
-          onPlaybackStatusUpdate={onStatusUpdate}
-          onError={onError}
-          useNativeControls={false}
-        />
+        {useNativePlayer ? (
+          <Video
+            key={`native-${playerEpoch}`}
+            ref={videoRef}
+            source={{
+              uri,
+              headers,
+              ...(looksLikeHlsUrl(uri) ? { overrideFileExtensionAndroid: 'm3u8' } : {}),
+            }}
+            style={styles.video}
+            resizeMode={resizeMode}
+            shouldPlay
+            progressUpdateIntervalMillis={1000}
+            onPlaybackStatusUpdate={onStatusUpdate}
+            onError={onError}
+            useNativeControls={false}
+          />
+        ) : (
+          <WebView
+            key={`embed-${playerEpoch}`}
+            ref={embedWebRef}
+            style={styles.video}
+            source={webViewSource}
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            javaScriptEnabled
+            domStorageEnabled
+            originWhitelist={['*']}
+            mixedContentMode="always"
+            onLoadStart={onEmbedLoadStart}
+            onLoadEnd={onEmbedLoadEnd}
+            onError={onEmbedError}
+            onHttpError={onEmbedHttpError}
+          />
+        )}
 
         {/* CONTROLS */}
         {controlsVisible && (
