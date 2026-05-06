@@ -28,6 +28,11 @@ function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
 }
 
+function looksLikeEmbedUrl(url) {
+  const s = String(url ?? '').toLowerCase();
+  return s.includes('player.php') || s.includes('embed') || s.includes('iframe');
+}
+
 function normalizePlaybackUrl(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return '';
@@ -35,6 +40,13 @@ function normalizePlaybackUrl(raw) {
     return s.replace(/^http:\/\//i, 'https://');
   }
   return s;
+}
+
+function choosePlaybackRoute(url, declaredPlayerType) {
+  const pt = String(declaredPlayerType ?? '').toLowerCase();
+  if (looksLikeEmbedUrl(url) || pt === 'webview') return 'embed-webview';
+  if (looksLikeHlsUrl(url)) return 'hls-webview-proxy';
+  return 'native';
 }
 
 function resolveM3u8Url(baseUrl, line) {
@@ -63,15 +75,132 @@ function buildWebViewSource(url) {
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
     <script>
       (function () {
-        var src = ${escaped};
+        var initialSrc = ${escaped};
+        var src = initialSrc;
         var video = document.getElementById('video');
         var hls = null;
         var fitMode = 'contain';
+        var lastManifestUrl = initialSrc;
         function post(kind, payload) {
           try {
             window.ReactNativeWebView.postMessage(JSON.stringify({ kind: kind, payload: payload || null }));
           } catch (e) {}
         }
+        function isPlaylist(url) {
+          return /\\.m3u8(\\?|$)/i.test(String(url || ''));
+        }
+        function normalizeUrl(url) {
+          var s = String(url || '');
+          if (/^http:\\/\\//i.test(s) && /ycn-redirect\\.com/i.test(s)) {
+            s = s.replace(/^http:\\/\\//i, 'https://');
+          }
+          return s;
+        }
+        function resolveUrl(base, ref) {
+          try { return new URL(ref, base).toString(); } catch (_) { return ref; }
+        }
+        function rewritePlaylistText(text, base) {
+          var lines = String(text || '').split('\\n');
+          var out = [];
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (!line || line[0] === '#') { out.push(lines[i]); continue; }
+            out.push(resolveUrl(base, line));
+          }
+          return out.join('\\n');
+        }
+        function getJsonHeaders() {
+          try {
+            var raw = localStorage.getItem('__osmani_headers');
+            var parsed = raw ? JSON.parse(raw) : {};
+            return parsed && typeof parsed === 'object' ? parsed : {};
+          } catch (_) {
+            return {};
+          }
+        }
+        function setJsonHeaders(h) {
+          try { localStorage.setItem('__osmani_headers', JSON.stringify(h || {})); } catch (_) {}
+        }
+        function withHeaders(reqHeaders) {
+          var baseHeaders = getJsonHeaders();
+          var out = {};
+          Object.keys(baseHeaders || {}).forEach(function (k) {
+            if (typeof baseHeaders[k] === 'string') out[k] = baseHeaders[k];
+          });
+          Object.keys(reqHeaders || {}).forEach(function (k) { out[k] = reqHeaders[k]; });
+          return out;
+        }
+        function logProxy(kind, payload) {
+          post('proxy_log', { kind: kind, payload: payload || null });
+        }
+        function ProxyLoader(config) {
+          this.config = config;
+          this.controller = null;
+        }
+        ProxyLoader.prototype.load = function (context, config, callbacks) {
+          var url = normalizeUrl(context.url);
+          var reqHeaders = withHeaders(context.headers || {});
+          var isM3u8 = isPlaylist(url);
+          logProxy('request', { type: context.type, url: url, isPlaylist: isM3u8, headers: reqHeaders });
+          this.controller = new AbortController();
+          fetch(url, {
+            method: 'GET',
+            redirect: 'follow',
+            headers: reqHeaders,
+            signal: this.controller.signal,
+          })
+            .then(function (res) {
+              var finalUrl = res.url || url;
+              logProxy('response', { type: context.type, url: url, finalUrl: finalUrl, status: res.status });
+              if (!res.ok) {
+                throw new Error('HTTP ' + res.status + ' for ' + finalUrl);
+              }
+              if (isM3u8) {
+                lastManifestUrl = finalUrl;
+                return res.text().then(function (text) {
+                  var rewritten = rewritePlaylistText(text, finalUrl);
+                  logProxy('rewrite', { from: finalUrl, length: rewritten.length });
+                  callbacks.onSuccess(
+                    {
+                      url: finalUrl,
+                      data: rewritten,
+                    },
+                    context,
+                    undefined,
+                  );
+                });
+              }
+              return res.arrayBuffer().then(function (ab) {
+                callbacks.onSuccess(
+                  {
+                    url: finalUrl,
+                    data: new Uint8Array(ab),
+                  },
+                  context,
+                  undefined,
+                );
+              });
+            })
+            .catch(function (err) {
+              logProxy('error', { type: context.type, url: url, message: String(err) });
+              callbacks.onError(
+                {
+                  code: 0,
+                  text: String(err),
+                  url: url,
+                },
+                context,
+                undefined,
+              );
+            });
+        };
+        ProxyLoader.prototype.abort = function () {
+          try { this.controller && this.controller.abort(); } catch (_) {}
+        };
+        ProxyLoader.prototype.destroy = function () {
+          try { this.controller && this.controller.abort(); } catch (_) {}
+          this.controller = null;
+        };
         function setFit(mode) {
           fitMode = mode === 'cover' ? 'cover' : 'contain';
           video.style.objectFit = fitMode;
@@ -82,6 +211,7 @@ function buildWebViewSource(url) {
             enableWorker: true,
             lowLatencyMode: true,
             backBufferLength: 90,
+            loader: ProxyLoader,
           });
           hls.on(Hls.Events.MANIFEST_PARSED, function () {
             post('hls_manifest', {
@@ -92,13 +222,13 @@ function buildWebViewSource(url) {
             });
           });
           hls.on(Hls.Events.LEVEL_LOADED, function () {
-            post('hls_ready', null);
+            post('hls_ready', { details: hls && hls.levels ? hls.levels.length : 0 });
           });
           hls.on(Hls.Events.ERROR, function (event, data) { post('hls_error', data); });
-          hls.loadSource(src);
+          hls.loadSource(normalizeUrl(src));
           hls.attachMedia(video);
         } else {
-          video.src = src;
+          video.src = normalizeUrl(src);
         }
         video.addEventListener('error', function () {
           post('video_error', { code: video.error ? video.error.code : null });
@@ -113,6 +243,21 @@ function buildWebViewSource(url) {
           if (cmd.type === 'play') video.play().catch(function(){});
           if (cmd.type === 'pause') video.pause();
           if (cmd.type === 'set-fit') setFit(cmd.mode);
+          if (cmd.type === 'set-headers' && cmd.headers && typeof cmd.headers === 'object') {
+            setJsonHeaders(cmd.headers);
+            post('headers_set', cmd.headers);
+          }
+          if (cmd.type === 'set-src' && cmd.url) {
+            src = normalizeUrl(String(cmd.url));
+            if (hls) {
+              try { hls.stopLoad(); } catch (_) {}
+              hls.loadSource(src);
+              hls.startLoad(-1);
+            } else {
+              video.src = src;
+            }
+            post('src_set', { src: src });
+          }
           if (cmd.type === 'set-level' && hls && typeof cmd.level === 'number') hls.currentLevel = cmd.level;
           if (cmd.type === 'set-audio' && hls && typeof cmd.track === 'number') hls.audioTrack = cmd.track;
           if (cmd.type === 'get-meta') {
@@ -167,9 +312,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [qualityLevels, setQualityLevels] = useState([]);
   const [audioTracks, setAudioTracks] = useState([]);
   const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
+  const playbackRoute = choosePlaybackRoute(uri, effectivePlayerType);
   const usesNativeVideo = effectivePlayerType === 'exo' || effectivePlayerType === 'native';
-  const usesWebEngine =
-    effectivePlayerType === 'webview' || effectivePlayerType === 'vlc' || effectivePlayerType === 'ijk';
+  const usesWebEngine = playbackRoute === 'hls-webview-proxy' || playbackRoute === 'embed-webview';
   const liveLabel = 'LIVE';
 
   const videoRef = useRef(null);
@@ -231,10 +376,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       headers,
       player_type: normalizedPlayerType,
       effective_player_type: effectivePlayerType,
+      playback_route: playbackRoute,
       backup_1: streams[1] ?? null,
       backup_2: streams[2] ?? null,
     });
-  }, [uri, headers, normalizedPlayerType, effectivePlayerType]);
+  }, [uri, headers, normalizedPlayerType, effectivePlayerType, playbackRoute]);
 
   const runHlsFailureDiagnostics = useCallback(async () => {
     if (!uri || !looksLikeHlsUrl(uri)) return;
@@ -691,7 +837,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           <WebView
             key={`wv-${playerEpoch}`}
             ref={webviewRef}
-            source={buildWebViewSource(uri)}
+            source={
+              playbackRoute === 'hls-webview-proxy'
+                ? buildWebViewSource(uri)
+                : { uri }
+            }
             style={styles.video}
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
@@ -700,6 +850,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
               console.log('[player][debug] webview player message:', raw);
               try {
                 const msg = JSON.parse(raw);
+                if (msg?.kind === 'proxy_log') {
+                  console.log('[player][diag][proxy]', msg?.payload ?? null);
+                  return;
+                }
                 if (msg?.kind === 'hls_manifest') {
                   setQualityLevels(Array.isArray(msg?.payload?.levels) ? msg.payload.levels : []);
                   setAudioTracks(Array.isArray(msg?.payload?.audioTracks) ? msg.payload.audioTracks : []);
@@ -722,6 +876,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
                 }
               } catch {
                 // ignore parse errors
+              }
+            }}
+            onLoadEnd={() => {
+              if (playbackRoute !== 'hls-webview-proxy') return;
+              try {
+                const setHeaders = JSON.stringify({ type: 'set-headers', headers });
+                const setSrc = JSON.stringify({ type: 'set-src', url: uri });
+                webviewRef.current?.postMessage(setHeaders);
+                webviewRef.current?.postMessage(setSrc);
+              } catch {
+                // ignore
               }
             }}
           />
