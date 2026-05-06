@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: osmani-admin-api
+    env: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /api
