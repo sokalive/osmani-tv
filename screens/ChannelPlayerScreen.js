@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
-import { buildStreamRequestHeaders, normalizePlayerType } from '../lib/channelStream';
+import { normalizePlayerType } from '../lib/channelStream';
 
 const STALL_TIMEOUT_MS = 15000;
 const MAX_RECOVERY_ATTEMPTS = 6;
@@ -130,7 +130,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   const uri = streams[currentUrlIndex];
-  const headers = buildStreamRequestHeaders(channel);
+  const headers = {
+    ...(channel?.referer && { Referer: channel.referer }),
+    ...(channel?.origin && { Origin: channel.origin }),
+    ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
+  };
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
   const [fallbackWebView, setFallbackWebView] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
@@ -191,39 +195,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     };
   }, []);
 
-  // Temporary diagnostics for stream compatibility failures.
   useEffect(() => {
-    let cancelled = false;
-    if (!uri) return undefined;
+    if (!uri) return;
     console.log('[player][debug] selected player type:', normalizedPlayerType);
     console.log('[player][debug] effective player type:', effectivePlayerType);
     console.log('[player][debug] final playback URL:', uri);
     console.log('[player][debug] request headers:', headers ?? {});
-    const probe = async () => {
-      try {
-        const res = await fetch(uri, { method: 'GET', headers: headers ?? {} });
-        if (cancelled) return;
-        const responseHeaders = {};
-        try {
-          res.headers.forEach((v, k) => {
-            responseHeaders[k] = v;
-          });
-        } catch {
-          // ignore headers iteration issues
-        }
-        console.log('[player][debug] probe status:', res.status);
-        console.log('[player][debug] probe final URL:', res.url || uri);
-        console.log('[player][debug] probe headers:', responseHeaders);
-      } catch (err) {
-        if (!cancelled) {
-          console.log('[player][debug] probe network/tls error:', String(err));
-        }
-      }
-    };
-    void probe();
-    return () => {
-      cancelled = true;
-    };
   }, [uri, headers, normalizedPlayerType, effectivePlayerType]);
 
   // Keep local channel snapshot in sync when route params change.
@@ -286,6 +263,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
+    }
+    const reasonText = String(reason ?? '');
+    if (/404|not[\s_-]?found|http\s*404/i.test(reasonText)) {
+      setIsBuffering(false);
+      setRetryMessage('');
+      setPlaybackError('Stream link imeisha au haipatikani (404).');
+      console.log('[player][debug] permanent failure, stop retry loop:', reasonText);
+      return;
     }
     const attempt = reconnectAttemptsRef.current + 1;
     reconnectAttemptsRef.current = attempt;
@@ -466,7 +451,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (!status.isLoaded) {
       if (status?.error) {
         console.log('[player][debug] status load error:', status.error);
-        scheduleRecovery('status-load-error');
+        scheduleRecovery(`status-load-error:${String(status.error)}`);
       }
       return;
     }
