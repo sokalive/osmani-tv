@@ -23,6 +23,9 @@ import { normalizePlayerType } from '../lib/channelStream';
 
 const STALL_TIMEOUT_MS = 15000;
 const MAX_RECOVERY_ATTEMPTS = 6;
+const LIVE_EDGE_TARGET_BACKOFF_MS = 800;
+const LIVE_EDGE_MAX_LAG_MS = 5000;
+const LIVE_EDGE_SEEK_COOLDOWN_MS = 4000;
 
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
@@ -154,6 +157,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const stallTimerRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
   const liveEdgeSyncedRef = useRef(false);
+  const lastLiveEdgeSeekAtRef = useRef(0);
   const lastStatusRef = useRef({
     isLoaded: null,
     isBuffering: null,
@@ -185,6 +189,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setPlaybackError('');
     reconnectAttemptsRef.current = 0;
     liveEdgeSyncedRef.current = false;
+    lastLiveEdgeSeekAtRef.current = 0;
     setQualityLevels([]);
     setAudioTracks([]);
     setPlayerEpoch((e) => e + 1);
@@ -294,7 +299,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           webviewRef.current?.postMessage(JSON.stringify({ type: 'play' }));
           webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
         } else {
-          await videoRef.current?.replayAsync?.();
+          if (looksLikeHlsUrl(uri)) {
+            // Live HLS must reconnect at live edge, not replay from start of live window.
+            liveEdgeSyncedRef.current = false;
+            lastLiveEdgeSeekAtRef.current = 0;
+            setPlayerEpoch((e) => e + 1);
+          } else {
+            await videoRef.current?.replayAsync?.();
+          }
         }
       } catch (err) {
         console.log('[player][debug] recovery replay error:', String(err));
@@ -494,17 +506,22 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (
       effectivePlayerType !== 'webview' &&
       looksLikeHlsUrl(uri) &&
-      !liveEdgeSyncedRef.current &&
       typeof status.playableDurationMillis === 'number' &&
       status.playableDurationMillis > 0
     ) {
-      const liveEdge = Math.max(status.playableDurationMillis - 800, 0);
+      const liveEdge = Math.max(status.playableDurationMillis - LIVE_EDGE_TARGET_BACKOFF_MS, 0);
       const position = typeof status.positionMillis === 'number' ? status.positionMillis : 0;
-      // Prevent DVR-like resume: always jump to live edge when (re)opening a live HLS stream.
-      if (position + 2000 < liveEdge) {
+      const lag = liveEdge - position;
+      const now = Date.now();
+      const canSeek = now - lastLiveEdgeSeekAtRef.current >= LIVE_EDGE_SEEK_COOLDOWN_MS;
+      // Continuous live-edge enforcement to eliminate DVR-like drift/resume.
+      if (lag > LIVE_EDGE_MAX_LAG_MS && canSeek) {
+        lastLiveEdgeSeekAtRef.current = now;
         void videoRef.current?.setPositionAsync?.(liveEdge, { toleranceMillisAfter: 0, toleranceMillisBefore: 0 });
       }
-      liveEdgeSyncedRef.current = true;
+      if (!liveEdgeSyncedRef.current && lag <= LIVE_EDGE_MAX_LAG_MS) {
+        liveEdgeSyncedRef.current = true;
+      }
     }
 
     if (status.isPlaying) startHideTimer();
@@ -538,6 +555,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setPlaybackError('');
     setRetryMessage((m) => (m.startsWith('Inajaribu') || m.startsWith('Inabadili') ? m : ''));
     liveEdgeSyncedRef.current = false;
+    lastLiveEdgeSeekAtRef.current = 0;
   }, [uri, effectivePlayerType, playerEpoch, clearStallTimer]);
 
   const bottomActions = [
