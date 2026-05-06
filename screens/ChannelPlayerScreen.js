@@ -17,7 +17,6 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
-import { BASE_URL } from '../api';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
@@ -52,23 +51,8 @@ function normalizePlaybackUrl(raw) {
 function choosePlaybackRoute(url, declaredPlayerType) {
   const pt = String(declaredPlayerType ?? '').toLowerCase();
   if (looksLikeEmbedUrl(url)) return 'embed-webview';
-  if (looksLikeHlsUrl(url)) return 'hls-webview-proxy';
-  if (pt === 'webview') return 'embed-webview';
+  if (pt === 'webview' || pt === 'vlc' || pt === 'ijk') return 'embed-webview';
   return 'native';
-}
-
-function buildServerProxyUrl(sourceUrl, headers = {}) {
-  const src = String(sourceUrl ?? '').trim();
-  if (!src) return '';
-  const params = new URLSearchParams();
-  params.set('url', src);
-  const referer = String(headers?.Referer ?? '').trim();
-  const origin = String(headers?.Origin ?? '').trim();
-  const ua = String(headers?.['User-Agent'] ?? '').trim();
-  if (referer) params.set('referer', referer);
-  if (origin) params.set('origin', origin);
-  if (ua) params.set('ua', ua);
-  return `${BASE_URL}/api/stream-proxy?${params.toString()}`;
 }
 
 function resolveM3u8Url(baseUrl, line) {
@@ -392,10 +376,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [audioTracks, setAudioTracks] = useState([]);
   const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
   const playbackRoute = choosePlaybackRoute(uri, effectivePlayerType);
-  const playbackUri =
-    playbackRoute === 'hls-webview-proxy' ? buildServerProxyUrl(uri, headers) : uri;
+  const playbackUri = uri;
   const usesNativeVideo = effectivePlayerType === 'exo' || effectivePlayerType === 'native';
-  const usesWebEngine = playbackRoute === 'hls-webview-proxy' || playbackRoute === 'embed-webview';
+  const usesWebEngine = playbackRoute === 'embed-webview';
   const liveLabel = 'LIVE';
 
   const videoRef = useRef(null);
@@ -451,16 +434,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     console.log('[player][debug] selected player type:', normalizedPlayerType);
     console.log('[player][debug] effective player type:', effectivePlayerType);
     console.log('[player][debug] final playback URL:', playbackUri);
-    if (playbackRoute === 'hls-webview-proxy') {
-      console.log('[player][debug] hls proxy active (client never hits direct stream URL)', {
-        original_url: uri,
-        proxied_url: playbackUri,
-      });
-    }
     console.log('[player][debug] request headers:', headers ?? {});
     console.log('[player][debug] active source object:', {
       uri: playbackUri,
-      original_uri: uri,
       headers,
       player_type: normalizedPlayerType,
       effective_player_type: effectivePlayerType,
@@ -925,11 +901,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           <WebView
             key={`wv-${playerEpoch}`}
             ref={webviewRef}
-            source={
-              playbackRoute === 'hls-webview-proxy'
-                ? buildWebViewSource(playbackUri)
-                : { uri }
-            }
+            source={looksLikeHlsUrl(playbackUri) ? buildWebViewSource(playbackUri) : { uri: playbackUri }}
             style={styles.video}
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
@@ -943,7 +915,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             originWhitelist={['*']}
             setSupportMultipleWindows={false}
             onShouldStartLoadWithRequest={(req) => {
-              if (playbackRoute !== 'hls-webview-proxy') return true;
+              if (!looksLikeHlsUrl(playbackUri)) return true;
               const u = String(req?.url ?? '');
               // Keep proxy playback inside internal HTML shell.
               if (
@@ -990,7 +962,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
               }
             }}
             onLoadEnd={() => {
-              if (playbackRoute !== 'hls-webview-proxy') return;
+              if (!looksLikeHlsUrl(playbackUri)) return;
               try {
                 const setHeaders = JSON.stringify({
                   type: 'set-headers',
