@@ -38,8 +38,7 @@
       }
     },
     "plugins": [
-      "expo-video",
-      "react-native-video"
+      "expo-video"
     ]
   }
 }
