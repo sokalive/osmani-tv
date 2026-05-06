@@ -21,9 +21,6 @@ import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
 
-const STALL_TIMEOUT_MS = 15000;
-const MAX_RECOVERY_ATTEMPTS = 6;
-
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
 }
@@ -38,6 +35,13 @@ function isDirectMediaStreamUrl(url) {
     /\.mp4$/i.test(u) ||
     /\.(?:m2ts|mts|ts)$/i.test(u)
   );
+}
+
+function playbackFailureMessage(reasonText) {
+  const r = String(reasonText ?? '');
+  if (/404|not[\s_-]?found|http\s*404/i.test(r)) return 'Stream link imeisha au haipatikani (404).';
+  const short = r.length > 120 ? `${r.slice(0, 117)}...` : r;
+  return short ? `Playback: ${short}` : 'Playback imeshindikana.';
 }
 
 export default function ChannelPlayerScreen({ route, navigation }) {
@@ -69,7 +73,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     return { uri, headers: Object.fromEntries(hEntries) };
   }, [uri, channel?.referer, channel?.origin, channel?.userAgent]);
   const [isBuffering, setIsBuffering] = useState(true);
-  const [retryMessage, setRetryMessage] = useState('');
   const [playbackError, setPlaybackError] = useState('');
   const [playerEpoch, setPlayerEpoch] = useState(0);
   const liveLabel = 'LIVE';
@@ -77,9 +80,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const videoRef = useRef(null);
   const embedWebRef = useRef(null);
   const hideTimer = useRef(null);
-  const reconnectTimerRef = useRef(null);
-  const stallTimerRef = useRef(null);
-  const reconnectAttemptsRef = useRef(0);
   const lastStatusRef = useRef({
     isLoaded: null,
     isBuffering: null,
@@ -106,18 +106,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   useEffect(() => {
     setCurrentUrlIndex(0);
     setIsBuffering(true);
-    setRetryMessage('');
     setPlaybackError('');
-    reconnectAttemptsRef.current = 0;
     setPlayerEpoch((e) => e + 1);
   }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
-
-  useEffect(() => {
-    return () => {
-      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-      if (stallTimerRef.current) clearTimeout(stallTimerRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     if (!uri) return;
@@ -179,58 +170,20 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     });
   }, [rawChannels, freeMode, liveChannel, route?.params?.channel, navigation, channelDisabledNotified]);
 
-  const clearStallTimer = useCallback(() => {
-    if (stallTimerRef.current) {
-      clearTimeout(stallTimerRef.current);
-      stallTimerRef.current = null;
-    }
+  const applyPlaybackFailure = useCallback((reasonText) => {
+    setIsBuffering(false);
+    setPlaybackError(playbackFailureMessage(reasonText));
+    setControlsVisible(true);
+    controlsOpacity.setValue(1);
+  }, [controlsOpacity]);
+
+  /** User-only: fresh mount without automatic timers or replay loops. */
+  const manualReloadSameStream = useCallback(() => {
+    setPlaybackError('');
+    setIsBuffering(true);
+    setPlayerEpoch((e) => e + 1);
   }, []);
 
-  const scheduleRecovery = useCallback((reason) => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    const reasonText = String(reason ?? '');
-    if (/404|not[\s_-]?found|http\s*404/i.test(reasonText)) {
-      setIsBuffering(false);
-      setRetryMessage('');
-      setPlaybackError('Stream link imeisha au haipatikani (404).');
-      console.log('[player][debug] permanent failure, stop retry loop:', reasonText);
-      return;
-    }
-    const attempt = reconnectAttemptsRef.current + 1;
-    reconnectAttemptsRef.current = attempt;
-    if (attempt > MAX_RECOVERY_ATTEMPTS) {
-      setIsBuffering(false);
-      setRetryMessage('');
-      setPlaybackError('Imeshindwa kuendelea live stream. Jaribu tena.');
-      console.log('[player][debug] recovery exhausted:', { reason, attempt });
-      return;
-    }
-    const waitMs = Math.min(1200 * 2 ** (attempt - 1), 12000);
-    setRetryMessage(`Inajaribu kuunganisha tena... (${attempt}/${MAX_RECOVERY_ATTEMPTS})`);
-    console.log('[player][debug] schedule recovery:', { reason, attempt, waitMs });
-    reconnectTimerRef.current = setTimeout(async () => {
-      try {
-        setPlaybackError('');
-        setIsBuffering(true);
-        if (useNativePlayer) {
-          await videoRef.current?.replayAsync?.();
-        }
-      } catch (err) {
-        console.log('[player][debug] recovery replay error:', String(err));
-      }
-      if (attempt >= 3 && currentUrlIndex < streams.length - 1) {
-        setRetryMessage('Inajaribu stream nyingine...');
-        setCurrentUrlIndex((i) => i + 1);
-        return;
-      }
-      setPlayerEpoch((e) => e + 1);
-    }, waitMs);
-  }, [currentUrlIndex, uri, streams.length, useNativePlayer]);
-
-  // FALLBACK STREAM
   const onError = (error) => {
     console.log('[player][debug] playback error:', {
       player_type: useNativePlayer ? 'native-expo-av' : 'webview',
@@ -240,7 +193,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       total_streams: streams.length,
       error,
     });
-    scheduleRecovery('onError');
+    const errMsg =
+      error == null ? 'onError' : typeof error === 'string' ? error : JSON.stringify(error);
+    applyPlaybackFailure(errMsg);
   };
 
   // ROTATION
@@ -370,7 +325,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (!status.isLoaded) {
       if (status?.error) {
         console.log('[player][debug] status load error:', status.error);
-        scheduleRecovery(`status-load-error:${String(status.error)}`);
+        applyPlaybackFailure(`status-load-error:${String(status.error)}`);
       }
       return;
     }
@@ -394,52 +349,31 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       lastStatusRef.current = nextState;
     }
     setIsBuffering(Boolean(status.isBuffering));
-    if (!status.isBuffering) setRetryMessage('');
-    if (status.isPlaying) reconnectAttemptsRef.current = 0;
     setIsPlaying(status.isPlaying);
     setPlaybackError('');
-    if (status.isPlaying && !status.isBuffering) {
-      clearStallTimer();
-    } else if (status.isBuffering) {
-      clearStallTimer();
-      stallTimerRef.current = setTimeout(() => {
-        console.log('[player][debug] stall timeout reached');
-        scheduleRecovery('stall-timeout');
-      }, STALL_TIMEOUT_MS);
-    }
-
     if (status.isPlaying) startHideTimer();
   };
 
   const onEmbedLoadStart = () => {
     setIsBuffering(true);
-    clearStallTimer();
-    stallTimerRef.current = setTimeout(() => {
-      console.log('[player][debug] embed load stall timeout');
-      scheduleRecovery('embed-load-stall');
-    }, STALL_TIMEOUT_MS);
   };
 
   const onEmbedLoadEnd = () => {
-    clearStallTimer();
     setIsBuffering(false);
-    setRetryMessage('');
     setPlaybackError('');
-    reconnectAttemptsRef.current = 0;
     startHideTimer();
   };
 
   const onEmbedHttpError = (ev) => {
     const status = ev?.nativeEvent?.statusCode;
     console.log('[player][debug] embed http error:', status);
-    scheduleRecovery(`embed-http:${status}`);
+    applyPlaybackFailure(`embed-http:${status}`);
   };
 
   const onEmbedError = (ev) => {
-    clearStallTimer();
     const desc = ev?.nativeEvent?.description ?? ev?.nativeEvent?.message ?? 'unknown';
     console.log('[player][debug] embed load error:', desc);
-    scheduleRecovery(`webview-error:${String(desc)}`);
+    applyPlaybackFailure(`webview-error:${String(desc)}`);
   };
 
   // PLAY / PAUSE
@@ -460,14 +394,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!uri) return;
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    clearStallTimer();
     setPlaybackError('');
-    setRetryMessage((m) => (m.startsWith('Inajaribu') || m.startsWith('Inabadili') ? m : ''));
-  }, [uri, playerEpoch, useNativePlayer, clearStallTimer]);
+  }, [uri, playerEpoch, useNativePlayer]);
 
   const bottomActions = [
     {
@@ -579,14 +507,19 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
             {/* CENTER */}
             <View style={styles.center}>
-              {(isBuffering || retryMessage) ? (
+              {(isBuffering || playbackError) ? (
                 <View style={styles.bufferingWrap}>
-                  <ActivityIndicator size="large" color="#FFFFFF" />
+                  {isBuffering ? <ActivityIndicator size="large" color="#FFFFFF" /> : null}
                   <Text style={styles.bufferingText}>
-                    {retryMessage || 'Inapakia moja kwa moja...'}
+                    {playbackError ? 'Hitilafu ya uchezi' : 'Inapakia moja kwa moja...'}
                   </Text>
                   {playbackError ? (
-                    <Text style={styles.bufferingError}>{playbackError}</Text>
+                    <>
+                      <Text style={styles.bufferingError}>{playbackError}</Text>
+                      <Pressable onPress={manualReloadSameStream} style={styles.bufferingRetryBtn}>
+                        <Text style={styles.bufferingRetryText}>Jaribu tena</Text>
+                      </Pressable>
+                    </>
                   ) : null}
                 </View>
               ) : null}
@@ -672,6 +605,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     marginTop: 2,
+  },
+  bufferingRetryBtn: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: 'rgba(59,130,246,0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(147,197,253,0.45)',
+  },
+  bufferingRetryText: {
+    color: '#EFF6FF',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
   },
 
   bottom: {
