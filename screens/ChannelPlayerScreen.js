@@ -23,6 +23,8 @@ import { normalizePlayerType } from '../lib/channelStream';
 
 const STALL_TIMEOUT_MS = 15000;
 const MAX_RECOVERY_ATTEMPTS = 6;
+const WEBVIEW_UA =
+  'Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36';
 
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
@@ -133,6 +135,27 @@ function buildWebViewSource(url) {
         function logProxy(kind, payload) {
           post('proxy_log', { kind: kind, payload: payload || null });
         }
+        function classifyHtmlGate(body, headers) {
+          var text = String(body || '').toLowerCase();
+          var h = headers || {};
+          if (text.includes('sorry, you have been blocked') || text.includes('cloudflare')) return 'cloudflare-block';
+          if (text.includes('attention required') || text.includes('just a moment')) return 'anti-bot-page';
+          if (text.includes('forbidden') || text.includes('hotlink') || text.includes('referer')) return 'anti-hotlink-page';
+          if (text.includes('expired') || text.includes('token')) return 'expired-token';
+          if (text.includes('login') || text.includes('sign in') || text.includes('session')) return 'login-session-gate';
+          if (h['x-frame-options']) return 'x-frame-options-block';
+          if (h['content-security-policy']) return 'csp-block';
+          return 'html-unexpected';
+        }
+        function headMap(headersObj) {
+          var out = {};
+          try {
+            headersObj.forEach(function (v, k) {
+              out[String(k || '').toLowerCase()] = String(v || '');
+            });
+          } catch (_) {}
+          return out;
+        }
         function ProxyLoader(config) {
           this.config = config;
           this.controller = null;
@@ -146,18 +169,54 @@ function buildWebViewSource(url) {
           fetch(url, {
             method: 'GET',
             redirect: 'follow',
-            headers: reqHeaders,
+            headers: withHeaders({
+              Accept: reqHeaders.Accept || 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
+              'Accept-Language': reqHeaders['Accept-Language'] || 'en-US,en;q=0.9',
+              ...reqHeaders,
+            }),
             signal: this.controller.signal,
           })
             .then(function (res) {
               var finalUrl = res.url || url;
-              logProxy('response', { type: context.type, url: url, finalUrl: finalUrl, status: res.status });
+              var lowerHeaders = headMap(res.headers);
+              logProxy('response', {
+                type: context.type,
+                url: url,
+                finalUrl: finalUrl,
+                status: res.status,
+                headers: {
+                  'content-type': lowerHeaders['content-type'] || '',
+                  'x-frame-options': lowerHeaders['x-frame-options'] || '',
+                  'content-security-policy': lowerHeaders['content-security-policy'] || '',
+                  server: lowerHeaders.server || '',
+                },
+              });
               if (!res.ok) {
                 throw new Error('HTTP ' + res.status + ' for ' + finalUrl);
               }
               if (isM3u8) {
                 lastManifestUrl = finalUrl;
                 return res.text().then(function (text) {
+                  var contentType = lowerHeaders['content-type'] || '';
+                  var looksHtml = /^\\s*</.test(String(text || '')) || /text\\/html/i.test(contentType);
+                  if (looksHtml) {
+                    var classification = classifyHtmlGate(text, lowerHeaders);
+                    logProxy('html_gate', {
+                      url: finalUrl,
+                      classification: classification,
+                      sample: String(text || '').slice(0, 300),
+                      contentType: contentType,
+                    });
+                    throw new Error('Playlist returned HTML gate: ' + classification);
+                  }
+                  if (!/#EXTM3U/i.test(String(text || ''))) {
+                    logProxy('manifest_mismatch', {
+                      url: finalUrl,
+                      contentType: contentType,
+                      sample: String(text || '').slice(0, 300),
+                    });
+                    throw new Error('Invalid m3u8 response payload');
+                  }
                   var rewritten = rewritePlaylistText(text, finalUrl);
                   logProxy('rewrite', { from: finalUrl, length: rewritten.length });
                   callbacks.onSuccess(
@@ -171,6 +230,10 @@ function buildWebViewSource(url) {
                 });
               }
               return res.arrayBuffer().then(function (ab) {
+                var contentType = lowerHeaders['content-type'] || '';
+                if (/text\\/html/i.test(contentType)) {
+                  throw new Error('Segment returned HTML content-type at ' + finalUrl);
+                }
                 callbacks.onSuccess(
                   {
                     url: finalUrl,
@@ -845,6 +908,29 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             style={styles.video}
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
+            javaScriptEnabled
+            domStorageEnabled
+            sharedCookiesEnabled
+            thirdPartyCookiesEnabled
+            mixedContentMode="always"
+            cacheEnabled
+            userAgent={WEBVIEW_UA}
+            originWhitelist={['*']}
+            setSupportMultipleWindows={false}
+            onShouldStartLoadWithRequest={(req) => {
+              if (playbackRoute !== 'hls-webview-proxy') return true;
+              const u = String(req?.url ?? '');
+              // Keep proxy playback inside internal HTML shell.
+              if (
+                u.startsWith('about:blank') ||
+                u.startsWith('data:text/html') ||
+                u.startsWith('https://localhost/')
+              ) {
+                return true;
+              }
+              console.log('[player][diag][proxy] blocked external nav:', u);
+              return false;
+            }}
             onMessage={(event) => {
               const raw = event?.nativeEvent?.data ?? '';
               console.log('[player][debug] webview player message:', raw);
@@ -881,7 +967,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             onLoadEnd={() => {
               if (playbackRoute !== 'hls-webview-proxy') return;
               try {
-                const setHeaders = JSON.stringify({ type: 'set-headers', headers });
+                const setHeaders = JSON.stringify({
+                  type: 'set-headers',
+                  headers: {
+                    ...headers,
+                    Accept: 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                  },
+                });
                 const setSrc = JSON.stringify({ type: 'set-src', url: uri });
                 webviewRef.current?.postMessage(setHeaders);
                 webviewRef.current?.postMessage(setSrc);
