@@ -10,6 +10,7 @@ import {
   AppState,
   ActivityIndicator,
   Animated,
+  Platform,
 } from 'react-native';
 import { Video } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +21,7 @@ import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
+import { VLCPlayer } from 'react-native-vlc-media-player';
 
 const STALL_TIMEOUT_MS = 15000;
 const MAX_RECOVERY_ATTEMPTS = 6;
@@ -49,11 +51,37 @@ function normalizePlaybackUrl(raw) {
 }
 
 function choosePlaybackRoute(url, declaredPlayerType) {
-  if (looksLikeHlsUrl(url)) return 'direct-hls';
   const pt = String(declaredPlayerType ?? '').toLowerCase();
   if (looksLikeEmbedUrl(url)) return 'embed-webview';
+  if (looksLikeHlsUrl(url)) {
+    return pt === 'vlc' ? 'direct-hls-vlc' : 'native-exo';
+  }
   if (pt === 'webview' || pt === 'vlc' || pt === 'ijk') return 'embed-webview';
-  return 'native';
+  return 'native-exo';
+}
+
+function isVlcFallbackHlsUrl(url) {
+  const s = String(url ?? '').toLowerCase();
+  if (!looksLikeHlsUrl(s)) return false;
+  if (s.includes('ycn-redirect')) return true;
+  if (s.includes('iptv')) return true;
+  if (s.includes('redirect')) return true;
+  if (/[?&](token|t|e|expires|exp|signature|sig)=/i.test(s)) return true;
+  return false;
+}
+
+function buildVlcInitOptions(headers = {}) {
+  const out = [];
+  const referer = String(headers?.Referer ?? '').trim();
+  const origin = String(headers?.Origin ?? '').trim();
+  const userAgent = String(headers?.['User-Agent'] ?? '').trim();
+  if (referer) out.push(`:http-referrer=${referer}`);
+  if (origin) out.push(`:http-origin=${origin}`);
+  if (userAgent) out.push(`:http-user-agent=${userAgent}`);
+  out.push(':network-caching=1500');
+  out.push(':live-caching=1500');
+  out.push(':http-reconnect=true');
+  return out;
 }
 
 function resolveM3u8Url(baseUrl, line) {
@@ -368,7 +396,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }),
   };
   const normalizedPlayerType = normalizePlayerType(channel?.playerType ?? channel?.player_type);
-  const [fallbackWebView, setFallbackWebView] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const [retryMessage, setRetryMessage] = useState('');
   const [playbackError, setPlaybackError] = useState('');
@@ -376,11 +403,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [qualityLevels, setQualityLevels] = useState([]);
   const [audioTracks, setAudioTracks] = useState([]);
   const isDirectHls = looksLikeHlsUrl(uri);
-  const effectivePlayerType = isDirectHls ? 'exo' : fallbackWebView ? 'webview' : normalizedPlayerType;
+  const shouldUseVlcFallback =
+    Platform.OS === 'android' && isDirectHls && (normalizedPlayerType === 'vlc' || isVlcFallbackHlsUrl(uri));
+  const effectivePlayerType = shouldUseVlcFallback ? 'vlc' : isDirectHls ? 'exo' : normalizedPlayerType;
   const playbackRoute = choosePlaybackRoute(uri, effectivePlayerType);
   const playbackUri = uri;
   const usesNativeVideo =
-    playbackRoute === 'direct-hls' || effectivePlayerType === 'exo' || effectivePlayerType === 'native';
+    playbackRoute === 'native-exo' || effectivePlayerType === 'exo' || effectivePlayerType === 'native';
+  const usesVlcEngine = playbackRoute === 'direct-hls-vlc';
   const usesWebEngine = playbackRoute === 'embed-webview';
   const liveLabel = 'LIVE';
 
@@ -399,6 +429,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const [isPlaying, setIsPlaying] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [vlcPaused, setVlcPaused] = useState(false);
 
   const [resizeMode, setResizeMode] = useState('contain');
   const sessionDeviceIdRef = useRef('');
@@ -415,11 +446,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   useEffect(() => {
     setCurrentUrlIndex(0);
-    setFallbackWebView(false);
     setIsBuffering(true);
     setRetryMessage('');
     setPlaybackError('');
     reconnectAttemptsRef.current = 0;
+    setVlcPaused(false);
     setQualityLevels([]);
     setAudioTracks([]);
     setPlayerEpoch((e) => e + 1);
@@ -577,6 +608,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         if (usesWebEngine) {
           webviewRef.current?.postMessage(JSON.stringify({ type: 'play' }));
           webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
+        } else if (usesVlcEngine) {
+          setVlcPaused(false);
+          setPlayerEpoch((e) => e + 1);
         } else {
           await videoRef.current?.replayAsync?.();
         }
@@ -588,14 +622,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         setCurrentUrlIndex((i) => i + 1);
         return;
       }
-      if (attempt >= 4 && usesNativeVideo && looksLikeHlsUrl(uri)) {
-        setRetryMessage('Inabadili player mode...');
-        setFallbackWebView(true);
-        return;
-      }
       setPlayerEpoch((e) => e + 1);
     }, waitMs);
-  }, [currentUrlIndex, usesWebEngine, uri, usesNativeVideo, streams.length]);
+  }, [currentUrlIndex, usesWebEngine, usesVlcEngine, uri, usesNativeVideo, streams.length]);
 
   // FALLBACK STREAM
   const onError = (error) => {
@@ -785,6 +814,15 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       const cmd = isPlaying ? { type: 'pause' } : { type: 'play' };
       webviewRef.current?.postMessage(JSON.stringify(cmd));
       setIsPlaying((v) => !v);
+      showControls();
+      return;
+    }
+    if (usesVlcEngine) {
+      setVlcPaused((v) => {
+        const next = !v;
+        setIsPlaying(!next);
+        return next;
+      });
       showControls();
       return;
     }
@@ -981,6 +1019,45 @@ export default function ChannelPlayerScreen({ route, navigation }) {
               } catch {
                 // ignore
               }
+            }}
+          />
+        ) : usesVlcEngine ? (
+          <VLCPlayer
+            key={`vlc-${playerEpoch}`}
+            source={{
+              uri: playbackUri,
+              initOptions: buildVlcInitOptions(headers),
+              autoplay: true,
+            }}
+            style={styles.video}
+            paused={vlcPaused}
+            autoplay
+            resizeMode={resizeMode}
+            onPlaying={() => {
+              setIsPlaying(true);
+              setIsBuffering(false);
+              setRetryMessage('');
+              setPlaybackError('');
+              reconnectAttemptsRef.current = 0;
+              clearStallTimer();
+            }}
+            onBuffering={() => {
+              setIsBuffering(true);
+              clearStallTimer();
+              stallTimerRef.current = setTimeout(() => {
+                scheduleRecovery('vlc-buffering-stall');
+              }, STALL_TIMEOUT_MS);
+            }}
+            onPaused={() => {
+              setIsPlaying(false);
+            }}
+            onStopped={() => {
+              setIsPlaying(false);
+              scheduleRecovery('vlc-stopped');
+            }}
+            onError={(err) => {
+              console.log('[player][debug] vlc error:', err);
+              onError(err);
             }}
           />
         ) : (

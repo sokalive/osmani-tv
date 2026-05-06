@@ -17,7 +17,8 @@
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        }
+        },
+        "NSLocalNetworkUsageDescription": "Osmani TV uses local network capabilities for reliable live stream playback."
       }
     },
     "android": {
@@ -38,7 +39,17 @@
       }
     },
     "plugins": [
-      "expo-video"
+      "expo-video",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraMavenRepos": [
+              "https://jitpack.io"
+            ]
+          }
+        }
+      ]
     ]
   }
 }
