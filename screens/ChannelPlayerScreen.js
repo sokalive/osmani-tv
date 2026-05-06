@@ -123,19 +123,25 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const channel = liveChannel ?? initialChannel;
 
   const streams = [
-    channel?.url,
-    channel?.backupStream1,
-    channel?.backupStream2,
+    channel?.url ?? channel?.stream_url,
+    channel?.backupStream1 ?? channel?.backup_stream_1,
+    channel?.backupStream2 ?? channel?.backup_stream_2,
   ].filter(Boolean);
 
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   const uri = streams[currentUrlIndex];
   const headers = {
-    ...(channel?.referer && { Referer: channel.referer }),
-    ...(channel?.origin && { Origin: channel.origin }),
-    ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
+    ...((channel?.referer ?? channel?.referrer) && {
+      Referer: channel?.referer ?? channel?.referrer,
+    }),
+    ...((channel?.origin ?? channel?.stream_origin) && {
+      Origin: channel?.origin ?? channel?.stream_origin,
+    }),
+    ...((channel?.userAgent ?? channel?.user_agent) && {
+      'User-Agent': channel?.userAgent ?? channel?.user_agent,
+    }),
   };
-  const normalizedPlayerType = normalizePlayerType(channel?.playerType);
+  const normalizedPlayerType = normalizePlayerType(channel?.playerType ?? channel?.player_type);
   const [fallbackWebView, setFallbackWebView] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const [retryMessage, setRetryMessage] = useState('');
@@ -201,6 +207,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     console.log('[player][debug] effective player type:', effectivePlayerType);
     console.log('[player][debug] final playback URL:', uri);
     console.log('[player][debug] request headers:', headers ?? {});
+    console.log('[player][debug] active source object:', {
+      uri,
+      headers,
+      player_type: normalizedPlayerType,
+      backup_1: streams[1] ?? null,
+      backup_2: streams[2] ?? null,
+    });
   }, [uri, headers, normalizedPlayerType, effectivePlayerType]);
 
   // Keep local channel snapshot in sync when route params change.
