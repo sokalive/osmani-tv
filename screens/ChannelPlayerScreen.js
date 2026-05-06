@@ -49,6 +49,7 @@ function normalizePlaybackUrl(raw) {
 }
 
 function choosePlaybackRoute(url, declaredPlayerType) {
+  if (looksLikeHlsUrl(url)) return 'direct-hls';
   const pt = String(declaredPlayerType ?? '').toLowerCase();
   if (looksLikeEmbedUrl(url)) return 'embed-webview';
   if (pt === 'webview' || pt === 'vlc' || pt === 'ijk') return 'embed-webview';
@@ -374,10 +375,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [playerEpoch, setPlayerEpoch] = useState(0);
   const [qualityLevels, setQualityLevels] = useState([]);
   const [audioTracks, setAudioTracks] = useState([]);
-  const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
+  const isDirectHls = looksLikeHlsUrl(uri);
+  const effectivePlayerType = isDirectHls ? 'exo' : fallbackWebView ? 'webview' : normalizedPlayerType;
   const playbackRoute = choosePlaybackRoute(uri, effectivePlayerType);
   const playbackUri = uri;
-  const usesNativeVideo = effectivePlayerType === 'exo' || effectivePlayerType === 'native';
+  const usesNativeVideo =
+    playbackRoute === 'direct-hls' || effectivePlayerType === 'exo' || effectivePlayerType === 'native';
   const usesWebEngine = playbackRoute === 'embed-webview';
   const liveLabel = 'LIVE';
 
