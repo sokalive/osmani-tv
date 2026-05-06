@@ -17,6 +17,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
+import { BASE_URL } from '../api';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
@@ -56,6 +57,20 @@ function choosePlaybackRoute(url, declaredPlayerType) {
   return 'native';
 }
 
+function buildServerProxyUrl(sourceUrl, headers = {}) {
+  const src = String(sourceUrl ?? '').trim();
+  if (!src) return '';
+  const params = new URLSearchParams();
+  params.set('url', src);
+  const referer = String(headers?.Referer ?? '').trim();
+  const origin = String(headers?.Origin ?? '').trim();
+  const ua = String(headers?.['User-Agent'] ?? '').trim();
+  if (referer) params.set('referer', referer);
+  if (origin) params.set('origin', origin);
+  if (ua) params.set('ua', ua);
+  return `${BASE_URL}/api/stream-proxy?${params.toString()}`;
+}
+
 function resolveM3u8Url(baseUrl, line) {
   try {
     return new URL(line, baseUrl).toString();
@@ -86,7 +101,7 @@ function buildWebViewSource(url) {
         var video = document.getElementById('video');
         var hls = null;
         var fitMode = 'contain';
-        var lastManifestUrl = initialSrc;
+        var lastManifestUrl = '';
         function post(kind, payload) {
           try {
             window.ReactNativeWebView.postMessage(JSON.stringify({ kind: kind, payload: payload || null }));
@@ -377,6 +392,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [audioTracks, setAudioTracks] = useState([]);
   const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
   const playbackRoute = choosePlaybackRoute(uri, effectivePlayerType);
+  const playbackUri =
+    playbackRoute === 'hls-webview-proxy' ? buildServerProxyUrl(uri, headers) : uri;
   const usesNativeVideo = effectivePlayerType === 'exo' || effectivePlayerType === 'native';
   const usesWebEngine = playbackRoute === 'hls-webview-proxy' || playbackRoute === 'embed-webview';
   const liveLabel = 'LIVE';
@@ -430,13 +447,20 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, []);
 
   useEffect(() => {
-    if (!uri) return;
+    if (!playbackUri) return;
     console.log('[player][debug] selected player type:', normalizedPlayerType);
     console.log('[player][debug] effective player type:', effectivePlayerType);
-    console.log('[player][debug] final playback URL:', uri);
+    console.log('[player][debug] final playback URL:', playbackUri);
+    if (playbackRoute === 'hls-webview-proxy') {
+      console.log('[player][debug] hls proxy active (client never hits direct stream URL)', {
+        original_url: uri,
+        proxied_url: playbackUri,
+      });
+    }
     console.log('[player][debug] request headers:', headers ?? {});
     console.log('[player][debug] active source object:', {
-      uri,
+      uri: playbackUri,
+      original_uri: uri,
       headers,
       player_type: normalizedPlayerType,
       effective_player_type: effectivePlayerType,
@@ -444,15 +468,15 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       backup_1: streams[1] ?? null,
       backup_2: streams[2] ?? null,
     });
-  }, [uri, headers, normalizedPlayerType, effectivePlayerType, playbackRoute]);
+  }, [uri, playbackUri, headers, normalizedPlayerType, effectivePlayerType, playbackRoute]);
 
   const runHlsFailureDiagnostics = useCallback(async () => {
-    if (!uri || !looksLikeHlsUrl(uri)) return;
+    if (!playbackUri || !looksLikeHlsUrl(uri)) return;
     try {
-      console.log('[player][diag] start m3u8 diagnostics:', uri);
-      const masterRes = await fetch(uri, { headers });
+      console.log('[player][diag] start m3u8 diagnostics:', playbackUri);
+      const masterRes = await fetch(playbackUri, { headers: {} });
       const masterText = await masterRes.text();
-      console.log('[player][diag] master status:', masterRes.status, 'url:', masterRes.url || uri);
+      console.log('[player][diag] master status:', masterRes.status, 'url:', masterRes.url || playbackUri);
       if (!masterRes.ok) return;
       const masterLines = String(masterText)
         .split('\n')
@@ -462,13 +486,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       if (!firstChildCandidate) {
         const firstSegment = masterLines.find((l) => /\.(ts|m4s|mp4)(\?|$)/i.test(l));
         if (!firstSegment) return;
-        const segUrl = resolveM3u8Url(masterRes.url || uri, firstSegment);
-        const segRes = await fetch(segUrl, { headers });
+        const segUrl = resolveM3u8Url(masterRes.url || playbackUri, firstSegment);
+        const segRes = await fetch(segUrl, { headers: {} });
         console.log('[player][diag] first segment status:', segRes.status, 'url:', segRes.url || segUrl);
         return;
       }
-      const childUrl = resolveM3u8Url(masterRes.url || uri, firstChildCandidate);
-      const childRes = await fetch(childUrl, { headers });
+      const childUrl = resolveM3u8Url(masterRes.url || playbackUri, firstChildCandidate);
+      const childRes = await fetch(childUrl, { headers: {} });
       const childText = await childRes.text();
       console.log('[player][diag] child playlist status:', childRes.status, 'url:', childRes.url || childUrl);
       if (!childRes.ok) return;
@@ -479,12 +503,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       const firstSegment = childLines.find((l) => /\.(ts|m4s|mp4)(\?|$)/i.test(l));
       if (!firstSegment) return;
       const segUrl = resolveM3u8Url(childRes.url || childUrl, firstSegment);
-      const segRes = await fetch(segUrl, { headers });
+      const segRes = await fetch(segUrl, { headers: {} });
       console.log('[player][diag] first segment status:', segRes.status, 'url:', segRes.url || segUrl);
     } catch (err) {
       console.log('[player][diag] diagnostics error:', String(err));
     }
-  }, [uri, headers]);
+  }, [uri, playbackUri]);
 
   // Keep local channel snapshot in sync when route params change.
   useEffect(() => {
@@ -795,7 +819,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   };
 
   useEffect(() => {
-    if (!uri) return;
+    if (!playbackUri) return;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
@@ -803,7 +827,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     clearStallTimer();
     setPlaybackError('');
     setRetryMessage((m) => (m.startsWith('Inajaribu') || m.startsWith('Inabadili') ? m : ''));
-  }, [uri, effectivePlayerType, playerEpoch, clearStallTimer]);
+  }, [playbackUri, effectivePlayerType, playerEpoch, clearStallTimer]);
 
   const bottomActions = [
     {
@@ -903,7 +927,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             ref={webviewRef}
             source={
               playbackRoute === 'hls-webview-proxy'
-                ? buildWebViewSource(uri)
+                ? buildWebViewSource(playbackUri)
                 : { uri }
             }
             style={styles.video}
@@ -976,7 +1000,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
                     'Accept-Language': 'en-US,en;q=0.9',
                   },
                 });
-                const setSrc = JSON.stringify({ type: 'set-src', url: uri });
+                const setSrc = JSON.stringify({ type: 'set-src', url: playbackUri });
                 webviewRef.current?.postMessage(setHeaders);
                 webviewRef.current?.postMessage(setSrc);
               } catch {

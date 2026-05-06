@@ -40,6 +40,8 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 const PORT = process.env.PORT || 10000;
+const DEFAULT_PROXY_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 // DEBUG
 console.log("DATABASE_URL:", process.env.DATABASE_URL);
@@ -66,6 +68,188 @@ app.get("/", (req, res) => {
 // API TEST
 app.get("/api", (req, res) => {
   res.json({ message: "API inafanya kazi 🔥" });
+});
+
+function applyProxyCors(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept");
+  res.setHeader("Access-Control-Expose-Headers", "Content-Type, Content-Length");
+}
+
+function safeParseUrl(value) {
+  try {
+    const u = new URL(String(value ?? "").trim());
+    if (u.protocol === "http:" || u.protocol === "https:") return u;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function detectHtmlBlock(text) {
+  const s = String(text ?? "").toLowerCase();
+  if (!s) return null;
+  if (s.includes("sorry, you have been blocked") || s.includes("cloudflare")) return "cloudflare-block";
+  if (s.includes("attention required") || s.includes("just a moment")) return "anti-bot-page";
+  if (s.includes("forbidden") || s.includes("hotlink") || s.includes("referer")) return "anti-hotlink-page";
+  if (s.includes("expired") || s.includes("token")) return "expired-token";
+  if (s.includes("login") || s.includes("sign in") || s.includes("session")) return "login-session-gate";
+  return "html-unexpected";
+}
+
+function buildProxyUrl(req, absoluteTarget, upstreamHeaders) {
+  const next = new URL(`${req.protocol}://${req.get("host")}/api/stream-proxy`);
+  next.searchParams.set("url", absoluteTarget);
+  if (upstreamHeaders.referer) next.searchParams.set("referer", upstreamHeaders.referer);
+  if (upstreamHeaders.origin) next.searchParams.set("origin", upstreamHeaders.origin);
+  if (upstreamHeaders.userAgent) next.searchParams.set("ua", upstreamHeaders.userAgent);
+  return next.toString();
+}
+
+function rewriteAttributeUris(line, baseUrl, req, upstreamHeaders) {
+  return String(line).replace(/URI="([^"]+)"/g, (_m, rawUri) => {
+    try {
+      const absolute = new URL(rawUri, baseUrl).toString();
+      return `URI="${buildProxyUrl(req, absolute, upstreamHeaders)}"`;
+    } catch {
+      return `URI="${rawUri}"`;
+    }
+  });
+}
+
+function rewriteManifestText(text, baseUrl, req, upstreamHeaders) {
+  const lines = String(text ?? "").split("\n");
+  const rewritten = lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return line;
+    if (trimmed.startsWith("#")) {
+      if (trimmed.includes('URI="')) {
+        return rewriteAttributeUris(line, baseUrl, req, upstreamHeaders);
+      }
+      return line;
+    }
+    try {
+      const absolute = new URL(trimmed, baseUrl).toString();
+      return buildProxyUrl(req, absolute, upstreamHeaders);
+    } catch {
+      return line;
+    }
+  });
+  return rewritten.join("\n");
+}
+
+app.options("/api/stream-proxy", (req, res) => {
+  applyProxyCors(res);
+  return res.sendStatus(204);
+});
+
+app.get("/api/stream-proxy", async (req, res) => {
+  applyProxyCors(res);
+  const sourceUrl = safeParseUrl(req.query.url);
+  if (!sourceUrl) {
+    return res.status(400).json({ error: "Missing or invalid url query parameter" });
+  }
+
+  const upstreamHeaders = {
+    referer: String(req.query.referer ?? "").trim(),
+    origin: String(req.query.origin ?? "").trim(),
+    userAgent: String(req.query.ua ?? "").trim(),
+  };
+
+  const requestHeaders = {
+    Accept: "application/vnd.apple.mpegurl,application/x-mpegURL,video/*,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "User-Agent": upstreamHeaders.userAgent || DEFAULT_PROXY_UA,
+    Connection: "keep-alive",
+  };
+  if (safeParseUrl(upstreamHeaders.referer)) requestHeaders.Referer = upstreamHeaders.referer;
+  if (safeParseUrl(upstreamHeaders.origin)) requestHeaders.Origin = upstreamHeaders.origin;
+
+  try {
+    const upstreamRes = await fetch(sourceUrl.toString(), {
+      method: "GET",
+      redirect: "follow",
+      headers: requestHeaders,
+    });
+    const finalUrl = upstreamRes.url || sourceUrl.toString();
+    const contentType = String(upstreamRes.headers.get("content-type") || "").toLowerCase();
+
+    console.log("[stream-proxy] upstream", {
+      source: sourceUrl.toString(),
+      finalUrl,
+      status: upstreamRes.status,
+      contentType,
+      referer: requestHeaders.Referer || null,
+      origin: requestHeaders.Origin || null,
+      userAgent: requestHeaders["User-Agent"] || null,
+    });
+
+    if (!upstreamRes.ok) {
+      const bodyText = await upstreamRes.text().catch(() => "");
+      const classification = /text\/html/i.test(contentType) ? detectHtmlBlock(bodyText) : null;
+      console.log("[stream-proxy] upstream-failure", {
+        status: upstreamRes.status,
+        finalUrl,
+        classification,
+        sample: String(bodyText).slice(0, 300),
+      });
+      return res.status(upstreamRes.status).json({
+        error: "Upstream request failed",
+        status: upstreamRes.status,
+        final_url: finalUrl,
+        classification,
+      });
+    }
+
+    const finalBase = safeParseUrl(finalUrl)?.toString() || finalUrl;
+    const isManifest =
+      /\.m3u8(?:$|\?)/i.test(finalUrl) ||
+      /application\/vnd\.apple\.mpegurl|application\/x-mpegurl|audio\/mpegurl/i.test(contentType);
+
+    if (isManifest) {
+      const manifestText = await upstreamRes.text();
+      if (!/#EXTM3U/i.test(manifestText)) {
+        const classification = detectHtmlBlock(manifestText);
+        console.log("[stream-proxy] manifest-invalid", {
+          finalUrl,
+          classification,
+          sample: String(manifestText).slice(0, 300),
+        });
+        return res.status(502).json({
+          error: "Upstream did not return a valid manifest",
+          final_url: finalUrl,
+          classification,
+        });
+      }
+      const rewritten = rewriteManifestText(manifestText, finalBase, req, upstreamHeaders);
+      console.log("[stream-proxy] manifest-rewrite", {
+        finalUrl,
+        rewrittenLength: rewritten.length,
+      });
+      res.setHeader("Content-Type", "application/vnd.apple.mpegurl; charset=utf-8");
+      return res.status(200).send(rewritten);
+    }
+
+    const bodyArrayBuffer = await upstreamRes.arrayBuffer();
+    const outBuffer = Buffer.from(bodyArrayBuffer);
+    if (contentType) res.setHeader("Content-Type", contentType);
+    const contentLength = upstreamRes.headers.get("content-length");
+    if (contentLength) res.setHeader("Content-Length", contentLength);
+    console.log("[stream-proxy] media-pass", {
+      finalUrl,
+      status: upstreamRes.status,
+      bytes: outBuffer.length,
+      contentType,
+    });
+    return res.status(200).send(outBuffer);
+  } catch (err) {
+    console.error("[stream-proxy] proxy-error", {
+      source: sourceUrl.toString(),
+      error: String(err),
+    });
+    return res.status(500).json({ error: "Proxy request failed", details: String(err) });
+  }
 });
 
 // ======================
