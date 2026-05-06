@@ -7,6 +7,7 @@ import { getDeviceIdentity } from '../lib/deviceIdentity';
 const INSTALL_TRACKED_KEY = 'osmani:install_tracked_v1';
 const PING_MS = 30000;
 const RETRY_DELAYS_MS = [0, 700, 1800];
+const ANALYTICS_DEBUG = true;
 
 function detectCountry() {
   try {
@@ -37,6 +38,11 @@ async function wait(ms) {
 
 async function postJson(path, body, { retries = RETRY_DELAYS_MS } = {}) {
   const url = `${BASE_URL}${path}`;
+  if (ANALYTICS_DEBUG) {
+    console.log('[analytics] resolved BASE_URL:', BASE_URL);
+    console.log('[analytics] request URL:', url);
+    console.log('[analytics] payload:', JSON.stringify(body));
+  }
   let lastError = null;
   for (let i = 0; i < retries.length; i++) {
     const delay = retries[i];
@@ -47,10 +53,18 @@ async function postJson(path, body, { retries = RETRY_DELAYS_MS } = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
+      const responseText = await res.text();
+      if (ANALYTICS_DEBUG) {
+        console.log('[analytics] response status:', res.status);
+        console.log('[analytics] response body:', responseText);
+      }
       if (res.ok) return true;
       lastError = new Error(`HTTP ${res.status}`);
     } catch (err) {
       lastError = err;
+      if (ANALYTICS_DEBUG) {
+        console.log('[analytics] network error:', String(err));
+      }
     }
   }
   try {
@@ -64,8 +78,19 @@ async function postJson(path, body, { retries = RETRY_DELAYS_MS } = {}) {
 export async function trackInstallOnce() {
   try {
     const already = await AsyncStorage.getItem(INSTALL_TRACKED_KEY);
-    if (already === '1') return;
+    if (ANALYTICS_DEBUG) {
+      console.log('[analytics] install dedupe flag:', already);
+    }
+    if (already === '1') {
+      if (ANALYTICS_DEBUG) {
+        console.log('[analytics] install skipped: already tracked');
+      }
+      return;
+    }
     const { deviceId } = await getDeviceIdentity();
+    if (ANALYTICS_DEBUG) {
+      console.log('[analytics] install device_id:', deviceId);
+    }
     const ok = await postJson('/api/analytics/install', {
       device_id: deviceId,
       platform: Platform.OS,
@@ -75,6 +100,11 @@ export async function trackInstallOnce() {
     });
     if (ok) {
       await AsyncStorage.setItem(INSTALL_TRACKED_KEY, '1');
+      if (ANALYTICS_DEBUG) {
+        console.log('[analytics] install marked as tracked');
+      }
+    } else if (ANALYTICS_DEBUG) {
+      console.log('[analytics] install not marked tracked due to failed request');
     }
   } catch {
     // Analytics must not break app launch.
@@ -84,6 +114,13 @@ export async function trackInstallOnce() {
 export async function startLiveSession(channelId, channelName) {
   try {
     const { deviceId } = await getDeviceIdentity();
+    if (ANALYTICS_DEBUG) {
+      console.log('[analytics] session start values:', {
+        device_id: deviceId,
+        channel_id: String(channelId ?? ''),
+        channel_name: String(channelName ?? ''),
+      });
+    }
     await postJson('/api/analytics/session/start', {
       device_id: deviceId,
       channel_id: String(channelId ?? ''),
@@ -99,6 +136,12 @@ export async function startLiveSession(channelId, channelName) {
 
 export async function stopLiveSession(deviceId, channelId) {
   if (!deviceId) return;
+  if (ANALYTICS_DEBUG) {
+    console.log('[analytics] session end values:', {
+      device_id: deviceId,
+      channel_id: String(channelId ?? ''),
+    });
+  }
   await postJson('/api/analytics/session/end', {
     device_id: deviceId,
     channel_id: String(channelId ?? ''),
@@ -108,6 +151,13 @@ export async function stopLiveSession(deviceId, channelId) {
 
 export async function pingLiveSession(deviceId, channelId) {
   if (!deviceId) return;
+  if (ANALYTICS_DEBUG) {
+    console.log('[analytics] heartbeat values:', {
+      device_id: deviceId,
+      channel_id: String(channelId ?? ''),
+      every_ms: PING_MS,
+    });
+  }
   await postJson('/api/analytics/session/heartbeat', {
     device_id: deviceId,
     channel_id: String(channelId ?? ''),

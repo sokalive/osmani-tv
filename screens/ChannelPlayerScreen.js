@@ -105,26 +105,43 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     const channelId = channel?.id ?? channel?.channel_id ?? channel?.name ?? 'unknown';
     const channelName = channel?.name ?? '';
     sessionChannelIdRef.current = String(channelId);
+    console.log('[player][analytics] mounting session with channel:', {
+      channel_id: sessionChannelIdRef.current,
+      channel_name: channelName,
+    });
 
     (async () => {
       const deviceId = await startLiveSession(channelId, channelName);
       if (cancelled) return;
       sessionDeviceIdRef.current = deviceId;
       stopSentRef.current = false;
+      console.log('[player][analytics] session started with device_id:', deviceId);
 
       pingTimerRef.current = setInterval(() => {
+        console.log('[player][analytics] heartbeat tick', {
+          device_id: sessionDeviceIdRef.current,
+          channel_id: sessionChannelIdRef.current,
+          interval_ms: PING_MS,
+        });
         void pingLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
       }, PING_MS);
+      console.log('[player][analytics] heartbeat timer started:', PING_MS);
     })();
 
     return () => {
       cancelled = true;
+      console.log('[player][analytics] cleanup session effect');
       if (pingTimerRef.current) {
         clearInterval(pingTimerRef.current);
         pingTimerRef.current = null;
+        console.log('[player][analytics] heartbeat timer cleared on cleanup');
       }
       if (!stopSentRef.current) {
         stopSentRef.current = true;
+        console.log('[player][analytics] sending session end on cleanup', {
+          device_id: sessionDeviceIdRef.current,
+          channel_id: sessionChannelIdRef.current,
+        });
         void stopLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
       }
     };
@@ -133,13 +150,19 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   // If app goes to background while player is open, close analytics session safely.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState) => {
+      console.log('[player][analytics] app state changed:', nextState);
       if (nextState === 'active') return;
       if (pingTimerRef.current) {
         clearInterval(pingTimerRef.current);
         pingTimerRef.current = null;
+        console.log('[player][analytics] heartbeat timer cleared on app state change');
       }
       if (!stopSentRef.current) {
         stopSentRef.current = true;
+        console.log('[player][analytics] sending session end on app state change', {
+          device_id: sessionDeviceIdRef.current,
+          channel_id: sessionChannelIdRef.current,
+        });
         void stopLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
       }
     });
