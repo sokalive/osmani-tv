@@ -35,6 +35,10 @@ function looksLikeEmbedUrl(url) {
   return s.includes('player.php') || s.includes('embed') || s.includes('iframe');
 }
 
+function isHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value ?? '').trim());
+}
+
 function normalizePlaybackUrl(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return '';
@@ -46,8 +50,9 @@ function normalizePlaybackUrl(raw) {
 
 function choosePlaybackRoute(url, declaredPlayerType) {
   const pt = String(declaredPlayerType ?? '').toLowerCase();
-  if (looksLikeEmbedUrl(url) || pt === 'webview') return 'embed-webview';
+  if (looksLikeEmbedUrl(url)) return 'embed-webview';
   if (looksLikeHlsUrl(url)) return 'hls-webview-proxy';
+  if (pt === 'webview') return 'embed-webview';
   return 'native';
 }
 
@@ -77,8 +82,7 @@ function buildWebViewSource(url) {
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
     <script>
       (function () {
-        var initialSrc = ${escaped};
-        var src = initialSrc;
+        var src = '';
         var video = document.getElementById('video');
         var hls = null;
         var fitMode = 'contain';
@@ -288,10 +292,7 @@ function buildWebViewSource(url) {
             post('hls_ready', { details: hls && hls.levels ? hls.levels.length : 0 });
           });
           hls.on(Hls.Events.ERROR, function (event, data) { post('hls_error', data); });
-          hls.loadSource(normalizeUrl(src));
           hls.attachMedia(video);
-        } else {
-          video.src = normalizeUrl(src);
         }
         video.addEventListener('error', function () {
           post('video_error', { code: video.error ? video.error.code : null });
@@ -356,11 +357,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   const uri = streams[currentUrlIndex];
   const headers = {
-    ...((channel?.referer ?? channel?.referrer) && {
-      Referer: channel?.referer ?? channel?.referrer,
+    ...(isHttpUrl(channel?.referer ?? channel?.referrer) && {
+      Referer: String(channel?.referer ?? channel?.referrer).trim(),
     }),
-    ...((channel?.origin ?? channel?.stream_origin) && {
-      Origin: channel?.origin ?? channel?.stream_origin,
+    ...(isHttpUrl(channel?.origin ?? channel?.stream_origin) && {
+      Origin: String(channel?.origin ?? channel?.stream_origin).trim(),
     }),
     ...((channel?.userAgent ?? channel?.user_agent) && {
       'User-Agent': channel?.userAgent ?? channel?.user_agent,
