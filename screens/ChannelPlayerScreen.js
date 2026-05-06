@@ -8,21 +8,62 @@ import {
   BackHandler,
   Alert,
   AppState,
+  ActivityIndicator,
 } from 'react-native';
 import { Video } from 'expo-av';
-import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
+import { buildStreamRequestHeaders, normalizePlayerType } from '../lib/channelStream';
 
-function formatTime(ms = 0) {
-  const total = Math.floor(ms / 1000);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+function looksLikeHlsUrl(url) {
+  return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
+}
+
+function buildWebViewSource(url) {
+  if (!looksLikeHlsUrl(url)) return { uri: url };
+  const escaped = JSON.stringify(String(url));
+  const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <style>
+      html, body { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
+      video { width:100%; height:100%; background:#000; object-fit:contain; }
+    </style>
+  </head>
+  <body>
+    <video id="video" controls autoplay playsinline webkit-playsinline></video>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
+    <script>
+      (function () {
+        var src = ${escaped};
+        var video = document.getElementById('video');
+        function post(kind, payload) {
+          try {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ kind: kind, payload: payload || null }));
+          } catch (e) {}
+        }
+        if (window.Hls && window.Hls.isSupported()) {
+          var hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+          hls.on(Hls.Events.ERROR, function (event, data) { post('hls_error', data); });
+          hls.loadSource(src);
+          hls.attachMedia(video);
+        } else {
+          video.src = src;
+        }
+        video.addEventListener('error', function () {
+          post('video_error', { code: video.error ? video.error.code : null });
+        });
+      })();
+    </script>
+  </body>
+</html>`;
+  return { html, baseUrl: 'https://localhost/' };
 }
 
 export default function ChannelPlayerScreen({ route, navigation }) {
@@ -40,25 +81,19 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   const uri = streams[currentUrlIndex];
-
-  const headers = {
-    ...(channel?.referer && { Referer: channel.referer }),
-    ...(channel?.origin && { Origin: channel.origin }),
-    ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
-  };
-
-  const playerType = channel?.playerType || 'exo';
+  const headers = buildStreamRequestHeaders(channel);
+  const normalizedPlayerType = normalizePlayerType(channel?.playerType);
+  const [fallbackWebView, setFallbackWebView] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(true);
+  const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
+  const usesNativeVideo = effectivePlayerType !== 'webview';
+  const liveLabel = 'LIVE';
 
   const videoRef = useRef(null);
   const hideTimer = useRef(null);
 
   const [isPlaying, setIsPlaying] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
-
-  const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [sliderValue, setSliderValue] = useState(0);
 
   const [resizeMode, setResizeMode] = useState('contain');
   const sessionDeviceIdRef = useRef('');
@@ -72,6 +107,47 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       Alert.alert('ERROR', 'Hakuna stream URL 😢');
     }
   }, [uri]);
+
+  useEffect(() => {
+    setCurrentUrlIndex(0);
+    setFallbackWebView(false);
+    setIsBuffering(true);
+  }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
+
+  // Temporary diagnostics for stream compatibility failures.
+  useEffect(() => {
+    let cancelled = false;
+    if (!uri) return undefined;
+    console.log('[player][debug] selected player type:', normalizedPlayerType);
+    console.log('[player][debug] effective player type:', effectivePlayerType);
+    console.log('[player][debug] final playback URL:', uri);
+    console.log('[player][debug] request headers:', headers ?? {});
+    const probe = async () => {
+      try {
+        const res = await fetch(uri, { method: 'GET', headers: headers ?? {} });
+        if (cancelled) return;
+        const responseHeaders = {};
+        try {
+          res.headers.forEach((v, k) => {
+            responseHeaders[k] = v;
+          });
+        } catch {
+          // ignore headers iteration issues
+        }
+        console.log('[player][debug] probe status:', res.status);
+        console.log('[player][debug] probe final URL:', res.url || uri);
+        console.log('[player][debug] probe headers:', responseHeaders);
+      } catch (err) {
+        if (!cancelled) {
+          console.log('[player][debug] probe network/tls error:', String(err));
+        }
+      }
+    };
+    void probe();
+    return () => {
+      cancelled = true;
+    };
+  }, [uri, headers, normalizedPlayerType, effectivePlayerType]);
 
   // Keep local channel snapshot in sync when route params change.
   useEffect(() => {
@@ -123,9 +199,25 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, [rawChannels, freeMode, liveChannel, route?.params?.channel, navigation, channelDisabledNotified]);
 
   // FALLBACK STREAM
-  const onError = () => {
+  const onError = (error) => {
+    console.log('[player][debug] playback error:', {
+      player_type: effectivePlayerType,
+      selected_player: normalizedPlayerType,
+      url: uri,
+      current_index: currentUrlIndex,
+      total_streams: streams.length,
+      error,
+    });
     if (currentUrlIndex < streams.length - 1) {
       setCurrentUrlIndex((i) => i + 1);
+      setIsBuffering(true);
+      return;
+    }
+    // Compatibility fallback: tokenized/redirected HLS may fail in native engine on some devices.
+    if (usesNativeVideo && looksLikeHlsUrl(uri)) {
+      console.log('[player][debug] switching fallback engine to webview/hls.js');
+      setFallbackWebView(true);
+      setIsBuffering(true);
     } else {
       Alert.alert('ERROR', 'Stream zote zimegoma 😢');
     }
@@ -238,15 +330,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   // STATUS
   const onStatusUpdate = (status) => {
-    if (!status.isLoaded) return;
-
-    setDuration(status.durationMillis || 0);
-
-    if (!isSeeking) {
-      setPosition(status.positionMillis || 0);
-      setSliderValue(status.positionMillis || 0);
+    if (!status.isLoaded) {
+      if (status?.error) {
+        console.log('[player][debug] status load error:', status.error);
+      }
+      return;
     }
-
+    setIsBuffering(Boolean(status.isBuffering));
     setIsPlaying(status.isPlaying);
 
     if (status.isPlaying) startHideTimer();
@@ -263,22 +353,20 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     showControls();
   };
 
-  // SEEK
-  const onSeekStart = () => setIsSeeking(true);
-
-  const onSeekComplete = async (value) => {
-    setIsSeeking(false);
-    await videoRef.current.setPositionAsync(value);
-  };
-
   return (
     <View style={styles.root}>
 
       {/* VIDEO / WEBVIEW */}
       <Pressable style={{ flex: 1 }} onPress={showControls}>
 
-        {playerType === 'webview' ? (
-          <WebView source={{ uri }} style={styles.video} />
+        {effectivePlayerType === 'webview' ? (
+          <WebView
+            source={buildWebViewSource(uri)}
+            style={styles.video}
+            onMessage={(event) => {
+              console.log('[player][debug] webview player message:', event?.nativeEvent?.data ?? '');
+            }}
+          />
         ) : (
           <Video
             ref={videoRef}
@@ -306,6 +394,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
             {/* CENTER */}
             <View style={styles.center}>
+              {isBuffering ? (
+                <View style={styles.bufferingWrap}>
+                  <ActivityIndicator size="large" color="#FFFFFF" />
+                </View>
+              ) : null}
               <Pressable onPress={onPlayPause} style={styles.playBtn}>
                 <Ionicons
                   name={isPlaying ? 'pause' : 'play'}
@@ -315,24 +408,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
               </Pressable>
             </View>
 
-            {/* BOTTOM */}
             <View style={styles.bottom}>
-              <Text style={styles.time}>{formatTime(position)}</Text>
-
-              <Slider
-                style={{ flex: 1 }}
-                minimumValue={0}
-                maximumValue={duration || 1}
-                value={sliderValue}
-                onSlidingStart={onSeekStart}
-                onSlidingComplete={onSeekComplete}
-                onValueChange={setSliderValue}
-                minimumTrackTintColor="#fff"
-                maximumTrackTintColor="#777"
-                thumbTintColor="#fff"
-              />
-
-              <Text style={styles.time}>{formatTime(duration)}</Text>
+              <View style={styles.liveBadge}>
+                <Text style={styles.liveBadgeText}>{liveLabel}</Text>
+              </View>
             </View>
 
           </View>
@@ -368,6 +447,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  bufferingWrap: {
+    position: 'absolute',
+    top: '38%',
+    alignSelf: 'center',
+    zIndex: 12,
+  },
 
   playBtn: {
     width: 90,
@@ -384,13 +469,19 @@ const styles = StyleSheet.create({
     left: 10,
     right: 10,
     flexDirection: 'row',
+    justifyContent: 'flex-end',
     alignItems: 'center',
   },
-
-  time: {
+  liveBadge: {
+    backgroundColor: '#DC2626',
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  liveBadgeText: {
     color: '#fff',
-    width: 50,
-    textAlign: 'center',
+    fontWeight: '700',
+    fontSize: 12,
   },
 
   title: {
