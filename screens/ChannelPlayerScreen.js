@@ -23,10 +23,6 @@ import { normalizePlayerType } from '../lib/channelStream';
 
 const STALL_TIMEOUT_MS = 15000;
 const MAX_RECOVERY_ATTEMPTS = 6;
-const LIVE_EDGE_TARGET_BACKOFF_MS = 250;
-const PLAYBACK_PROGRESS_MIN_DELTA_MS = 120;
-const PLAYBACK_FREEZE_DETECT_MS = 7000;
-const PLAYBACK_DIAG_INTERVAL_MS = 2500;
 
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
@@ -157,12 +153,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const reconnectTimerRef = useRef(null);
   const stallTimerRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
-  const pendingLiveEdgeAttachRef = useRef(true);
-  const liveEdgeSeekCountRef = useRef(0);
-  const lastPlaybackPositionRef = useRef(0);
-  const lastProgressAtRef = useRef(0);
-  const freezeRecoveryTriggeredRef = useRef(false);
-  const lastPlaybackDiagAtRef = useRef(0);
   const lastStatusRef = useRef({
     isLoaded: null,
     isBuffering: null,
@@ -193,12 +183,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setRetryMessage('');
     setPlaybackError('');
     reconnectAttemptsRef.current = 0;
-    pendingLiveEdgeAttachRef.current = true;
-    liveEdgeSeekCountRef.current = 0;
-    lastPlaybackPositionRef.current = 0;
-    lastProgressAtRef.current = Date.now();
-    freezeRecoveryTriggeredRef.current = false;
-    lastPlaybackDiagAtRef.current = 0;
     setQualityLevels([]);
     setAudioTracks([]);
     setPlayerEpoch((e) => e + 1);
@@ -275,8 +259,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
   }, []);
 
-  const scheduleRecovery = useCallback((reason, options = {}) => {
-    const { hardRecovery = false } = options;
+  const scheduleRecovery = useCallback((reason) => {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
@@ -309,20 +292,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           webviewRef.current?.postMessage(JSON.stringify({ type: 'play' }));
           webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
         } else {
-          if (looksLikeHlsUrl(uri)) {
-            if (hardRecovery) {
-              pendingLiveEdgeAttachRef.current = true;
-            }
-            console.log('[player][diag][recovery] native HLS remount', {
-              reason,
-              attempt,
-              hardRecovery,
-              remountReason: hardRecovery ? 'frozen-playback' : 'fatal-error',
-            });
-            setPlayerEpoch((e) => e + 1);
-          } else {
-            await videoRef.current?.replayAsync?.();
-          }
+          await videoRef.current?.replayAsync?.();
         }
       } catch (err) {
         console.log('[player][debug] recovery replay error:', String(err));
@@ -337,10 +307,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         setFallbackWebView(true);
         return;
       }
-      // Native live HLS already bumped epoch inside try.
-      if (!(looksLikeHlsUrl(uri) && effectivePlayerType !== 'webview')) {
-        setPlayerEpoch((e) => e + 1);
-      }
+      setPlayerEpoch((e) => e + 1);
     }, waitMs);
   }, [currentUrlIndex, effectivePlayerType, uri, usesNativeVideo, streams.length]);
 
@@ -354,7 +321,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       total_streams: streams.length,
       error,
     });
-    scheduleRecovery('onError', { hardRecovery: false });
+    scheduleRecovery('onError');
   };
 
   // ROTATION
@@ -512,88 +479,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (status.isPlaying) reconnectAttemptsRef.current = 0;
     setIsPlaying(status.isPlaying);
     setPlaybackError('');
-    const now = Date.now();
-    const hasPosition = typeof status.positionMillis === 'number';
-    const position = hasPosition ? status.positionMillis : 0;
-    const previousPosition = lastPlaybackPositionRef.current;
-    const progressDelta = position - previousPosition;
-    const positionAdvanced = progressDelta >= PLAYBACK_PROGRESS_MIN_DELTA_MS;
-
-    if (hasPosition && positionAdvanced) {
-      lastPlaybackPositionRef.current = position;
-      lastProgressAtRef.current = now;
-      freezeRecoveryTriggeredRef.current = false;
+    if (status.isPlaying && !status.isBuffering) {
       clearStallTimer();
-    } else if (hasPosition && position < previousPosition) {
-      // Timeline reset (seek/remount) should not trigger freeze recovery.
-      lastPlaybackPositionRef.current = position;
-      lastProgressAtRef.current = now;
-      freezeRecoveryTriggeredRef.current = false;
+    } else if (status.isBuffering) {
       clearStallTimer();
-    }
-
-    if (hasPosition && status.isPlaying) {
-      const lastProgressAt = lastProgressAtRef.current || now;
-      const freezeMs = now - lastProgressAt;
-      if (
-        freezeMs >= PLAYBACK_FREEZE_DETECT_MS &&
-        !freezeRecoveryTriggeredRef.current &&
-        !reconnectTimerRef.current
-      ) {
-        freezeRecoveryTriggeredRef.current = true;
-        console.log('[player][diag][recovery] frozen playback detected', {
-          freezeMs,
-          playbackAdvancingDeltaMillis: progressDelta,
-          lastSuccessfulFrameProgressAt: lastProgressAt,
-          positionMillis: position,
-          isBuffering: Boolean(status.isBuffering),
-        });
-        scheduleRecovery('frozen-playback', { hardRecovery: true });
-      }
-    }
-
-    if (
-      effectivePlayerType !== 'webview' &&
-      looksLikeHlsUrl(uri) &&
-      typeof status.playableDurationMillis === 'number' &&
-      status.playableDurationMillis > 0
-    ) {
-      const playable = status.playableDurationMillis;
-      const computedLiveEdge = Math.max(playable - LIVE_EDGE_TARGET_BACKOFF_MS, 0);
-      const seekTarget = computedLiveEdge;
-      const lagBehindLiveEdge = seekTarget - position;
-      const recentlyAdvanced =
-        lastProgressAtRef.current > 0 && now - lastProgressAtRef.current < 2500;
-
-      if (pendingLiveEdgeAttachRef.current && !recentlyAdvanced) {
-        pendingLiveEdgeAttachRef.current = false;
-        liveEdgeSeekCountRef.current += 1;
-        console.log('[player][diag][live-edge] one-shot attach seek', {
-          currentPositionMillis: position,
-          playableDurationMillis: playable,
-          computedLiveEdgeMillis: computedLiveEdge,
-          seekTargetMillis: seekTarget,
-          lagBehindLiveEdgeMillis: lagBehindLiveEdge,
-          seekCountThisSession: liveEdgeSeekCountRef.current,
-        });
-        void videoRef.current?.setPositionAsync?.(seekTarget, {
-          toleranceMillisAfter: 0,
-          toleranceMillisBefore: 0,
-        });
-      } else if (now - lastPlaybackDiagAtRef.current >= PLAYBACK_DIAG_INTERVAL_MS) {
-        lastPlaybackDiagAtRef.current = now;
-        console.log('[player][diag][playback-progress]', {
-          playbackAdvancingDeltaMillis: progressDelta,
-          lastSuccessfulFrameProgressAt: lastProgressAtRef.current || null,
-          isBuffering: Boolean(status.isBuffering),
-          currentPositionMillis: position,
-          playableDurationMillis: playable,
-          computedLiveEdgeMillis: computedLiveEdge,
-          lagBehindLiveEdgeMillis: lagBehindLiveEdge,
-          pendingLiveEdgeAttach: pendingLiveEdgeAttachRef.current,
-          seekCountThisSession: liveEdgeSeekCountRef.current,
-        });
-      }
+      stallTimerRef.current = setTimeout(() => {
+        console.log('[player][debug] stall timeout reached');
+        scheduleRecovery('stall-timeout');
+      }, STALL_TIMEOUT_MS);
     }
 
     if (status.isPlaying) startHideTimer();
@@ -626,11 +519,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     clearStallTimer();
     setPlaybackError('');
     setRetryMessage((m) => (m.startsWith('Inajaribu') || m.startsWith('Inabadili') ? m : ''));
-    pendingLiveEdgeAttachRef.current = true;
-    lastPlaybackPositionRef.current = 0;
-    lastProgressAtRef.current = Date.now();
-    freezeRecoveryTriggeredRef.current = false;
-    lastPlaybackDiagAtRef.current = 0;
   }, [uri, effectivePlayerType, playerEpoch, clearStallTimer]);
 
   const bottomActions = [
