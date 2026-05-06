@@ -14,7 +14,6 @@ import {
 import { Video } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
@@ -26,92 +25,6 @@ const MAX_RECOVERY_ATTEMPTS = 6;
 
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
-}
-
-function buildWebViewSource(url) {
-  if (!looksLikeHlsUrl(url)) return { uri: url };
-  const escaped = JSON.stringify(String(url));
-  const html = `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-    <style>
-      html, body { margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
-      video { width:100%; height:100%; background:#000; object-fit:contain; }
-    </style>
-  </head>
-  <body>
-    <video id="video" autoplay playsinline webkit-playsinline></video>
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
-    <script>
-      (function () {
-        var src = ${escaped};
-        var video = document.getElementById('video');
-        var hls = null;
-        var fitMode = 'contain';
-        function post(kind, payload) {
-          try {
-            window.ReactNativeWebView.postMessage(JSON.stringify({ kind: kind, payload: payload || null }));
-          } catch (e) {}
-        }
-        function setFit(mode) {
-          fitMode = mode === 'cover' ? 'cover' : 'contain';
-          video.style.objectFit = fitMode;
-        }
-        setFit('contain');
-        if (window.Hls && window.Hls.isSupported()) {
-          hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: true,
-            backBufferLength: 90,
-          });
-          hls.on(Hls.Events.MANIFEST_PARSED, function () {
-            post('hls_manifest', {
-              levels: hls.levels ? hls.levels.map(function (l, i) {
-                return { index: i, height: l.height || 0, bitrate: l.bitrate || 0 };
-              }) : [],
-              audioTracks: hls.audioTracks || [],
-            });
-          });
-          hls.on(Hls.Events.LEVEL_LOADED, function () {
-            post('hls_ready', null);
-          });
-          hls.on(Hls.Events.ERROR, function (event, data) { post('hls_error', data); });
-          hls.loadSource(src);
-          hls.attachMedia(video);
-        } else {
-          video.src = src;
-        }
-        video.addEventListener('error', function () {
-          post('video_error', { code: video.error ? video.error.code : null });
-        });
-        video.addEventListener('playing', function () { post('video_playing', null); });
-        video.addEventListener('waiting', function () { post('video_waiting', null); });
-        window.addEventListener('message', function (e) {
-          var raw = e && e.data ? e.data : '';
-          var cmd = null;
-          try { cmd = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) {}
-          if (!cmd || !cmd.type) return;
-          if (cmd.type === 'play') video.play().catch(function(){});
-          if (cmd.type === 'pause') video.pause();
-          if (cmd.type === 'set-fit') setFit(cmd.mode);
-          if (cmd.type === 'set-level' && hls && typeof cmd.level === 'number') hls.currentLevel = cmd.level;
-          if (cmd.type === 'set-audio' && hls && typeof cmd.track === 'number') hls.audioTrack = cmd.track;
-          if (cmd.type === 'get-meta') {
-            post('hls_manifest', {
-              levels: hls && hls.levels ? hls.levels.map(function (l, i) {
-                return { index: i, height: l.height || 0, bitrate: l.bitrate || 0 };
-              }) : [],
-              audioTracks: hls && hls.audioTracks ? hls.audioTracks : [],
-            });
-          }
-        });
-      })();
-    </script>
-  </body>
-</html>`;
-  return { html, baseUrl: 'https://localhost/' };
 }
 
 export default function ChannelPlayerScreen({ route, navigation }) {
@@ -135,20 +48,15 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     ...(channel?.origin && { Origin: channel.origin }),
     ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
   };
+  /** Kept for debug logs only; playback is always expo-av (direct URL from Admin API). */
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
-  const [fallbackWebView, setFallbackWebView] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const [retryMessage, setRetryMessage] = useState('');
   const [playbackError, setPlaybackError] = useState('');
   const [playerEpoch, setPlayerEpoch] = useState(0);
-  const [qualityLevels, setQualityLevels] = useState([]);
-  const [audioTracks, setAudioTracks] = useState([]);
-  const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
-  const usesNativeVideo = effectivePlayerType !== 'webview';
   const liveLabel = 'LIVE';
 
   const videoRef = useRef(null);
-  const webviewRef = useRef(null);
   const hideTimer = useRef(null);
   const reconnectTimerRef = useRef(null);
   const stallTimerRef = useRef(null);
@@ -178,13 +86,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   useEffect(() => {
     setCurrentUrlIndex(0);
-    setFallbackWebView(false);
     setIsBuffering(true);
     setRetryMessage('');
     setPlaybackError('');
     reconnectAttemptsRef.current = 0;
-    setQualityLevels([]);
-    setAudioTracks([]);
     setPlayerEpoch((e) => e + 1);
   }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
 
@@ -198,10 +103,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   useEffect(() => {
     if (!uri) return;
     console.log('[player][debug] selected player type:', normalizedPlayerType);
-    console.log('[player][debug] effective player type:', effectivePlayerType);
+    console.log('[player][debug] channel playerType (ignored for routing):', normalizedPlayerType);
     console.log('[player][debug] final playback URL:', uri);
     console.log('[player][debug] request headers:', headers ?? {});
-  }, [uri, headers, normalizedPlayerType, effectivePlayerType]);
+  }, [uri, headers, normalizedPlayerType]);
 
   // Keep local channel snapshot in sync when route params change.
   useEffect(() => {
@@ -288,12 +193,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       try {
         setPlaybackError('');
         setIsBuffering(true);
-        if (effectivePlayerType === 'webview') {
-          webviewRef.current?.postMessage(JSON.stringify({ type: 'play' }));
-          webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
-        } else {
-          await videoRef.current?.replayAsync?.();
-        }
+        await videoRef.current?.replayAsync?.();
       } catch (err) {
         console.log('[player][debug] recovery replay error:', String(err));
       }
@@ -302,19 +202,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         setCurrentUrlIndex((i) => i + 1);
         return;
       }
-      if (attempt >= 4 && usesNativeVideo && looksLikeHlsUrl(uri)) {
-        setRetryMessage('Inabadili player mode...');
-        setFallbackWebView(true);
-        return;
-      }
       setPlayerEpoch((e) => e + 1);
     }, waitMs);
-  }, [currentUrlIndex, effectivePlayerType, uri, usesNativeVideo, streams.length]);
+  }, [currentUrlIndex, uri, streams.length]);
 
   // FALLBACK STREAM
   const onError = (error) => {
     console.log('[player][debug] playback error:', {
-      player_type: effectivePlayerType,
+      player_type: normalizedPlayerType,
       selected_player: normalizedPlayerType,
       url: uri,
       current_index: currentUrlIndex,
@@ -494,13 +389,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   // PLAY / PAUSE
   const onPlayPause = async () => {
-    if (effectivePlayerType === 'webview') {
-      const cmd = isPlaying ? { type: 'pause' } : { type: 'play' };
-      webviewRef.current?.postMessage(JSON.stringify(cmd));
-      setIsPlaying((v) => !v);
-      showControls();
-      return;
-    }
     const s = await videoRef.current?.getStatusAsync?.();
     if (s?.isPlaying) {
       await videoRef.current?.pauseAsync?.();
@@ -519,7 +407,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     clearStallTimer();
     setPlaybackError('');
     setRetryMessage((m) => (m.startsWith('Inajaribu') || m.startsWith('Inabadili') ? m : ''));
-  }, [uri, effectivePlayerType, playerEpoch, clearStallTimer]);
+  }, [uri, playerEpoch, clearStallTimer]);
 
   const bottomActions = [
     {
@@ -535,24 +423,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       icon: 'language',
       label: 'Badili Lugha',
       onPress: () => {
-        if (effectivePlayerType === 'webview') {
-          if (!audioTracks.length) {
-            Alert.alert('Lugha', 'No alternate audio');
-            return;
-          }
-          Alert.alert(
-            'Chagua Lugha',
-            'Audio tracks',
-            audioTracks
-              .slice(0, 3)
-              .map((t, i) => ({
-                text: t?.name || t?.lang || `Track ${i + 1}`,
-                onPress: () => webviewRef.current?.postMessage(JSON.stringify({ type: 'set-audio', track: i })),
-              }))
-              .concat([{ text: 'Close', style: 'cancel' }]),
-          );
-          return;
-        }
         Alert.alert('Lugha', 'No alternate audio');
       },
     },
@@ -561,26 +431,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       icon: 'speedometer',
       label: 'Quality',
       onPress: () => {
-        if (effectivePlayerType === 'webview') {
-          if (!qualityLevels.length) {
-            webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
-            Alert.alert('Quality', 'Auto (default)');
-            return;
-          }
-          Alert.alert(
-            'Chagua Quality',
-            'HLS levels',
-            [{ text: 'Auto', onPress: () => webviewRef.current?.postMessage(JSON.stringify({ type: 'set-level', level: -1 })) }]
-              .concat(
-                qualityLevels.slice(0, 4).map((l) => ({
-                  text: l.height ? `${l.height}p` : `${Math.round((l.bitrate || 0) / 1000)} kbps`,
-                  onPress: () => webviewRef.current?.postMessage(JSON.stringify({ type: 'set-level', level: l.index })),
-                })),
-              )
-              .concat([{ text: 'Close', style: 'cancel' }]),
-          );
-          return;
-        }
         Alert.alert('Quality', 'Auto (default)');
       },
     },
@@ -591,9 +441,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       onPress: () =>
         setResizeMode((m) => {
           const next = m === 'contain' ? 'cover' : 'contain';
-          if (effectivePlayerType === 'webview') {
-            webviewRef.current?.postMessage(JSON.stringify({ type: 'set-fit', mode: next }));
-          }
           return next;
         }),
     },
@@ -610,65 +457,25 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   return (
     <View style={styles.root}>
 
-      {/* VIDEO / WEBVIEW */}
+      {/* VIDEO — direct channel URL via expo-av (Admin API /api/channels) */}
       <Pressable style={{ flex: 1 }} onPress={showControls}>
 
-        {effectivePlayerType === 'webview' ? (
-          <WebView
-            key={`wv-${playerEpoch}`}
-            ref={webviewRef}
-            source={buildWebViewSource(uri)}
-            style={styles.video}
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            onMessage={(event) => {
-              const raw = event?.nativeEvent?.data ?? '';
-              console.log('[player][debug] webview player message:', raw);
-              try {
-                const msg = JSON.parse(raw);
-                if (msg?.kind === 'hls_manifest') {
-                  setQualityLevels(Array.isArray(msg?.payload?.levels) ? msg.payload.levels : []);
-                  setAudioTracks(Array.isArray(msg?.payload?.audioTracks) ? msg.payload.audioTracks : []);
-                } else if (msg?.kind === 'hls_ready' || msg?.kind === 'video_playing') {
-                  setIsBuffering(false);
-                  setRetryMessage('');
-                  setPlaybackError('');
-                  reconnectAttemptsRef.current = 0;
-                  setIsPlaying(true);
-                  clearStallTimer();
-                } else if (msg?.kind === 'video_waiting') {
-                  setIsBuffering(true);
-                  clearStallTimer();
-                  stallTimerRef.current = setTimeout(() => {
-                    scheduleRecovery('webview-waiting-stall');
-                  }, STALL_TIMEOUT_MS);
-                } else if (msg?.kind === 'hls_error' || msg?.kind === 'video_error') {
-                  console.log('[player][debug] webview hls/video error payload:', msg?.payload ?? null);
-                  onError(msg?.payload ?? msg);
-                }
-              } catch {
-                // ignore parse errors
-              }
-            }}
-          />
-        ) : (
-          <Video
-            key={`native-${playerEpoch}`}
-            ref={videoRef}
-            source={{
-              uri,
-              headers,
-              ...(looksLikeHlsUrl(uri) ? { overrideFileExtensionAndroid: 'm3u8' } : {}),
-            }}
-            style={styles.video}
-            resizeMode={resizeMode}
-            shouldPlay
-            progressUpdateIntervalMillis={1000}
-            onPlaybackStatusUpdate={onStatusUpdate}
-            onError={onError}
-            useNativeControls={false}
-          />
-        )}
+        <Video
+          key={`native-${playerEpoch}`}
+          ref={videoRef}
+          source={{
+            uri,
+            headers,
+            ...(looksLikeHlsUrl(uri) ? { overrideFileExtensionAndroid: 'm3u8' } : {}),
+          }}
+          style={styles.video}
+          resizeMode={resizeMode}
+          shouldPlay
+          progressUpdateIntervalMillis={1000}
+          onPlaybackStatusUpdate={onStatusUpdate}
+          onError={onError}
+          useNativeControls={false}
+        />
 
         {/* CONTROLS */}
         {controlsVisible && (
