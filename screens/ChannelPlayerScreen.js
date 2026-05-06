@@ -23,9 +23,20 @@ import { normalizePlayerType } from '../lib/channelStream';
 
 const STALL_TIMEOUT_MS = 15000;
 const MAX_RECOVERY_ATTEMPTS = 6;
-const LIVE_EDGE_TARGET_BACKOFF_MS = 800;
-const LIVE_EDGE_MAX_LAG_MS = 5000;
-const LIVE_EDGE_SEEK_COOLDOWN_MS = 4000;
+/** Seek target: stay this far behind playable end (stay inside live window, near true live). */
+const LIVE_EDGE_TARGET_BACKOFF_MS = 120;
+/** Below this lag we consider sufficiently at live edge. */
+const LIVE_EDGE_SYNCED_LAG_MS = 450;
+/** Any lag larger than this on first attach → seek immediately (no cooldown). */
+const LIVE_EDGE_INITIAL_LAG_FORCE_MS = 400;
+/** Large drift from live edge → immediate seek bypassing cooldown (Exo DVR-window start offset). */
+const LIVE_EDGE_CRITICAL_LAG_MS = 1500;
+/** Smaller recurring drift → seek only if cooldown elapsed (smooth continuous pinning). */
+const LIVE_EDGE_SOFT_LAG_MS = 700;
+/** Min time between soft live-edge corrections. */
+const LIVE_EDGE_SEEK_COOLDOWN_MS = 1800;
+/** Throttle routine diagnostic logs (still always log forced seeks). */
+const LIVE_EDGE_DIAG_INTERVAL_MS = 2500;
 
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
@@ -158,6 +169,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const reconnectAttemptsRef = useRef(0);
   const liveEdgeSyncedRef = useRef(false);
   const lastLiveEdgeSeekAtRef = useRef(0);
+  const lastLiveEdgeDiagAtRef = useRef(0);
   const lastStatusRef = useRef({
     isLoaded: null,
     isBuffering: null,
@@ -300,9 +312,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
         } else {
           if (looksLikeHlsUrl(uri)) {
-            // Live HLS must reconnect at live edge, not replay from start of live window.
+            // Live HLS: remount Video so Exo attaches near live edge, not DVR window head.
             liveEdgeSyncedRef.current = false;
             lastLiveEdgeSeekAtRef.current = 0;
+            lastLiveEdgeDiagAtRef.current = 0;
+            console.log('[player][diag][live-edge] buffering recovery native HLS remount', {
+              reason,
+              attempt,
+            });
             setPlayerEpoch((e) => e + 1);
           } else {
             await videoRef.current?.replayAsync?.();
@@ -321,7 +338,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         setFallbackWebView(true);
         return;
       }
-      setPlayerEpoch((e) => e + 1);
+      // Native live HLS already bumped epoch inside try; duplicate remount stalled edge logic.
+      if (!(looksLikeHlsUrl(uri) && effectivePlayerType !== 'webview')) {
+        setPlayerEpoch((e) => e + 1);
+      }
     }, waitMs);
   }, [currentUrlIndex, effectivePlayerType, uri, usesNativeVideo, streams.length]);
 
@@ -509,17 +529,56 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       typeof status.playableDurationMillis === 'number' &&
       status.playableDurationMillis > 0
     ) {
-      const liveEdge = Math.max(status.playableDurationMillis - LIVE_EDGE_TARGET_BACKOFF_MS, 0);
+      const playable = status.playableDurationMillis;
+      const computedLiveEdge = Math.max(playable - LIVE_EDGE_TARGET_BACKOFF_MS, 0);
+      const seekTarget = computedLiveEdge;
       const position = typeof status.positionMillis === 'number' ? status.positionMillis : 0;
-      const lag = liveEdge - position;
+      const lagBehindLiveEdge = seekTarget - position;
       const now = Date.now();
-      const canSeek = now - lastLiveEdgeSeekAtRef.current >= LIVE_EDGE_SEEK_COOLDOWN_MS;
-      // Continuous live-edge enforcement to eliminate DVR-like drift/resume.
-      if (lag > LIVE_EDGE_MAX_LAG_MS && canSeek) {
+      const canSoftSeek = now - lastLiveEdgeSeekAtRef.current >= LIVE_EDGE_SEEK_COOLDOWN_MS;
+      const needInitialPin =
+        !liveEdgeSyncedRef.current && lagBehindLiveEdge > LIVE_EDGE_INITIAL_LAG_FORCE_MS;
+      const needCriticalJump = lagBehindLiveEdge > LIVE_EDGE_CRITICAL_LAG_MS;
+      const needSoftPin = lagBehindLiveEdge > LIVE_EDGE_SOFT_LAG_MS && canSoftSeek;
+      const shouldSeekToEdge = needInitialPin || needCriticalJump || needSoftPin;
+
+      const logDiag = (extra) => {
+        console.log('[player][diag][live-edge]', {
+          currentPositionMillis: position,
+          playableDurationMillis: playable,
+          computedLiveEdgeMillis: computedLiveEdge,
+          seekTargetMillis: seekTarget,
+          lagBehindLiveEdgeMillis: lagBehindLiveEdge,
+          ...extra,
+        });
+      };
+
+      if (shouldSeekToEdge) {
         lastLiveEdgeSeekAtRef.current = now;
-        void videoRef.current?.setPositionAsync?.(liveEdge, { toleranceMillisAfter: 0, toleranceMillisBefore: 0 });
+        logDiag({
+          action: 'seek-to-edge',
+          reason: needCriticalJump
+            ? 'critical-lag'
+            : needInitialPin
+              ? 'initial-pinned'
+              : 'soft-lag-cooldown',
+          bypassCooldown: needCriticalJump || needInitialPin,
+        });
+        void videoRef.current?.setPositionAsync?.(seekTarget, {
+          toleranceMillisAfter: 0,
+          toleranceMillisBefore: 0,
+        });
+      } else if (now - lastLiveEdgeDiagAtRef.current >= LIVE_EDGE_DIAG_INTERVAL_MS) {
+        lastLiveEdgeDiagAtRef.current = now;
+        logDiag({
+          action: 'observe',
+          liveEdgeSynced: liveEdgeSyncedRef.current,
+          isBuffering: Boolean(status.isBuffering),
+          significantlyBehindLive: lagBehindLiveEdge > LIVE_EDGE_CRITICAL_LAG_MS,
+        });
       }
-      if (!liveEdgeSyncedRef.current && lag <= LIVE_EDGE_MAX_LAG_MS) {
+
+      if (lagBehindLiveEdge <= LIVE_EDGE_SYNCED_LAG_MS && !liveEdgeSyncedRef.current) {
         liveEdgeSyncedRef.current = true;
       }
     }
@@ -556,6 +615,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setRetryMessage((m) => (m.startsWith('Inajaribu') || m.startsWith('Inabadili') ? m : ''));
     liveEdgeSyncedRef.current = false;
     lastLiveEdgeSeekAtRef.current = 0;
+    lastLiveEdgeDiagAtRef.current = 0;
   }, [uri, effectivePlayerType, playerEpoch, clearStallTimer]);
 
   const bottomActions = [
