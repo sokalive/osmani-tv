@@ -9,11 +9,13 @@ import {
   Alert,
   AppState,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { Video } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
@@ -67,6 +69,7 @@ function buildWebViewSource(url) {
 }
 
 export default function ChannelPlayerScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
   const initialChannel = route?.params?.channel ?? null;
   const [liveChannel, setLiveChannel] = useState(initialChannel);
   const [channelDisabledNotified, setChannelDisabledNotified] = useState(false);
@@ -85,12 +88,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
   const [fallbackWebView, setFallbackWebView] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
+  const [retryMessage, setRetryMessage] = useState('');
   const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
   const usesNativeVideo = effectivePlayerType !== 'webview';
   const liveLabel = 'LIVE';
 
   const videoRef = useRef(null);
   const hideTimer = useRef(null);
+  const controlsOpacity = useRef(new Animated.Value(1)).current;
 
   const [isPlaying, setIsPlaying] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -112,6 +117,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setCurrentUrlIndex(0);
     setFallbackWebView(false);
     setIsBuffering(true);
+    setRetryMessage('');
   }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
 
   // Temporary diagnostics for stream compatibility failures.
@@ -209,6 +215,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       error,
     });
     if (currentUrlIndex < streams.length - 1) {
+      setRetryMessage('Inajaribu stream nyingine...');
       setCurrentUrlIndex((i) => i + 1);
       setIsBuffering(true);
       return;
@@ -216,6 +223,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     // Compatibility fallback: tokenized/redirected HLS may fail in native engine on some devices.
     if (usesNativeVideo && looksLikeHlsUrl(uri)) {
       console.log('[player][debug] switching fallback engine to webview/hls.js');
+      setRetryMessage('Inabadili player mode...');
       setFallbackWebView(true);
       setIsBuffering(true);
     } else {
@@ -316,15 +324,32 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, []);
 
   // AUTO HIDE CONTROLS
+  const hideControls = useCallback(() => {
+    Animated.timing(controlsOpacity, {
+      toValue: 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => setControlsVisible(false));
+  }, [controlsOpacity]);
+
+  const showControlsAnimated = useCallback(() => {
+    setControlsVisible(true);
+    Animated.timing(controlsOpacity, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [controlsOpacity]);
+
   const startHideTimer = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
-      setControlsVisible(false);
+      hideControls();
     }, 3000);
-  }, []);
+  }, [hideControls]);
 
   const showControls = () => {
-    setControlsVisible(true);
+    showControlsAnimated();
     startHideTimer();
   };
 
@@ -337,6 +362,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return;
     }
     setIsBuffering(Boolean(status.isBuffering));
+    if (!status.isBuffering) setRetryMessage('');
     setIsPlaying(status.isPlaying);
 
     if (status.isPlaying) startHideTimer();
@@ -352,6 +378,43 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
     showControls();
   };
+
+  const bottomActions = [
+    {
+      key: 'pause',
+      icon: isPlaying ? 'pause' : 'play',
+      label: isPlaying ? 'Pause' : 'Play',
+      onPress: () => {
+        void onPlayPause();
+      },
+    },
+    {
+      key: 'language',
+      icon: 'language',
+      label: 'Badili Lugha',
+      onPress: () => Alert.alert('Lugha', 'Hakuna chaguo la lugha kwa sasa.'),
+    },
+    {
+      key: 'quality',
+      icon: 'speedometer',
+      label: 'Quality',
+      onPress: () => Alert.alert('Quality', 'Auto (default)'),
+    },
+    {
+      key: 'fill',
+      icon: resizeMode === 'cover' ? 'scan' : 'expand',
+      label: 'Fill',
+      onPress: () => setResizeMode((m) => (m === 'contain' ? 'cover' : 'contain')),
+    },
+    {
+      key: 'fullscreen',
+      icon: 'resize',
+      label: 'Full Screen',
+      onPress: async () => {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      },
+    },
+  ];
 
   return (
     <View style={styles.root}>
@@ -382,39 +445,44 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
         {/* CONTROLS */}
         {controlsVisible && (
-          <View style={styles.controls} pointerEvents="box-none">
+          <Animated.View style={[styles.controls, { opacity: controlsOpacity }]} pointerEvents="box-none">
 
             {/* TOP */}
-            <View style={styles.topBar}>
-              <Pressable onPress={() => navigation.goBack()}>
+            <View style={[styles.topBar, { paddingTop: Math.max(8, insets.top) }]}>
+              <Pressable onPress={() => navigation.goBack()} style={styles.topBack}>
                 <Ionicons name="arrow-back" size={26} color="#fff" />
               </Pressable>
-              <Text style={styles.title}>{channel?.name || 'Live'}</Text>
-            </View>
-
-            {/* CENTER */}
-            <View style={styles.center}>
-              {isBuffering ? (
-                <View style={styles.bufferingWrap}>
-                  <ActivityIndicator size="large" color="#FFFFFF" />
-                </View>
-              ) : null}
-              <Pressable onPress={onPlayPause} style={styles.playBtn}>
-                <Ionicons
-                  name={isPlaying ? 'pause' : 'play'}
-                  size={44}
-                  color="#000"
-                />
-              </Pressable>
-            </View>
-
-            <View style={styles.bottom}>
+              <View style={styles.titleBlock}>
+                <Text style={styles.title} numberOfLines={1}>{channel?.name || 'Live'}</Text>
+                <Text style={styles.subtitle}>Live Stream</Text>
+              </View>
               <View style={styles.liveBadge}>
                 <Text style={styles.liveBadgeText}>{liveLabel}</Text>
               </View>
             </View>
 
-          </View>
+            {/* CENTER */}
+            <View style={styles.center}>
+              {(isBuffering || retryMessage) ? (
+                <View style={styles.bufferingWrap}>
+                  <ActivityIndicator size="large" color="#FFFFFF" />
+                  <Text style={styles.bufferingText}>
+                    {retryMessage || 'Inapakia moja kwa moja...'}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={[styles.bottom, { paddingBottom: Math.max(12, insets.bottom + 4) }]}>
+              {bottomActions.map((action) => (
+                <Pressable key={action.key} style={styles.actionBtn} onPress={action.onPress}>
+                  <Ionicons name={action.icon} size={18} color="#E5E7EB" />
+                  <Text style={styles.actionLabel} numberOfLines={1}>{action.label}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+          </Animated.View>
         )}
       </Pressable>
     </View>
@@ -437,9 +505,26 @@ const styles = StyleSheet.create({
   topBar: {
     position: 'absolute',
     top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    backgroundColor: 'rgba(5,8,14,0.36)',
+  },
+  topBack: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17,24,39,0.58)',
+    marginRight: 10,
+  },
+  titleBlock: {
+    flex: 1,
+    minWidth: 0,
   },
 
   center: {
@@ -448,35 +533,53 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   bufferingWrap: {
-    position: 'absolute',
-    top: '38%',
-    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(9,12,18,0.45)',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     zIndex: 12,
   },
-
-  playBtn: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: '#FFD700',
-    justifyContent: 'center',
-    alignItems: 'center',
+  bufferingText: {
+    color: '#E5E7EB',
+    fontSize: 13,
+    fontWeight: '500',
   },
 
   bottom: {
     position: 'absolute',
-    bottom: 20,
+    bottom: 0,
     left: 10,
     right: 10,
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
+  },
+  actionBtn: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(17,24,39,0.56)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.26)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    gap: 3,
+  },
+  actionLabel: {
+    color: '#E5E7EB',
+    fontSize: 10,
+    fontWeight: '600',
   },
   liveBadge: {
-    backgroundColor: '#DC2626',
-    borderRadius: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    backgroundColor: '#B91C1C',
+    borderRadius: 10,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
   },
   liveBadgeText: {
     color: '#fff',
@@ -486,6 +589,12 @@ const styles = StyleSheet.create({
 
   title: {
     color: '#fff',
-    marginLeft: 10,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  subtitle: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginTop: 2,
   },
 });
