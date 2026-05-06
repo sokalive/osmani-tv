@@ -19,82 +19,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
-import { buildStreamRequestHeaders, normalizePlayerType } from '../lib/channelStream';
+import { normalizePlayerType } from '../lib/channelStream';
 
 const STALL_TIMEOUT_MS = 15000;
 const MAX_RECOVERY_ATTEMPTS = 6;
-const WEBVIEW_UA =
-  'Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Mobile Safari/537.36';
 
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
-}
-
-function looksLikeEmbedUrl(url) {
-  const s = String(url ?? '').toLowerCase();
-  return s.includes('player.php') || s.includes('embed') || s.includes('iframe');
-}
-
-function isHttpUrl(value) {
-  return /^https?:\/\//i.test(String(value ?? '').trim());
-}
-
-function normalizePlaybackUrl(raw) {
-  const s = String(raw ?? '').trim();
-  if (!s) return '';
-  if (/^http:\/\//i.test(s) && /ycn-redirect\.com/i.test(s)) {
-    return s.replace(/^http:\/\//i, 'https://');
-  }
-  return s;
-}
-
-function choosePlaybackRoute(url, declaredPlayerType) {
-  const pt = String(declaredPlayerType ?? '').toLowerCase();
-  if (looksLikeEmbedUrl(url)) return 'embed-webview';
-  if (pt === 'webview' || pt === 'vlc' || pt === 'ijk') return 'embed-webview';
-  if (looksLikeHlsUrl(url)) return 'native-exo';
-  return 'native-exo';
-}
-
-function classifyPlaybackError(raw) {
-  const text = String(raw ?? '').toLowerCase();
-  if (!text) return 'unknown';
-  if (/403|forbidden|unauthorized/.test(text)) return 'auth-or-hotlink-block';
-  if (/404|not.?found/.test(text)) return 'not-found';
-  if (/ssl|tls|certificate|handshake/.test(text)) return 'tls-network';
-  if (/codec|decoder|format|unsupported/.test(text)) return 'codec-or-container';
-  if (/manifest|m3u8|playlist|hls/.test(text)) return 'manifest-or-hls';
-  if (/timeout|network|connection|dns|host/.test(text)) return 'network-connectivity';
-  return 'unknown';
-}
-
-async function probeRedirectChain(startUrl, headers = {}) {
-  const hops = [];
-  let current = startUrl;
-  for (let i = 0; i < 6; i++) {
-    try {
-      const res = await fetch(current, { method: 'GET', redirect: 'manual', headers });
-      const location = res.headers?.get?.('location') || '';
-      hops.push({ status: res.status, url: current, location: location || null });
-      if (location && res.status >= 300 && res.status < 400) {
-        current = resolveM3u8Url(current, location);
-        continue;
-      }
-      break;
-    } catch (err) {
-      hops.push({ status: 0, url: current, error: String(err) });
-      break;
-    }
-  }
-  return hops;
-}
-
-function resolveM3u8Url(baseUrl, line) {
-  try {
-    return new URL(line, baseUrl).toString();
-  } catch {
-    return line;
-  }
 }
 
 function buildWebViewSource(url) {
@@ -115,192 +46,15 @@ function buildWebViewSource(url) {
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
     <script>
       (function () {
-        var src = '';
+        var src = ${escaped};
         var video = document.getElementById('video');
         var hls = null;
         var fitMode = 'contain';
-        var lastManifestUrl = '';
         function post(kind, payload) {
           try {
             window.ReactNativeWebView.postMessage(JSON.stringify({ kind: kind, payload: payload || null }));
           } catch (e) {}
         }
-        function isPlaylist(url) {
-          return /\\.m3u8(\\?|$)/i.test(String(url || ''));
-        }
-        function normalizeUrl(url) {
-          var s = String(url || '');
-          if (/^http:\\/\\//i.test(s) && /ycn-redirect\\.com/i.test(s)) {
-            s = s.replace(/^http:\\/\\//i, 'https://');
-          }
-          return s;
-        }
-        function resolveUrl(base, ref) {
-          try { return new URL(ref, base).toString(); } catch (_) { return ref; }
-        }
-        function rewritePlaylistText(text, base) {
-          var lines = String(text || '').split('\\n');
-          var out = [];
-          for (var i = 0; i < lines.length; i++) {
-            var line = lines[i].trim();
-            if (!line || line[0] === '#') { out.push(lines[i]); continue; }
-            out.push(resolveUrl(base, line));
-          }
-          return out.join('\\n');
-        }
-        function getJsonHeaders() {
-          try {
-            var raw = localStorage.getItem('__osmani_headers');
-            var parsed = raw ? JSON.parse(raw) : {};
-            return parsed && typeof parsed === 'object' ? parsed : {};
-          } catch (_) {
-            return {};
-          }
-        }
-        function setJsonHeaders(h) {
-          try { localStorage.setItem('__osmani_headers', JSON.stringify(h || {})); } catch (_) {}
-        }
-        function withHeaders(reqHeaders) {
-          var baseHeaders = getJsonHeaders();
-          var out = {};
-          Object.keys(baseHeaders || {}).forEach(function (k) {
-            if (typeof baseHeaders[k] === 'string') out[k] = baseHeaders[k];
-          });
-          Object.keys(reqHeaders || {}).forEach(function (k) { out[k] = reqHeaders[k]; });
-          return out;
-        }
-        function logProxy(kind, payload) {
-          post('proxy_log', { kind: kind, payload: payload || null });
-        }
-        function classifyHtmlGate(body, headers) {
-          var text = String(body || '').toLowerCase();
-          var h = headers || {};
-          if (text.includes('sorry, you have been blocked') || text.includes('cloudflare')) return 'cloudflare-block';
-          if (text.includes('attention required') || text.includes('just a moment')) return 'anti-bot-page';
-          if (text.includes('forbidden') || text.includes('hotlink') || text.includes('referer')) return 'anti-hotlink-page';
-          if (text.includes('expired') || text.includes('token')) return 'expired-token';
-          if (text.includes('login') || text.includes('sign in') || text.includes('session')) return 'login-session-gate';
-          if (h['x-frame-options']) return 'x-frame-options-block';
-          if (h['content-security-policy']) return 'csp-block';
-          return 'html-unexpected';
-        }
-        function headMap(headersObj) {
-          var out = {};
-          try {
-            headersObj.forEach(function (v, k) {
-              out[String(k || '').toLowerCase()] = String(v || '');
-            });
-          } catch (_) {}
-          return out;
-        }
-        function ProxyLoader(config) {
-          this.config = config;
-          this.controller = null;
-        }
-        ProxyLoader.prototype.load = function (context, config, callbacks) {
-          var url = normalizeUrl(context.url);
-          var reqHeaders = withHeaders(context.headers || {});
-          var isM3u8 = isPlaylist(url);
-          logProxy('request', { type: context.type, url: url, isPlaylist: isM3u8, headers: reqHeaders });
-          this.controller = new AbortController();
-          fetch(url, {
-            method: 'GET',
-            redirect: 'follow',
-            headers: withHeaders({
-              Accept: reqHeaders.Accept || 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
-              'Accept-Language': reqHeaders['Accept-Language'] || 'en-US,en;q=0.9',
-              ...reqHeaders,
-            }),
-            signal: this.controller.signal,
-          })
-            .then(function (res) {
-              var finalUrl = res.url || url;
-              var lowerHeaders = headMap(res.headers);
-              logProxy('response', {
-                type: context.type,
-                url: url,
-                finalUrl: finalUrl,
-                status: res.status,
-                headers: {
-                  'content-type': lowerHeaders['content-type'] || '',
-                  'x-frame-options': lowerHeaders['x-frame-options'] || '',
-                  'content-security-policy': lowerHeaders['content-security-policy'] || '',
-                  server: lowerHeaders.server || '',
-                },
-              });
-              if (!res.ok) {
-                throw new Error('HTTP ' + res.status + ' for ' + finalUrl);
-              }
-              if (isM3u8) {
-                lastManifestUrl = finalUrl;
-                return res.text().then(function (text) {
-                  var contentType = lowerHeaders['content-type'] || '';
-                  var looksHtml = /^\\s*</.test(String(text || '')) || /text\\/html/i.test(contentType);
-                  if (looksHtml) {
-                    var classification = classifyHtmlGate(text, lowerHeaders);
-                    logProxy('html_gate', {
-                      url: finalUrl,
-                      classification: classification,
-                      sample: String(text || '').slice(0, 300),
-                      contentType: contentType,
-                    });
-                    throw new Error('Playlist returned HTML gate: ' + classification);
-                  }
-                  if (!/#EXTM3U/i.test(String(text || ''))) {
-                    logProxy('manifest_mismatch', {
-                      url: finalUrl,
-                      contentType: contentType,
-                      sample: String(text || '').slice(0, 300),
-                    });
-                    throw new Error('Invalid m3u8 response payload');
-                  }
-                  var rewritten = rewritePlaylistText(text, finalUrl);
-                  logProxy('rewrite', { from: finalUrl, length: rewritten.length });
-                  callbacks.onSuccess(
-                    {
-                      url: finalUrl,
-                      data: rewritten,
-                    },
-                    context,
-                    undefined,
-                  );
-                });
-              }
-              return res.arrayBuffer().then(function (ab) {
-                var contentType = lowerHeaders['content-type'] || '';
-                if (/text\\/html/i.test(contentType)) {
-                  throw new Error('Segment returned HTML content-type at ' + finalUrl);
-                }
-                callbacks.onSuccess(
-                  {
-                    url: finalUrl,
-                    data: new Uint8Array(ab),
-                  },
-                  context,
-                  undefined,
-                );
-              });
-            })
-            .catch(function (err) {
-              logProxy('error', { type: context.type, url: url, message: String(err) });
-              callbacks.onError(
-                {
-                  code: 0,
-                  text: String(err),
-                  url: url,
-                },
-                context,
-                undefined,
-              );
-            });
-        };
-        ProxyLoader.prototype.abort = function () {
-          try { this.controller && this.controller.abort(); } catch (_) {}
-        };
-        ProxyLoader.prototype.destroy = function () {
-          try { this.controller && this.controller.abort(); } catch (_) {}
-          this.controller = null;
-        };
         function setFit(mode) {
           fitMode = mode === 'cover' ? 'cover' : 'contain';
           video.style.objectFit = fitMode;
@@ -311,7 +65,6 @@ function buildWebViewSource(url) {
             enableWorker: true,
             lowLatencyMode: true,
             backBufferLength: 90,
-            loader: ProxyLoader,
           });
           hls.on(Hls.Events.MANIFEST_PARSED, function () {
             post('hls_manifest', {
@@ -322,10 +75,13 @@ function buildWebViewSource(url) {
             });
           });
           hls.on(Hls.Events.LEVEL_LOADED, function () {
-            post('hls_ready', { details: hls && hls.levels ? hls.levels.length : 0 });
+            post('hls_ready', null);
           });
           hls.on(Hls.Events.ERROR, function (event, data) { post('hls_error', data); });
+          hls.loadSource(src);
           hls.attachMedia(video);
+        } else {
+          video.src = src;
         }
         video.addEventListener('error', function () {
           post('video_error', { code: video.error ? video.error.code : null });
@@ -340,21 +96,6 @@ function buildWebViewSource(url) {
           if (cmd.type === 'play') video.play().catch(function(){});
           if (cmd.type === 'pause') video.pause();
           if (cmd.type === 'set-fit') setFit(cmd.mode);
-          if (cmd.type === 'set-headers' && cmd.headers && typeof cmd.headers === 'object') {
-            setJsonHeaders(cmd.headers);
-            post('headers_set', cmd.headers);
-          }
-          if (cmd.type === 'set-src' && cmd.url) {
-            src = normalizeUrl(String(cmd.url));
-            if (hls) {
-              try { hls.stopLoad(); } catch (_) {}
-              hls.loadSource(src);
-              hls.startLoad(-1);
-            } else {
-              video.src = src;
-            }
-            post('src_set', { src: src });
-          }
           if (cmd.type === 'set-level' && hls && typeof cmd.level === 'number') hls.currentLevel = cmd.level;
           if (cmd.type === 'set-audio' && hls && typeof cmd.track === 'number') hls.audioTrack = cmd.track;
           if (cmd.type === 'get-meta') {
@@ -382,22 +123,19 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const channel = liveChannel ?? initialChannel;
 
   const streams = [
-    channel?.url ?? channel?.stream_url,
-    channel?.backupStream1 ?? channel?.backup_stream_1,
-    channel?.backupStream2 ?? channel?.backup_stream_2,
-  ].map(normalizePlaybackUrl).filter(Boolean);
+    channel?.url,
+    channel?.backupStream1,
+    channel?.backupStream2,
+  ].filter(Boolean);
 
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   const uri = streams[currentUrlIndex];
-  const headers = buildStreamRequestHeaders({
-    referer: channel?.referer ?? channel?.referrer,
-    origin: channel?.origin ?? channel?.stream_origin,
-    userAgent: channel?.userAgent ?? channel?.user_agent,
-    accept: channel?.accept,
-    connection: channel?.connection,
-    headers: channel?.headers,
-  }) ?? {};
-  const normalizedPlayerType = normalizePlayerType(channel?.playerType ?? channel?.player_type);
+  const headers = {
+    ...(channel?.referer && { Referer: channel.referer }),
+    ...(channel?.origin && { Origin: channel.origin }),
+    ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
+  };
+  const normalizedPlayerType = normalizePlayerType(channel?.playerType);
   const [fallbackWebView, setFallbackWebView] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const [retryMessage, setRetryMessage] = useState('');
@@ -405,13 +143,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [playerEpoch, setPlayerEpoch] = useState(0);
   const [qualityLevels, setQualityLevels] = useState([]);
   const [audioTracks, setAudioTracks] = useState([]);
-  const isDirectHls = looksLikeHlsUrl(uri);
-  const effectivePlayerType = isDirectHls ? 'exo' : fallbackWebView ? 'webview' : normalizedPlayerType;
-  const playbackRoute = choosePlaybackRoute(uri, effectivePlayerType);
-  const playbackUri = uri;
-  const usesNativeVideo =
-    playbackRoute === 'native-exo' || effectivePlayerType === 'exo' || effectivePlayerType === 'native';
-  const usesWebEngine = playbackRoute === 'embed-webview';
+  const effectivePlayerType = fallbackWebView ? 'webview' : normalizedPlayerType;
+  const usesNativeVideo = effectivePlayerType !== 'webview';
   const liveLabel = 'LIVE';
 
   const videoRef = useRef(null);
@@ -463,82 +196,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, []);
 
   useEffect(() => {
-    if (!playbackUri) return;
+    if (!uri) return;
     console.log('[player][debug] selected player type:', normalizedPlayerType);
     console.log('[player][debug] effective player type:', effectivePlayerType);
-    console.log('[player][debug] final playback URL:', playbackUri);
+    console.log('[player][debug] final playback URL:', uri);
     console.log('[player][debug] request headers:', headers ?? {});
-    console.log('[player][debug] active source object:', {
-      uri: playbackUri,
-      headers,
-      player_type: normalizedPlayerType,
-      effective_player_type: effectivePlayerType,
-      playback_route: playbackRoute,
-      backup_1: streams[1] ?? null,
-      backup_2: streams[2] ?? null,
-    });
-  }, [uri, playbackUri, headers, normalizedPlayerType, effectivePlayerType, playbackRoute]);
-
-  const runHlsFailureDiagnostics = useCallback(async () => {
-    if (!playbackUri || !looksLikeHlsUrl(uri)) return;
-    try {
-      console.log('[player][diag] start m3u8 diagnostics:', playbackUri);
-      const redirects = await probeRedirectChain(playbackUri, headers);
-      console.log('[player][diag] redirect chain:', redirects);
-      const masterRes = await fetch(playbackUri, { headers: {} });
-      const masterText = await masterRes.text();
-      const masterHeaders = {
-        contentType: masterRes.headers?.get?.('content-type') || '',
-        server: masterRes.headers?.get?.('server') || '',
-        cacheControl: masterRes.headers?.get?.('cache-control') || '',
-      };
-      console.log('[player][diag] master status:', masterRes.status, 'url:', masterRes.url || playbackUri, 'headers:', masterHeaders);
-      if (!masterRes.ok) return;
-      const masterLines = String(masterText)
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l && !l.startsWith('#'));
-      const firstChildCandidate = masterLines.find((l) => /\.m3u8(\?|$)/i.test(l));
-      if (!firstChildCandidate) {
-        const firstSegment = masterLines.find((l) => /\.(ts|m4s|mp4)(\?|$)/i.test(l));
-        if (!firstSegment) return;
-        const segUrl = resolveM3u8Url(masterRes.url || playbackUri, firstSegment);
-        const segRes = await fetch(segUrl, { headers: {} });
-        console.log('[player][diag] first segment status:', segRes.status, 'url:', segRes.url || segUrl);
-        return;
-      }
-      const childUrl = resolveM3u8Url(masterRes.url || playbackUri, firstChildCandidate);
-      const childRes = await fetch(childUrl, { headers: {} });
-      const childText = await childRes.text();
-      console.log(
-        '[player][diag] child playlist status:',
-        childRes.status,
-        'url:',
-        childRes.url || childUrl,
-        'content-type:',
-        childRes.headers?.get?.('content-type') || '',
-      );
-      if (!childRes.ok) return;
-      const childLines = String(childText)
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l && !l.startsWith('#'));
-      const firstSegment = childLines.find((l) => /\.(ts|m4s|mp4)(\?|$)/i.test(l));
-      if (!firstSegment) return;
-      const segUrl = resolveM3u8Url(childRes.url || childUrl, firstSegment);
-      const segRes = await fetch(segUrl, { headers: {} });
-      console.log(
-        '[player][diag] first segment status:',
-        segRes.status,
-        'url:',
-        segRes.url || segUrl,
-        'content-type:',
-        segRes.headers?.get?.('content-type') || '',
-      );
-    } catch (err) {
-      console.log('[player][diag] diagnostics error:', String(err), 'kind:', classifyPlaybackError(err));
-    }
-  }, [uri, playbackUri, headers]);
+  }, [uri, headers, normalizedPlayerType, effectivePlayerType]);
 
   // Keep local channel snapshot in sync when route params change.
   useEffect(() => {
@@ -625,7 +288,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       try {
         setPlaybackError('');
         setIsBuffering(true);
-        if (usesWebEngine) {
+        if (effectivePlayerType === 'webview') {
           webviewRef.current?.postMessage(JSON.stringify({ type: 'play' }));
           webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
         } else {
@@ -646,22 +309,19 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       }
       setPlayerEpoch((e) => e + 1);
     }, waitMs);
-  }, [currentUrlIndex, usesWebEngine, uri, usesNativeVideo, streams.length]);
+  }, [currentUrlIndex, effectivePlayerType, uri, usesNativeVideo, streams.length]);
 
   // FALLBACK STREAM
   const onError = (error) => {
-    const errorText = typeof error === 'string' ? error : JSON.stringify(error ?? {});
     console.log('[player][debug] playback error:', {
       player_type: effectivePlayerType,
       selected_player: normalizedPlayerType,
       url: uri,
       current_index: currentUrlIndex,
       total_streams: streams.length,
-      classification: classifyPlaybackError(errorText),
       error,
     });
-    void runHlsFailureDiagnostics();
-    scheduleRecovery(`onError:${errorText}`);
+    scheduleRecovery('onError');
   };
 
   // ROTATION
@@ -790,7 +450,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const onStatusUpdate = (status) => {
     if (!status.isLoaded) {
       if (status?.error) {
-        console.log('[player][debug] status load error:', status.error, 'kind:', classifyPlaybackError(status.error));
+        console.log('[player][debug] status load error:', status.error);
         scheduleRecovery(`status-load-error:${String(status.error)}`);
       }
       return;
@@ -834,7 +494,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   // PLAY / PAUSE
   const onPlayPause = async () => {
-    if (usesWebEngine) {
+    if (effectivePlayerType === 'webview') {
       const cmd = isPlaying ? { type: 'pause' } : { type: 'play' };
       webviewRef.current?.postMessage(JSON.stringify(cmd));
       setIsPlaying((v) => !v);
@@ -851,7 +511,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   };
 
   useEffect(() => {
-    if (!playbackUri) return;
+    if (!uri) return;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
@@ -859,7 +519,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     clearStallTimer();
     setPlaybackError('');
     setRetryMessage((m) => (m.startsWith('Inajaribu') || m.startsWith('Inabadili') ? m : ''));
-  }, [playbackUri, effectivePlayerType, playerEpoch, clearStallTimer]);
+  }, [uri, effectivePlayerType, playerEpoch, clearStallTimer]);
 
   const bottomActions = [
     {
@@ -875,7 +535,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       icon: 'language',
       label: 'Badili Lugha',
       onPress: () => {
-        if (usesWebEngine) {
+        if (effectivePlayerType === 'webview') {
           if (!audioTracks.length) {
             Alert.alert('Lugha', 'No alternate audio');
             return;
@@ -901,7 +561,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       icon: 'speedometer',
       label: 'Quality',
       onPress: () => {
-        if (usesWebEngine) {
+        if (effectivePlayerType === 'webview') {
           if (!qualityLevels.length) {
             webviewRef.current?.postMessage(JSON.stringify({ type: 'get-meta' }));
             Alert.alert('Quality', 'Auto (default)');
@@ -931,7 +591,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       onPress: () =>
         setResizeMode((m) => {
           const next = m === 'contain' ? 'cover' : 'contain';
-          if (usesWebEngine) {
+          if (effectivePlayerType === 'webview') {
             webviewRef.current?.postMessage(JSON.stringify({ type: 'set-fit', mode: next }));
           }
           return next;
@@ -953,46 +613,19 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       {/* VIDEO / WEBVIEW */}
       <Pressable style={{ flex: 1 }} onPress={showControls}>
 
-        {usesWebEngine ? (
+        {effectivePlayerType === 'webview' ? (
           <WebView
             key={`wv-${playerEpoch}`}
             ref={webviewRef}
-            source={looksLikeHlsUrl(playbackUri) ? buildWebViewSource(playbackUri) : { uri: playbackUri }}
+            source={buildWebViewSource(uri)}
             style={styles.video}
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
-            javaScriptEnabled
-            domStorageEnabled
-            sharedCookiesEnabled
-            thirdPartyCookiesEnabled
-            mixedContentMode="always"
-            cacheEnabled
-            userAgent={WEBVIEW_UA}
-            originWhitelist={['*']}
-            setSupportMultipleWindows={false}
-            onShouldStartLoadWithRequest={(req) => {
-              if (!looksLikeHlsUrl(playbackUri)) return true;
-              const u = String(req?.url ?? '');
-              // Keep proxy playback inside internal HTML shell.
-              if (
-                u.startsWith('about:blank') ||
-                u.startsWith('data:text/html') ||
-                u.startsWith('https://localhost/')
-              ) {
-                return true;
-              }
-              console.log('[player][diag][proxy] blocked external nav:', u);
-              return false;
-            }}
             onMessage={(event) => {
               const raw = event?.nativeEvent?.data ?? '';
               console.log('[player][debug] webview player message:', raw);
               try {
                 const msg = JSON.parse(raw);
-                if (msg?.kind === 'proxy_log') {
-                  console.log('[player][diag][proxy]', msg?.payload ?? null);
-                  return;
-                }
                 if (msg?.kind === 'hls_manifest') {
                   setQualityLevels(Array.isArray(msg?.payload?.levels) ? msg.payload.levels : []);
                   setAudioTracks(Array.isArray(msg?.payload?.audioTracks) ? msg.payload.audioTracks : []);
@@ -1015,24 +648,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
                 }
               } catch {
                 // ignore parse errors
-              }
-            }}
-            onLoadEnd={() => {
-              if (!looksLikeHlsUrl(playbackUri)) return;
-              try {
-                const setHeaders = JSON.stringify({
-                  type: 'set-headers',
-                  headers: {
-                    ...headers,
-                    Accept: 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                  },
-                });
-                const setSrc = JSON.stringify({ type: 'set-src', url: playbackUri });
-                webviewRef.current?.postMessage(setHeaders);
-                webviewRef.current?.postMessage(setSrc);
-              } catch {
-                // ignore
               }
             }}
           />
