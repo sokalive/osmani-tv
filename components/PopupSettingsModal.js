@@ -1,12 +1,21 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getPopupSettings } from '../api';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 
 const STORAGE_KEY = 'osmani_popup_settings_seen';
 const VALID_MODES = new Set(['show_once', 'always_show', 'disabled']);
+const DISCLAIMER_LABEL = 'Tahadhari';
 
 const DEFAULT_POPUP = {
   mode: 'disabled',
@@ -86,29 +95,60 @@ export default function PopupSettingsModal() {
     setVisible(false);
   }, [settings.mode]);
 
+  const bulletPoints = settings.bullet_points.filter(
+    (point) => String(point ?? '').trim().length > 0,
+  );
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
       <View style={styles.backdrop}>
         <View style={styles.card}>
           <View style={styles.iconWrap}>
-            <Ionicons name="information-circle" size={34} color="#FBBF24" />
+            <Ionicons name="information-circle" size={34} color="#F59E0B" />
           </View>
-          {settings.title ? <Text style={styles.title}>{settings.title}</Text> : null}
-          {settings.greeting ? <Text style={styles.greeting}>{settings.greeting}</Text> : null}
-          {settings.bullet_points.length > 0 ? (
-            <ScrollView style={styles.bullets} contentContainerStyle={styles.bulletsInner}>
-              {settings.bullet_points.map((point, index) => (
-                <View key={`${index}-${String(point)}`} style={styles.bulletRow}>
-                  <Text style={styles.bulletDot}>•</Text>
-                  <Text style={styles.bulletText}>{String(point)}</Text>
-                </View>
-              ))}
-            </ScrollView>
-          ) : null}
-          {settings.disclaimer ? <Text style={styles.disclaimer}>{settings.disclaimer}</Text> : null}
-          <Pressable style={styles.button} onPress={close}>
-            <Text style={styles.buttonText}>Sawa</Text>
-          </Pressable>
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollInner}
+            showsVerticalScrollIndicator={false}
+          >
+            {settings.title ? (
+              <Text style={styles.title} accessibilityRole="header">
+                {settings.title}
+              </Text>
+            ) : null}
+
+            {settings.greeting ? (
+              <Text style={styles.greeting}>{settings.greeting}</Text>
+            ) : null}
+
+            {bulletPoints.length > 0 ? (
+              <View style={styles.bullets}>
+                {bulletPoints.map((point, index) => (
+                  <View key={`${index}-${String(point)}`} style={styles.bulletRow}>
+                    <Text style={styles.bulletDot}>{'\u2022'}</Text>
+                    <Text style={styles.bulletText}>{String(point)}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {settings.disclaimer ? (
+              <View style={styles.disclaimerBlock}>
+                <Text style={styles.disclaimerTitle}>{DISCLAIMER_LABEL}</Text>
+                <Text style={styles.disclaimerBody}>{settings.disclaimer}</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+
+          <View style={styles.footer}>
+            <Pressable
+              style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+              onPress={close}
+              accessibilityRole="button"
+            >
+              <Text style={styles.buttonText}>Sawa</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
     </Modal>
@@ -118,87 +158,123 @@ export default function PopupSettingsModal() {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.68)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 22,
+    paddingVertical: 28,
   },
   card: {
     width: '100%',
     maxWidth: 420,
-    maxHeight: '82%',
-    backgroundColor: '#171A20',
+    maxHeight: '92%',
+    backgroundColor: '#FFFFFF',
     borderRadius: 22,
     paddingHorizontal: 22,
     paddingTop: 22,
     paddingBottom: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(251,191,36,0.28)',
+    overflow: 'hidden',
+    ...Platform.select({
+      android: { elevation: 14 },
+      ios: {
+        shadowColor: '#000000',
+        shadowOpacity: 0.18,
+        shadowRadius: 22,
+        shadowOffset: { width: 0, height: 10 },
+      },
+      default: {},
+    }),
   },
   iconWrap: {
     alignSelf: 'center',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(251,191,36,0.12)',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(245,158,11,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
+  },
+  scroll: {
+    flexShrink: 1,
+  },
+  scrollInner: {
+    paddingBottom: 4,
   },
   title: {
-    color: '#FFFFFF',
-    fontSize: 22,
+    color: '#0F172A',
+    fontSize: 26,
     fontWeight: '800',
     textAlign: 'center',
+    letterSpacing: 0.2,
   },
   greeting: {
     marginTop: 10,
-    color: '#E5E7EB',
+    color: '#1F2937',
     fontSize: 15,
+    fontWeight: '500',
     lineHeight: 22,
     textAlign: 'center',
   },
   bullets: {
-    marginTop: 14,
-    maxHeight: 180,
-  },
-  bulletsInner: {
-    gap: 8,
+    marginTop: 16,
+    gap: 10,
   },
   bulletRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
   },
   bulletDot: {
-    color: '#FBBF24',
+    color: '#F59E0B',
     fontSize: 18,
     lineHeight: 22,
+    marginRight: 10,
+    marginTop: 1,
+    fontWeight: '700',
   },
   bulletText: {
     flex: 1,
-    color: '#F3F4F6',
-    fontSize: 14,
+    color: '#1F2937',
+    fontSize: 15,
     lineHeight: 22,
+    flexShrink: 1,
+    flexWrap: 'wrap',
   },
-  disclaimer: {
-    marginTop: 14,
-    color: '#A1A8B5',
-    fontSize: 12,
-    lineHeight: 18,
-    textAlign: 'center',
+  disclaimerBlock: {
+    marginTop: 18,
+    paddingTop: 14,
+    paddingBottom: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E5E7EB',
+  },
+  disclaimerTitle: {
+    color: '#0F172A',
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  disclaimerBody: {
+    color: '#4B5563',
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  footer: {
+    paddingTop: 16,
   },
   button: {
-    marginTop: 18,
     backgroundColor: '#FBBF24',
     borderRadius: 14,
-    paddingVertical: 13,
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonPressed: {
+    backgroundColor: '#F59E0B',
   },
   buttonText: {
     color: '#111827',
     fontSize: 15,
     fontWeight: '800',
+    letterSpacing: 0.3,
   },
 });
-
