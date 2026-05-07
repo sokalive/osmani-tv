@@ -4,6 +4,7 @@ import {
   Alert,
   Animated,
   Dimensions,
+  Easing,
   InteractionManager,
   KeyboardAvoidingView,
   Modal,
@@ -16,6 +17,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import EventSource from 'react-native-sse';
 import {
   createPayment,
@@ -29,9 +32,19 @@ import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { formatSubscriptionExpiry } from '../lib/formatExpiry';
 
 const ACCENT = '#FACC15';
+const ACCENT_GRADIENT = ['#FDE047', '#FACC15', '#D4A015'];
+const ACCENT_GLOW = 'rgba(250, 204, 21, 0.55)';
+const SHEET_BG = '#0F1115';
 const CARD_BG = '#1E222B';
 const CARD_BG_ACTIVE = '#2A2F3A';
 const TEXT_MUTED = '#9CA3AF';
+
+const NETWORK_COLORS = {
+  Tigo: '#1F8FFF',
+  'M-Pesa': '#22C55E',
+  Airtel: '#EF4444',
+  HaloPesa: '#F59E0B',
+};
 
 const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
@@ -90,6 +103,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
+  const ringRotate = useRef(new Animated.Value(0)).current;
   const pollTimerRef = useRef(null);
   const countdownTimerRef = useRef(null);
   const sseRef = useRef(null);
@@ -165,6 +179,24 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   useEffect(() => {
     animateStepChange();
   }, [step, animateStepChange]);
+
+  useEffect(() => {
+    if (step !== 3) {
+      ringRotate.setValue(0);
+      return undefined;
+    }
+    ringRotate.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(ringRotate, {
+        toValue: 1,
+        duration: 1400,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [step, ringRotate]);
 
   useEffect(() => {
     if (!visible) return undefined;
@@ -348,6 +380,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       ? `TSh ${formatPriceTz(selectedPlan.price)}`
       : 'TSh —';
 
+  const ringSpin = ringRotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
   const handleStep2Pay = async () => {
     console.log('PAYMENT TRIGGERED');
     if (!isPhoneValid) {
@@ -438,7 +475,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                   >
                     {step === 1 && (
                       <View>
-                        <Text style={styles.title}>Fungua Premium</Text>
+                        <View style={styles.titleRow}>
+                          <View style={styles.titleIconCircle}>
+                            <Ionicons name="diamond" size={14} color="#0F172A" />
+                          </View>
+                          <Text style={styles.title}>Fungua Premium</Text>
+                        </View>
                         <Text style={styles.subtitle} numberOfLines={1}>
                           {channelName}
                         </Text>
@@ -457,6 +499,15 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                               onPress={() => setSelectedPlan(plan)}
                               style={[styles.planRow, selected && styles.planRowSelected]}
                             >
+                              {selected ? (
+                                <LinearGradient
+                                  colors={['rgba(250,204,21,0.14)', 'rgba(250,204,21,0.02)']}
+                                  start={{ x: 0, y: 0 }}
+                                  end={{ x: 1, y: 1 }}
+                                  style={StyleSheet.absoluteFill}
+                                  pointerEvents="none"
+                                />
+                              ) : null}
                               <View style={[styles.radioOuter, selected && styles.radioOuterOn]}>
                                 {selected ? <View style={styles.radioInner} /> : null}
                               </View>
@@ -465,6 +516,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                                 <Text style={styles.planMeta}>{plan.duration || '—'}</Text>
                                 <Text style={styles.planPrice}>TSh {formatPriceTz(plan.price)}</Text>
                               </View>
+                              {selected ? (
+                                <View style={styles.planBadge}>
+                                  <Ionicons name="checkmark" size={12} color="#0F172A" />
+                                </View>
+                              ) : null}
                             </Pressable>
                           );
                         })}
@@ -474,21 +530,40 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                     {step === 2 && (
                       <View style={styles.step2OuterPadding}>
                         <View style={styles.step2TopSection}>
-                          <Text style={[styles.title, styles.step2GapClear]}>Weka Namba ya Simu</Text>
+                          <View style={styles.titleRow}>
+                            <View style={styles.titleIconCircle}>
+                              <Ionicons name="phone-portrait" size={14} color="#0F172A" />
+                            </View>
+                            <Text style={[styles.title, styles.step2GapClear]}>Weka Namba ya Simu</Text>
+                          </View>
                           <Text style={styles.subtitleNetworks}>Tigo, M-Pesa, Airtel, HaloPesa</Text>
-                          <TextInput
-                            style={[styles.input, styles.step2GapClear]}
-                            placeholder="0712345678"
-                            placeholderTextColor="#6B7280"
-                            keyboardType="phone-pad"
-                            maxLength={10}
-                            value={phoneNumber}
-                            onChangeText={setPhoneNumber}
-                          />
+                          <View style={[styles.inputWrap, styles.step2GapClear]}>
+                            <Ionicons
+                              name="call"
+                              size={18}
+                              color={ACCENT}
+                              style={styles.inputIcon}
+                            />
+                            <TextInput
+                              style={styles.inputField}
+                              placeholder="0712345678"
+                              placeholderTextColor="#6B7280"
+                              keyboardType="phone-pad"
+                              maxLength={10}
+                              value={phoneNumber}
+                              onChangeText={setPhoneNumber}
+                            />
+                          </View>
                           <Text style={[styles.networksLabel, styles.step2GapClear]}>Mitandao inayokubaliwa</Text>
                           <View style={[styles.networksRow, styles.step2GapClear]}>
                             {NETWORKS.map((n) => (
                               <View key={n} style={styles.networkChip}>
+                                <View
+                                  style={[
+                                    styles.networkDot,
+                                    { backgroundColor: NETWORK_COLORS[n] || ACCENT },
+                                  ]}
+                                />
                                 <Text style={styles.networkChipText}>{n}</Text>
                               </View>
                             ))}
@@ -499,17 +574,24 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                           <Pressable
                             disabled={!isPhoneValid || submitting}
                             style={[
-                              styles.cta,
+                              styles.ctaWrap,
                               styles.ctaDockBtn,
                               (!isPhoneValid || submitting) && styles.ctaDisabled,
                             ]}
                             onPress={handleStep2Pay}
                           >
-                            {submitting ? (
-                              <ActivityIndicator color="#111827" />
-                            ) : (
-                              <Text style={styles.ctaText}>LIPIA SASA</Text>
-                            )}
+                            <LinearGradient
+                              colors={ACCENT_GRADIENT}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                              style={styles.ctaGradient}
+                            >
+                              {submitting ? (
+                                <ActivityIndicator color="#111827" />
+                              ) : (
+                                <Text style={styles.ctaText}>LIPIA SASA</Text>
+                              )}
+                            </LinearGradient>
                           </Pressable>
                         </View>
                       </View>
@@ -517,21 +599,46 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
                     {step === 3 && (
                       <View style={styles.step3Wrap}>
-                        <ActivityIndicator size="large" color={ACCENT} style={styles.spinner} />
+                        <View style={styles.loaderHaloWrap}>
+                          <Animated.View
+                            style={[
+                              styles.loaderRing,
+                              { transform: [{ rotate: ringSpin }] },
+                            ]}
+                          />
+                          <View style={styles.loaderInner}>
+                            <Ionicons name="card" size={26} color={ACCENT} />
+                          </View>
+                        </View>
                         <Text style={styles.waitTitle}>Inasubiri uthibitisho wa malipo</Text>
                         <Text style={styles.waitPin}>
-                          Thibitisha malipo ya {selectedAmountDisplay} kwenye simu yako (PIN).
+                          Thibitisha malipo kwenye simu yako (PIN).
                         </Text>
-                        <Text style={styles.countdown}>{remainingSeconds > 0 ? formatCountdown(remainingSeconds) : '--:--'}</Text>
-                        <Text style={styles.orderHint} numberOfLines={1}>
-                          {orderId ? `Order: ${orderId}` : ''}
+                        <View style={styles.amountPill}>
+                          <Ionicons name="wallet" size={14} color={ACCENT} />
+                          <Text style={styles.amountPillText}>{selectedAmountDisplay}</Text>
+                        </View>
+                        <Text style={styles.countdown}>
+                          {remainingSeconds > 0 ? formatCountdown(remainingSeconds) : '--:--'}
                         </Text>
+                        {orderId ? (
+                          <View style={styles.orderPill}>
+                            <Text style={styles.orderPillLabel}>Order ID</Text>
+                            <Text style={styles.orderPillValue} numberOfLines={1}>
+                              {orderId}
+                            </Text>
+                          </View>
+                        ) : null}
                       </View>
                     )}
 
                     {step === 4 && (
                       <View style={styles.resultWrap}>
-                        <Text style={styles.successIcon}>✓</Text>
+                        <View style={styles.successIconHalo}>
+                          <View style={styles.successIconCircle}>
+                            <Ionicons name="checkmark" size={28} color="#0F172A" />
+                          </View>
+                        </View>
                         <Text style={styles.successTitle}>Malipo yamefanikiwa</Text>
                         <Text style={styles.successBody}>
                           Kifurushi chako kinaisha:{'\n'}
@@ -540,26 +647,44 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                           </Text>
                         </Text>
                         <Pressable
-                          style={[styles.cta, styles.resultCta, finalizingSuccess && styles.ctaDisabled]}
+                          style={[styles.ctaWrap, styles.resultCta, finalizingSuccess && styles.ctaDisabled]}
                           disabled={finalizingSuccess}
                           onPress={() => void handleCompleted()}
                         >
-                          {finalizingSuccess ? (
-                            <ActivityIndicator color="#111827" />
-                          ) : (
-                            <Text style={styles.ctaText}>ENDELEA</Text>
-                          )}
+                          <LinearGradient
+                            colors={ACCENT_GRADIENT}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.ctaGradient}
+                          >
+                            {finalizingSuccess ? (
+                              <ActivityIndicator color="#111827" />
+                            ) : (
+                              <Text style={styles.ctaText}>ENDELEA</Text>
+                            )}
+                          </LinearGradient>
                         </Pressable>
                       </View>
                     )}
 
                     {step === 5 && (
                       <View style={styles.resultWrap}>
-                        <Text style={styles.failIcon}>!</Text>
+                        <View style={styles.failIconHalo}>
+                          <View style={styles.failIconCircle}>
+                            <Ionicons name="alert" size={28} color="#FFFFFF" />
+                          </View>
+                        </View>
                         <Text style={styles.failTitle}>Malipo hayajakamilika</Text>
                         <Text style={styles.failBody}>{failureReason}</Text>
-                        <Pressable style={[styles.cta, styles.resultCta]} onPress={handleRetry}>
-                          <Text style={styles.ctaText}>JARIBU TENA</Text>
+                        <Pressable style={[styles.ctaWrap, styles.resultCta]} onPress={handleRetry}>
+                          <LinearGradient
+                            colors={ACCENT_GRADIENT}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.ctaGradient}
+                          >
+                            <Text style={styles.ctaText}>JARIBU TENA</Text>
+                          </LinearGradient>
                         </Pressable>
                         <Pressable style={[styles.cancelBtn, styles.resultSecondary]} onPress={handleCancel}>
                           <Text style={styles.cancelBtnText}>FUNGA</Text>
@@ -574,11 +699,18 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                 >
                   {step === 1 ? (
                     <Pressable
-                      style={[styles.cta, styles.ctaDockBtn, (!selectedPlan || plansLoading) && styles.ctaDisabled]}
+                      style={[styles.ctaWrap, styles.ctaDockBtn, (!selectedPlan || plansLoading) && styles.ctaDisabled]}
                       disabled={!selectedPlan || plansLoading}
                       onPress={goStep2}
                     >
-                      <Text style={styles.ctaText}>LIPIA — {selectedAmountDisplay}</Text>
+                      <LinearGradient
+                        colors={ACCENT_GRADIENT}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.ctaGradient}
+                      >
+                        <Text style={styles.ctaText}>LIPIA — {selectedAmountDisplay}</Text>
+                      </LinearGradient>
                     </Pressable>
                   ) : null}
                   {step === 3 ? (
@@ -601,7 +733,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -616,13 +748,18 @@ const styles = StyleSheet.create({
   sheet: {
     width: '100%',
     overflow: 'hidden',
-    backgroundColor: '#16181D',
-    borderRadius: 20,
+    backgroundColor: SHEET_BG,
+    borderRadius: 22,
     paddingHorizontal: 20,
     paddingVertical: 20,
     borderWidth: 1,
-    borderColor: 'rgba(250,204,21,0.15)',
+    borderColor: 'rgba(250,204,21,0.18)',
     alignSelf: 'center',
+    elevation: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.45,
+    shadowRadius: 22,
   },
   sheetSafe: {
     flex: 1,
@@ -656,20 +793,20 @@ const styles = StyleSheet.create({
   },
   step2OuterPadding: {
     flex: 1,
-    padding: 16,
+    padding: 12,
     width: '100%',
     minHeight: 0,
+    justifyContent: 'center',
   },
   step2TopSection: {
-    gap: 16,
+    gap: 12,
   },
   step2FlexSpacer: {
-    flex: 1,
-    minHeight: 0,
+    height: 16,
   },
   step2BottomSection: {
     width: '100%',
-    marginBottom: 20,
+    marginBottom: 4,
   },
   step2GapClear: {
     marginBottom: 0,
@@ -690,29 +827,51 @@ const styles = StyleSheet.create({
   },
   handleBar: {
     alignSelf: 'center',
-    width: 40,
+    width: 44,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#333842',
+    backgroundColor: 'rgba(250,204,21,0.30)',
     marginBottom: 16,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 10,
+  },
+  titleIconCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: ACCENT,
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 4,
   },
   title: {
     color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 8,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    flexShrink: 1,
   },
   subtitle: {
     color: TEXT_MUTED,
-    fontSize: 14,
-    marginBottom: 16,
+    fontSize: 13,
+    marginBottom: 18,
     fontWeight: '500',
+    letterSpacing: 0.2,
   },
   subtitleNetworks: {
     color: TEXT_MUTED,
-    fontSize: 13,
+    fontSize: 12,
     marginTop: -2,
-    marginBottom: 10,
+    marginBottom: 4,
+    letterSpacing: 0.2,
   },
   plansSpinner: {
     marginVertical: 24,
@@ -734,15 +893,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     paddingHorizontal: 16,
+    paddingRight: 40,
     borderRadius: 16,
     marginBottom: 10,
     backgroundColor: CARD_BG,
     borderWidth: 1.5,
-    borderColor: '#343B48',
+    borderColor: '#2C323D',
+    overflow: 'hidden',
+    position: 'relative',
   },
   planRowSelected: {
     borderColor: ACCENT,
     backgroundColor: CARD_BG_ACTIVE,
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.30,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  planBadge: {
+    position: 'absolute',
+    right: 12,
+    top: '50%',
+    marginTop: -10,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    elevation: 4,
   },
   radioOuter: {
     width: 22,
@@ -767,21 +951,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   planLabel: {
-    color: '#F3F4F6',
-    fontSize: 15,
+    color: '#F9FAFB',
+    fontSize: 16,
     fontWeight: '700',
+    letterSpacing: 0.2,
   },
   planMeta: {
     color: TEXT_MUTED,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
     marginTop: 4,
+    letterSpacing: 0.2,
   },
   planPrice: {
     color: ACCENT,
     fontSize: 15,
-    fontWeight: '700',
-    marginTop: 4,
+    fontWeight: '800',
+    marginTop: 6,
+    letterSpacing: 0.3,
   },
   cta: {
     backgroundColor: ACCENT,
@@ -795,20 +982,39 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     marginTop: 20,
     marginBottom: 20,
-    elevation: 4,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+  },
+  ctaWrap: {
+    width: '100%',
+    minHeight: 56,
+    borderRadius: 16,
+    alignSelf: 'stretch',
+    marginTop: 20,
+    marginBottom: 20,
+    overflow: 'hidden',
+    elevation: 10,
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+  },
+  ctaGradient: {
+    flex: 1,
+    minHeight: 56,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
   },
   ctaText: {
     color: '#111827',
     fontSize: 17,
-    fontWeight: '700',
+    fontWeight: '800',
     textAlign: 'center',
+    letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: '#232833',
+    backgroundColor: '#1A1F28',
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 16,
@@ -816,24 +1022,58 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#353D4D',
+    borderColor: '#2A323F',
+  },
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1A1F28',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.18)',
+  },
+  inputIcon: {
+    marginRight: 10,
+  },
+  inputField: {
+    flex: 1,
+    paddingVertical: 14,
+    fontSize: 17,
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
   },
   networksLabel: {
     color: '#9CA3AF',
-    fontSize: 13,
+    fontSize: 11,
     marginBottom: 10,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    fontWeight: '700',
   },
   networksRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 24,
+    marginBottom: 16,
   },
   networkChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#2A2E37',
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: '#1F242E',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    gap: 6,
+  },
+  networkDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   networkChipText: {
     color: '#E5E7EB',
@@ -847,27 +1087,81 @@ const styles = StyleSheet.create({
   spinner: {
     marginBottom: 20,
   },
+  loaderHaloWrap: {
+    width: 92,
+    height: 92,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginBottom: 22,
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.65,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  loaderRing: {
+    position: 'absolute',
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    borderWidth: 3,
+    borderColor: 'rgba(250,204,21,0.18)',
+    borderTopColor: ACCENT,
+  },
+  loaderInner: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#161B23',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.20)',
+  },
   waitTitle: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '700',
     textAlign: 'center',
-    marginBottom: 12,
+    marginBottom: 6,
+    letterSpacing: 0.3,
   },
   waitPin: {
     color: '#D1D5DB',
-    fontSize: 14,
+    fontSize: 13,
     textAlign: 'center',
-    lineHeight: 21,
+    lineHeight: 20,
     paddingHorizontal: 8,
     marginBottom: 14,
   },
+  amountPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(250,204,21,0.10)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.30)',
+    marginBottom: 14,
+  },
+  amountPillText: {
+    color: ACCENT,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
   countdown: {
     color: ACCENT,
-    fontSize: 36,
+    fontSize: 38,
     fontWeight: '800',
-    letterSpacing: 2,
-    marginBottom: 12,
+    letterSpacing: 3,
+    marginBottom: 16,
+    textShadowColor: ACCENT_GLOW,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
   },
   orderHint: {
     color: '#6B7280',
@@ -875,9 +1169,58 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     paddingHorizontal: 12,
   },
+  orderPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#1A1F28',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    maxWidth: '92%',
+  },
+  orderPillLabel: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  orderPillValue: {
+    color: '#E5E7EB',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    flexShrink: 1,
+  },
   resultWrap: {
     paddingVertical: 12,
     paddingHorizontal: 4,
+    alignItems: 'center',
+  },
+  successIconHalo: {
+    width: 76,
+    height: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  successIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#4ADE80',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(74,222,128,0.45)',
   },
   successIcon: {
     alignSelf: 'center',
@@ -897,19 +1240,42 @@ const styles = StyleSheet.create({
     color: '#4ADE80',
     fontSize: 20,
     fontWeight: '800',
-    marginBottom: 14,
+    marginBottom: 12,
     textAlign: 'center',
+    letterSpacing: 0.3,
   },
   successBody: {
     color: '#D1D5DB',
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 15,
+    lineHeight: 22,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 22,
   },
   successHighlight: {
     color: '#FFFFFF',
-    fontWeight: '700',
+    fontWeight: '800',
+  },
+  failIconHalo: {
+    width: 76,
+    height: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  failIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(239,68,68,0.45)',
   },
   failTitle: {
     color: '#F87171',
@@ -917,6 +1283,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginBottom: 12,
     textAlign: 'center',
+    letterSpacing: 0.3,
   },
   failIcon: {
     alignSelf: 'center',
@@ -934,10 +1301,10 @@ const styles = StyleSheet.create({
   },
   failBody: {
     color: '#E5E7EB',
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 21,
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 22,
   },
   resultCta: {
     marginTop: 0,
@@ -954,21 +1321,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#4B5563',
+    borderColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'stretch',
-    elevation: 2,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.02)',
   },
   cancelBtnText: {
     color: '#E5E7EB',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     textAlign: 'center',
+    letterSpacing: 0.4,
   },
 });
 
