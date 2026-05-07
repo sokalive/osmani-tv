@@ -20,21 +20,27 @@ import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
+import { buildHlsProxyUrl, STREAM_PROXY_BASE } from '../lib/streamProxy';
+import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
 
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
 }
 
-/** Direct streams → expo-av. Everything else (player.php, embed pages, HTML) → plain WebView. */
-function isDirectMediaStreamUrl(url) {
+/**
+ * Pick a playback engine from the URL shape only:
+ *   .m3u8          → 'hls-webview'      (proxy + hls.js inside WebView)
+ *   .mp4/.ts/.mts  → 'native'           (expo-av direct)
+ *   anything else  → 'embed-webview'    (plain WebView for player.php / iframe pages)
+ */
+function pickPlaybackRoute(url) {
   const s = String(url ?? '');
-  if (!s.trim()) return false;
-  const u = s.split(/[#?]/)[0].toLowerCase();
-  return (
-    /\.m3u8$/i.test(u) ||
-    /\.mp4$/i.test(u) ||
-    /\.(?:m2ts|mts|ts)$/i.test(u)
-  );
+  if (!s.trim()) return 'embed-webview';
+  const lower = s.split(/[#?]/)[0].toLowerCase();
+  if (/\.m3u8$/i.test(lower)) return 'hls-webview';
+  if (/\.mp4$/i.test(lower)) return 'native';
+  if (/\.(?:m2ts|mts|ts)$/i.test(lower)) return 'native';
+  return 'embed-webview';
 }
 
 function playbackFailureMessage(reasonText) {
@@ -66,18 +72,40 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
   };
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
-  const useNativePlayer = useMemo(() => isDirectMediaStreamUrl(uri), [uri]);
-  const webViewSource = useMemo(() => {
+  const playbackRoute = useMemo(() => pickPlaybackRoute(uri), [uri]);
+  const useNativePlayer = playbackRoute === 'native';
+  const useHlsWebView = playbackRoute === 'hls-webview';
+  const useEmbedWebView = playbackRoute === 'embed-webview';
+
+  /** Proxy URL for HLS, generated once per (uri + headers) tuple. */
+  const proxiedHlsUrl = useMemo(() => {
+    if (!useHlsWebView) return '';
+    return buildHlsProxyUrl(uri, {
+      referer: channel?.referer,
+      origin: channel?.origin,
+      userAgent: channel?.userAgent,
+    });
+  }, [useHlsWebView, uri, channel?.referer, channel?.origin, channel?.userAgent]);
+
+  const hlsWebViewSource = useMemo(() => {
+    if (!useHlsWebView || !proxiedHlsUrl) return null;
+    return { html: buildHlsJsPlayerHtml(proxiedHlsUrl), baseUrl: 'https://localhost/' };
+  }, [useHlsWebView, proxiedHlsUrl]);
+
+  /** Plain WebView source for player.php / embed/iframe HTML pages. Headers as-is. */
+  const embedWebViewSource = useMemo(() => {
+    if (!useEmbedWebView) return null;
     const hEntries = Object.entries(headers).filter(([, v]) => v != null && String(v).trim() !== '');
     if (!hEntries.length) return { uri };
     return { uri, headers: Object.fromEntries(hEntries) };
-  }, [uri, channel?.referer, channel?.origin, channel?.userAgent]);
+  }, [useEmbedWebView, uri, channel?.referer, channel?.origin, channel?.userAgent]);
   const [isBuffering, setIsBuffering] = useState(true);
   const [playbackError, setPlaybackError] = useState('');
   const [playerEpoch, setPlayerEpoch] = useState(0);
   const liveLabel = 'LIVE';
 
   const videoRef = useRef(null);
+  const hlsWebRef = useRef(null);
   const embedWebRef = useRef(null);
   const hideTimer = useRef(null);
   const lastStatusRef = useRef({
@@ -112,14 +140,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!uri) return;
-    console.log('[player][debug] hybrid route:', {
-      native_expo_av: useNativePlayer,
-      webview_embed: !useNativePlayer,
+    console.log('[player][debug] route:', {
+      route: playbackRoute,
       api_playerType: normalizedPlayerType,
       url: uri,
-      headers_present: Boolean(webViewSource?.headers && Object.keys(webViewSource.headers).length),
+      proxy_base: STREAM_PROXY_BASE,
+      proxied_url: proxiedHlsUrl || null,
+      embed_headers_present: Boolean(
+        embedWebViewSource?.headers && Object.keys(embedWebViewSource.headers).length,
+      ),
     });
-  }, [uri, normalizedPlayerType, useNativePlayer, webViewSource?.headers]);
+  }, [uri, normalizedPlayerType, playbackRoute, proxiedHlsUrl, embedWebViewSource?.headers]);
 
   // Keep local channel snapshot in sync when route params change.
   useEffect(() => {
@@ -186,7 +217,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const onError = (error) => {
     console.log('[player][debug] playback error:', {
-      player_type: useNativePlayer ? 'native-expo-av' : 'webview',
+      route: playbackRoute,
       declared_player_type: normalizedPlayerType,
       url: uri,
       current_index: currentUrlIndex,
@@ -376,6 +407,73 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     applyPlaybackFailure(`webview-error:${String(desc)}`);
   };
 
+  const onHlsWebMessage = (event) => {
+    const raw = event?.nativeEvent?.data ?? '';
+    let msg = null;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      console.log('[player][debug] hls.js webview raw:', raw);
+      return;
+    }
+    if (!msg || typeof msg !== 'object') return;
+    const kind = String(msg.kind || '');
+    const payload = msg.payload ?? null;
+    if (kind === 'hls_manifest_parsed' || kind === 'hls_level_loaded') {
+      console.log('[player][debug] hls.js event:', kind);
+      return;
+    }
+    if (kind === 'video_playing') {
+      setIsBuffering(false);
+      setIsPlaying(true);
+      setPlaybackError('');
+      console.log('[player][debug] hls.js: playing');
+      return;
+    }
+    if (kind === 'video_waiting') {
+      setIsBuffering(true);
+      console.log('[player][debug] hls.js: waiting/buffering');
+      return;
+    }
+    if (kind === 'stall_detected') {
+      console.log('[player][debug] hls.js: stall_detected', payload);
+      return;
+    }
+    if (kind === 'hls_recover') {
+      console.log('[player][debug] hls.js: recover ->', payload);
+      return;
+    }
+    if (kind === 'hls_error') {
+      const fatal = Boolean(payload?.fatal);
+      console.log('[player][debug] hls.js error', { fatal, ...payload });
+      if (fatal) applyPlaybackFailure(`hls.js:${payload?.type || ''}:${payload?.details || ''}`);
+      return;
+    }
+    if (kind === 'video_error') {
+      console.log('[player][debug] hls.js: video element error', payload);
+      applyPlaybackFailure(`video-error:${payload?.code ?? ''}`);
+      return;
+    }
+    if (kind === 'hls_fatal_giveup') {
+      console.log('[player][debug] hls.js: fatal giveup', payload);
+      applyPlaybackFailure(`hls.js-fatal:${payload?.type || ''}:${payload?.details || ''}`);
+      return;
+    }
+    console.log('[player][debug] hls.js unknown event:', kind, payload);
+  };
+
+  const onHlsWebHttpError = (ev) => {
+    const status = ev?.nativeEvent?.statusCode;
+    console.log('[player][debug] hls.js webview shell http error:', status);
+    applyPlaybackFailure(`hls-shell-http:${status}`);
+  };
+
+  const onHlsWebError = (ev) => {
+    const desc = ev?.nativeEvent?.description ?? ev?.nativeEvent?.message ?? 'unknown';
+    console.log('[player][debug] hls.js webview shell error:', desc);
+    applyPlaybackFailure(`hls-shell-error:${String(desc)}`);
+  };
+
   // PLAY / PAUSE
   const onPlayPause = async () => {
     if (useNativePlayer) {
@@ -385,6 +483,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       } else {
         await videoRef.current?.playAsync?.();
       }
+    } else if (useHlsWebView) {
+      const cmd = isPlaying
+        ? `(function(){try{var v=document.getElementById('v');if(v)v.pause();}catch(e){}})();true;`
+        : `(function(){try{var v=document.getElementById('v');if(v)v.play().catch(function(){});}catch(e){}})();true;`;
+      hlsWebRef.current?.injectJavaScript(cmd);
+      setIsPlaying((v) => !v);
     } else {
       embedWebRef.current?.injectJavaScript(`(function(){try{var v=document.querySelector('video');if(v){if(v.paused)v.play().catch(function(){});else v.pause();}}catch(e){}})();true;`);
       setIsPlaying((v) => !v);
@@ -395,7 +499,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   useEffect(() => {
     if (!uri) return;
     setPlaybackError('');
-  }, [uri, playerEpoch, useNativePlayer]);
+  }, [uri, playerEpoch, playbackRoute]);
 
   const bottomActions = [
     {
@@ -432,6 +536,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       onPress: () =>
         setResizeMode((m) => {
           const next = m === 'contain' ? 'cover' : 'contain';
+          if (useHlsWebView) {
+            const fit = next === 'cover' ? 'cover' : 'contain';
+            hlsWebRef.current?.injectJavaScript(
+              `(function(){try{var v=document.getElementById('v');if(v)v.style.objectFit=${JSON.stringify(fit)};}catch(e){}})();true;`,
+            );
+          }
           return next;
         }),
     },
@@ -448,7 +558,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   return (
     <View style={styles.root}>
 
-      {/* Hybrid: direct media → expo-av; embed/player pages → plain WebView (no hls.js shell) */}
+      {/*
+        Routing:
+          - .m3u8          → proxy + hls.js inside WebView (tokenized IPTV-safe)
+          - .mp4 / .ts ... → expo-av native
+          - everything else (player.php, embed pages, iframe HTML) → plain WebView
+      */}
       <Pressable style={{ flex: 1 }} onPress={showControls}>
 
         {useNativePlayer ? (
@@ -468,12 +583,30 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             onError={onError}
             useNativeControls={false}
           />
+        ) : useHlsWebView ? (
+          <WebView
+            key={`hls-${playerEpoch}`}
+            ref={hlsWebRef}
+            style={styles.video}
+            source={hlsWebViewSource}
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            javaScriptEnabled
+            domStorageEnabled
+            originWhitelist={['*']}
+            mixedContentMode="always"
+            onLoadStart={onEmbedLoadStart}
+            onLoadEnd={onEmbedLoadEnd}
+            onMessage={onHlsWebMessage}
+            onHttpError={onHlsWebHttpError}
+            onError={onHlsWebError}
+          />
         ) : (
           <WebView
             key={`embed-${playerEpoch}`}
             ref={embedWebRef}
             style={styles.video}
-            source={webViewSource}
+            source={embedWebViewSource}
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
             javaScriptEnabled
