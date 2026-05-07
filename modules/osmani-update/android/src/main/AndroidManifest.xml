@@ -1,0 +1,26 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Required so the app can launch the system installer for the
+         downloaded APK. The user still has to confirm install in the
+         system UI; this permission is non-dangerous and auto-granted
+         on install. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application>
+        <!--
+          FileProvider used to expose the cached APK file to the
+          system PackageInstaller intent (which refuses file:// URIs
+          on API 24+). The authority is namespaced to avoid clashing
+          with any other FileProvider in the host app.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.osmaniupdate.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/osmani_update_paths" />
+        </provider>
+    </application>
+</manifest>

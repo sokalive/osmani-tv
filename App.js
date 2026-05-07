@@ -23,12 +23,14 @@ import { Ionicons } from '@expo/vector-icons';
 import EmergencyModal from './components/EmergencyModal';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import PremiumModal from './components/PremiumModal';
+import UpdateOverlay from './components/UpdateOverlay';
 import AkauntiYanguScreen from './screens/AkauntiYanguScreen';
 import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
 import { BASE_URL } from './api';
 import { trackInstallOnce } from './api/analytics';
 import { startPresence, stopPresence } from './lib/presenceTracker';
+import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
 import { resolveStream } from './lib/channelStream';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
@@ -591,8 +593,10 @@ export default function App() {
   useEffect(() => {
     void trackInstallOnce();
     void startPresence();
+    startUpdateClient();
     return () => {
       void stopPresence();
+      stopUpdateClient();
     };
   }, []);
 
@@ -607,6 +611,7 @@ export default function App() {
         >
           <RootNavigator />
         </NavigationContainer>
+        <UpdateOverlay />
       </OsmaniAppProvider>
     </SafeAreaProvider>
   );

@@ -1,0 +1,9 @@
+{
+  "name": "osmani-update",
+  "version": "1.0.0",
+  "description": "Native OTA self-update module for Osmani TV (Android).",
+  "main": "index.ts",
+  "private": true,
+  "platforms": ["android"],
+  "keywords": ["expo", "update", "ota", "android"]
+}
