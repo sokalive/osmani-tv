@@ -10,6 +10,7 @@ import {
   AppState,
   ActivityIndicator,
   Animated,
+  ScrollView,
 } from 'react-native';
 import { Video } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,6 +23,7 @@ import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChan
 import { normalizePlayerType } from '../lib/channelStream';
 import { buildHlsProxyUrl, STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
+import { buildEmbedBridgeJs } from '../lib/embedBridgeJs';
 
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
@@ -49,6 +51,32 @@ function baseUrlFromUrl(url) {
   } catch {
     return 'https://localhost/';
   }
+}
+
+function buildHlsCmdScript(cmd) {
+  const json = JSON.stringify(cmd ?? {});
+  return `(function(){try{if(window.__OSMANI_HLS_CMD__){window.__OSMANI_HLS_CMD__(${json});}}catch(e){}})();true;`;
+}
+
+function buildEmbedCmdScript(cmd) {
+  const json = JSON.stringify(cmd ?? {});
+  return `(function(){try{if(window.__OSMANI_EMBED_CMD__){window.__OSMANI_EMBED_CMD__(${json});}}catch(e){}})();true;`;
+}
+
+function hlsLevelLabel(level) {
+  if (!level) return '';
+  if (level.label) return String(level.label);
+  if (level.height) return `${level.height}p`;
+  if (level.bitrate) return `${Math.round(level.bitrate / 1000)} kbps`;
+  return level.name ? String(level.name) : '';
+}
+
+function hlsAudioLabel(track) {
+  if (!track) return '';
+  if (track.name && track.lang) return `${track.name} (${track.lang})`;
+  if (track.name) return String(track.name);
+  if (track.lang) return String(track.lang);
+  return `Audio ${track.index ?? track.id ?? ''}`.trim();
 }
 
 function playbackFailureMessage(reasonText) {
@@ -110,6 +138,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (!hEntries.length) return { uri };
     return { uri, headers: Object.fromEntries(hEntries) };
   }, [useEmbedWebView, uri, channel?.referer, channel?.origin, channel?.userAgent]);
+
+  const embedBridgeJs = useMemo(() => buildEmbedBridgeJs(), []);
   const [isBuffering, setIsBuffering] = useState(true);
   const [playbackError, setPlaybackError] = useState('');
   const [playerEpoch, setPlayerEpoch] = useState(0);
@@ -130,6 +160,21 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [controlsVisible, setControlsVisible] = useState(true);
 
   const [resizeMode, setResizeMode] = useState('contain');
+
+  /** HLS track bridge state (populated by hls.js inside WebView). */
+  const [hlsLevels, setHlsLevels] = useState([]);
+  const [hlsCurrentLevel, setHlsCurrentLevel] = useState(-1);
+  const [hlsAutoLevel, setHlsAutoLevel] = useState(true);
+  const [hlsAudioTracks, setHlsAudioTracks] = useState([]);
+  const [hlsCurrentAudioTrack, setHlsCurrentAudioTrack] = useState(-1);
+
+  /** Embed-page detection state (populated by embed bridge). */
+  const [embedControls, setEmbedControls] = useState(null);
+  const [embedHasControls, setEmbedHasControls] = useState(null); // null=unknown, false=none, true=yes
+
+  /** Picker overlay: 'quality' | 'language' | null. */
+  const [pickerKind, setPickerKind] = useState(null);
+
   const sessionDeviceIdRef = useRef('');
   const sessionChannelIdRef = useRef('');
   const pingTimerRef = useRef(null);
@@ -147,6 +192,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setIsBuffering(true);
     setPlaybackError('');
     setPlayerEpoch((e) => e + 1);
+    setHlsLevels([]);
+    setHlsCurrentLevel(-1);
+    setHlsAutoLevel(true);
+    setHlsAudioTracks([]);
+    setHlsCurrentAudioTrack(-1);
+    setEmbedControls(null);
+    setEmbedHasControls(null);
+    setPickerKind(null);
   }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
 
   useEffect(() => {
@@ -456,6 +509,23 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       console.log('[player][debug] hls.js event:', kind);
       return;
     }
+    if (kind === 'hls_levels') {
+      const levels = Array.isArray(payload?.levels) ? payload.levels : [];
+      setHlsLevels(levels);
+      if (typeof payload?.currentLevel === 'number') setHlsCurrentLevel(payload.currentLevel);
+      if (typeof payload?.autoLevelEnabled === 'boolean') setHlsAutoLevel(payload.autoLevelEnabled);
+      return;
+    }
+    if (kind === 'hls_audio_tracks') {
+      const tracks = Array.isArray(payload?.tracks) ? payload.tracks : [];
+      setHlsAudioTracks(tracks);
+      if (typeof payload?.currentAudioTrack === 'number') setHlsCurrentAudioTrack(payload.currentAudioTrack);
+      return;
+    }
+    if (kind === 'hls_level_switched' || kind === 'hls_audio_track_switched') {
+      console.log('[player][debug] hls.js track switched:', kind, payload);
+      return;
+    }
     if (kind === 'video_playing') {
       setIsBuffering(false);
       setIsPlaying(true);
@@ -493,6 +563,29 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return;
     }
     console.log('[player][debug] hls.js unknown event:', kind, payload);
+  };
+
+  const onEmbedMessage = (event) => {
+    const raw = event?.nativeEvent?.data ?? '';
+    let msg = null;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!msg || typeof msg !== 'object') return;
+    const kind = String(msg.kind || '');
+    const payload = msg.payload ?? null;
+    if (kind === 'embed_controls_detected') {
+      setEmbedControls(payload || null);
+      setEmbedHasControls(Boolean(payload));
+      return;
+    }
+    if (kind === 'embed_no_controls') {
+      setEmbedControls(null);
+      setEmbedHasControls(false);
+      return;
+    }
   };
 
   const onHlsWebHttpError = (ev) => {
@@ -534,6 +627,134 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setPlaybackError('');
   }, [uri, playerEpoch, playbackRoute]);
 
+  /** Quality picker model (auto + per-level). */
+  const qualityModel = useMemo(() => {
+    if (useHlsWebView) {
+      const selectedId = hlsAutoLevel ? -1 : hlsCurrentLevel;
+      const options = [
+        { id: -1, label: 'Auto', selected: selectedId === -1 },
+        ...hlsLevels.map((lv) => ({
+          id: lv.index,
+          label: hlsLevelLabel(lv) || `Level ${lv.index}`,
+          selected: selectedId === lv.index,
+        })),
+      ];
+      const current = options.find((o) => o.selected) ?? options[0];
+      return { available: true, options, currentLabel: current?.label ?? 'Auto' };
+    }
+    if (useEmbedWebView && embedControls && embedControls.qualities?.length) {
+      const selectedId = typeof embedControls.currentQuality === 'number' ? embedControls.currentQuality : -1;
+      const options = [
+        { id: -1, label: 'Auto', selected: selectedId === -1 },
+        ...embedControls.qualities.map((q) => ({
+          id: q.id,
+          label: q.label || `Q${q.id}`,
+          selected: selectedId === q.id,
+        })),
+      ];
+      const current = options.find((o) => o.selected) ?? options[0];
+      return { available: true, options, currentLabel: current?.label ?? 'Auto' };
+    }
+    return { available: false, options: [], currentLabel: useNativePlayer ? 'Auto' : '—' };
+  }, [useHlsWebView, useEmbedWebView, useNativePlayer, hlsLevels, hlsCurrentLevel, hlsAutoLevel, embedControls]);
+
+  /** Language / audio track picker model. */
+  const languageModel = useMemo(() => {
+    if (useHlsWebView && hlsAudioTracks.length) {
+      const options = hlsAudioTracks.map((t) => ({
+        id: t.id,
+        label: hlsAudioLabel(t),
+        selected: hlsCurrentAudioTrack === t.id,
+      }));
+      const current = options.find((o) => o.selected) ?? options[0];
+      return { available: true, options, currentLabel: current?.label ?? '—' };
+    }
+    if (useEmbedWebView && embedControls && embedControls.audioTracks?.length) {
+      const selectedId = typeof embedControls.currentAudioTrack === 'number' ? embedControls.currentAudioTrack : -1;
+      const options = embedControls.audioTracks.map((t) => ({
+        id: t.id,
+        label: t.label || `Audio ${t.id}`,
+        selected: selectedId === t.id,
+      }));
+      const current = options.find((o) => o.selected) ?? options[0];
+      return { available: true, options, currentLabel: current?.label ?? '—' };
+    }
+    return { available: false, options: [], currentLabel: '—' };
+  }, [useHlsWebView, useEmbedWebView, hlsAudioTracks, hlsCurrentAudioTrack, embedControls]);
+
+  const openQualityPicker = useCallback(() => {
+    if (useNativePlayer) {
+      Alert.alert('Quality', 'Auto (default) — native player itachagua ubora yenyewe.');
+      return;
+    }
+    if (!qualityModel.available) {
+      if (useEmbedWebView && embedHasControls === false) {
+        Alert.alert('Quality', 'Stream hii inadhibiti ubora ndani ya page yenyewe.');
+        return;
+      }
+      Alert.alert('Quality', useHlsWebView ? 'Inasubiri taarifa za ubora kutoka kwenye stream...' : 'Quality controls hazijapatikana bado.');
+      return;
+    }
+    setPickerKind('quality');
+  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, qualityModel.available]);
+
+  const openLanguagePicker = useCallback(() => {
+    if (useNativePlayer) {
+      Alert.alert('Lugha', 'Native player haitumii audio tracks za ziada.');
+      return;
+    }
+    if (!languageModel.available) {
+      if (useEmbedWebView && embedHasControls === false) {
+        Alert.alert('Lugha', 'Stream hii inadhibiti audio/lugha ndani ya page yenyewe.');
+        return;
+      }
+      Alert.alert('Lugha', useHlsWebView ? 'Stream hii haina audio tracks za ziada.' : 'Audio tracks hazijapatikana bado.');
+      return;
+    }
+    setPickerKind('language');
+  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, languageModel.available]);
+
+  const onPickOption = useCallback(
+    (option) => {
+      if (pickerKind === 'quality') {
+        if (useHlsWebView) {
+          hlsWebRef.current?.injectJavaScript(buildHlsCmdScript({ type: 'set-level', level: option.id }));
+          if (option.id === -1) {
+            setHlsAutoLevel(true);
+            setHlsCurrentLevel(-1);
+          } else {
+            setHlsAutoLevel(false);
+            setHlsCurrentLevel(option.id);
+          }
+        } else if (useEmbedWebView) {
+          embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'set-level', level: option.id }));
+          setEmbedControls((prev) => (prev ? { ...prev, currentQuality: option.id } : prev));
+        }
+      } else if (pickerKind === 'language') {
+        if (useHlsWebView) {
+          hlsWebRef.current?.injectJavaScript(buildHlsCmdScript({ type: 'set-audio-track', id: option.id }));
+          setHlsCurrentAudioTrack(option.id);
+        } else if (useEmbedWebView) {
+          embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'set-audio-track', id: option.id }));
+          setEmbedControls((prev) => (prev ? { ...prev, currentAudioTrack: option.id } : prev));
+        }
+      }
+      setPickerKind(null);
+      showControlsAnimated();
+      startHideTimer();
+    },
+    [pickerKind, useHlsWebView, useEmbedWebView, showControlsAnimated, startHideTimer],
+  );
+
+  const closePicker = useCallback(() => {
+    setPickerKind(null);
+    showControlsAnimated();
+    startHideTimer();
+  }, [showControlsAnimated, startHideTimer]);
+
+  const activePickerModel = pickerKind === 'quality' ? qualityModel : pickerKind === 'language' ? languageModel : null;
+  const activePickerTitle = pickerKind === 'quality' ? 'Chagua Ubora' : 'Chagua Lugha / Audio';
+
   const bottomActions = [
     {
       key: 'pause',
@@ -546,21 +767,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     {
       key: 'language',
       icon: 'language',
-      label: 'Badili Lugha',
-      onPress: () => {
-        Alert.alert('Lugha', useNativePlayer ? 'No alternate audio' : 'Tumia mipangilio kwenye embed page.');
-      },
+      label: languageModel.available ? languageModel.currentLabel : 'Lugha',
+      onPress: openLanguagePicker,
     },
     {
       key: 'quality',
       icon: 'speedometer',
-      label: 'Quality',
-      onPress: () => {
-        Alert.alert(
-          'Quality',
-          useNativePlayer ? 'Auto (default)' : 'Quality hurekebishwa katika embed/page ya tovuti.',
-        );
-      },
+      label: qualityModel.available ? qualityModel.currentLabel : 'Quality',
+      onPress: openQualityPicker,
     },
     {
       key: 'fill',
@@ -646,8 +860,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             domStorageEnabled
             originWhitelist={['*']}
             mixedContentMode="always"
+            injectedJavaScript={embedBridgeJs}
             onLoadStart={onEmbedLoadStart}
             onLoadEnd={onEmbedLoadEnd}
+            onMessage={onEmbedMessage}
             onError={onEmbedError}
             onHttpError={onEmbedHttpError}
           />
@@ -702,6 +918,38 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
           </Animated.View>
         )}
+
+        {pickerKind && activePickerModel ? (
+          <Pressable style={styles.pickerBackdrop} onPress={closePicker}>
+            <Pressable style={styles.pickerSheet} onPress={() => {}}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>{activePickerTitle}</Text>
+                <Pressable onPress={closePicker} style={styles.pickerClose} hitSlop={12}>
+                  <Ionicons name="close" size={20} color="#E5E7EB" />
+                </Pressable>
+              </View>
+              <ScrollView style={styles.pickerScroll} contentContainerStyle={styles.pickerList}>
+                {activePickerModel.options.map((opt) => (
+                  <Pressable
+                    key={`${pickerKind}-${opt.id}`}
+                    onPress={() => onPickOption(opt)}
+                    style={[styles.pickerRow, opt.selected ? styles.pickerRowSelected : null]}
+                  >
+                    <Text
+                      style={[styles.pickerLabel, opt.selected ? styles.pickerLabelSelected : null]}
+                      numberOfLines={1}
+                    >
+                      {opt.label}
+                    </Text>
+                    {opt.selected ? (
+                      <Ionicons name="checkmark" size={18} color="#1EC967" />
+                    ) : null}
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        ) : null}
       </Pressable>
     </View>
   );
@@ -836,5 +1084,74 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 12,
     marginTop: 2,
+  },
+
+  pickerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(2,4,8,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 30,
+    elevation: 30,
+    paddingHorizontal: 20,
+  },
+  pickerSheet: {
+    width: '100%',
+    maxWidth: 360,
+    maxHeight: '80%',
+    backgroundColor: '#10141C',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.22)',
+    overflow: 'hidden',
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(148,163,184,0.18)',
+  },
+  pickerTitle: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pickerClose: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(30,41,59,0.7)',
+  },
+  pickerScroll: {
+    flexGrow: 0,
+  },
+  pickerList: {
+    paddingVertical: 6,
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  pickerRowSelected: {
+    backgroundColor: 'rgba(30,201,103,0.12)',
+  },
+  pickerLabel: {
+    color: '#E5E7EB',
+    fontSize: 13,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  pickerLabelSelected: {
+    color: '#A7F3D0',
+    fontWeight: '700',
   },
 });
