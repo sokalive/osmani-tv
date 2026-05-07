@@ -32,7 +32,7 @@ import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { formatSubscriptionExpiry } from '../lib/formatExpiry';
 
 const ACCENT = '#FACC15';
-const ACCENT_GRADIENT = ['#FDE047', '#FACC15', '#D4A015'];
+const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
 const ACCENT_GLOW = 'rgba(250, 204, 21, 0.55)';
 const SHEET_BG = '#0F1115';
 const CARD_BG = '#1E222B';
@@ -475,14 +475,15 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                   >
                     {step === 1 && (
                       <View>
-                        <View style={styles.titleRow}>
-                          <View style={styles.titleIconCircle}>
-                            <Ionicons name="diamond" size={14} color="#0F172A" />
+                        <View style={styles.crownHaloWrap}>
+                          <View style={styles.crownGlow} />
+                          <View style={styles.crownCircle}>
+                            <Ionicons name="diamond" size={26} color="#0F172A" />
                           </View>
-                          <Text style={styles.title}>Fungua Premium</Text>
                         </View>
-                        <Text style={styles.subtitle} numberOfLines={1}>
-                          {channelName}
+                        <Text style={styles.titleCentered}>Fungua Premium</Text>
+                        <Text style={styles.subtitleCentered} numberOfLines={2}>
+                          {channelName} ni channel ya premium
                         </Text>
                         {plansLoading ? (
                           <ActivityIndicator size="large" color={ACCENT} style={styles.plansSpinner} />
@@ -491,39 +492,53 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         {!plansLoading && !plansError && plans.length === 0 ? (
                           <Text style={styles.mutedCenter}>Hakuna mipango inayopatikana kwa sasa.</Text>
                         ) : null}
-                        {plans.map((plan) => {
-                          const selected = selectedPlan?.id === plan.id;
-                          return (
-                            <Pressable
-                              key={plan.id}
-                              onPress={() => setSelectedPlan(plan)}
-                              style={[styles.planRow, selected && styles.planRowSelected]}
-                            >
-                              {selected ? (
-                                <LinearGradient
-                                  colors={['rgba(250,204,21,0.14)', 'rgba(250,204,21,0.02)']}
-                                  start={{ x: 0, y: 0 }}
-                                  end={{ x: 1, y: 1 }}
-                                  style={StyleSheet.absoluteFill}
-                                  pointerEvents="none"
-                                />
-                              ) : null}
-                              <View style={[styles.radioOuter, selected && styles.radioOuterOn]}>
-                                {selected ? <View style={styles.radioInner} /> : null}
-                              </View>
-                              <View style={styles.planTextCol}>
-                                <Text style={styles.planLabel}>{plan.name}</Text>
-                                <Text style={styles.planMeta}>{plan.duration || '—'}</Text>
-                                <Text style={styles.planPrice}>TSh {formatPriceTz(plan.price)}</Text>
-                              </View>
-                              {selected ? (
-                                <View style={styles.planBadge}>
-                                  <Ionicons name="checkmark" size={12} color="#0F172A" />
+                        <View style={styles.plansList}>
+                          {plans.map((plan) => {
+                            const selected = selectedPlan?.id === plan.id;
+                            return (
+                              <Pressable
+                                key={plan.id}
+                                onPress={() => setSelectedPlan(plan)}
+                                style={[styles.planRow, selected && styles.planRowSelected]}
+                              >
+                                {selected ? (
+                                  <LinearGradient
+                                    colors={['rgba(250,204,21,0.14)', 'rgba(250,204,21,0.02)']}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 1 }}
+                                    style={StyleSheet.absoluteFill}
+                                    pointerEvents="none"
+                                  />
+                                ) : null}
+                                <View style={[styles.radioOuter, selected && styles.radioOuterOn]}>
+                                  {selected ? <View style={styles.radioInner} /> : null}
                                 </View>
-                              ) : null}
-                            </Pressable>
-                          );
-                        })}
+                                <View style={styles.planTextCol}>
+                                  <Text style={styles.planLabel}>{plan.name}</Text>
+                                  <Text style={styles.planMeta}>
+                                    {plan.duration ? `(${plan.duration})` : '(—)'}
+                                  </Text>
+                                </View>
+                                <Text style={styles.planPriceRight}>
+                                  TSh {formatPriceTz(plan.price)}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                        <View style={styles.benefitsList}>
+                          {[
+                            'Channel zote za Premium',
+                            'HD & 4K streaming',
+                            'Bila matangazo',
+                            'Upatikanaji wa muda wote',
+                          ].map((line) => (
+                            <View key={line} style={styles.benefitRow}>
+                              <Ionicons name="checkmark-circle" size={18} color={ACCENT} />
+                              <Text style={styles.benefitText}>{line}</Text>
+                            </View>
+                          ))}
+                        </View>
                       </View>
                     )}
 
@@ -709,7 +724,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         end={{ x: 1, y: 1 }}
                         style={styles.ctaGradient}
                       >
-                        <Text style={styles.ctaText}>LIPIA — {selectedAmountDisplay}</Text>
+                        <Text style={styles.ctaText}>Lipia — {selectedAmountDisplay}</Text>
                       </LinearGradient>
                     </Pressable>
                   ) : null}
@@ -831,7 +846,7 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: 'rgba(250,204,21,0.30)',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   titleRow: {
     flexDirection: 'row',
@@ -866,6 +881,75 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0.2,
   },
+  crownHaloWrap: {
+    alignSelf: 'center',
+    width: 76,
+    height: 76,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    marginTop: 2,
+  },
+  crownGlow: {
+    position: 'absolute',
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: 'rgba(250,204,21,0.16)',
+  },
+  crownCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.75,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  titleCentered: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 0.4,
+    marginBottom: 6,
+  },
+  subtitleCentered: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 18,
+    letterSpacing: 0.2,
+    paddingHorizontal: 8,
+    lineHeight: 19,
+  },
+  plansList: {
+    width: '100%',
+  },
+  benefitsList: {
+    marginTop: 14,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+    gap: 10,
+  },
+  benefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  benefitText: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: 0.2,
+    flexShrink: 1,
+  },
   subtitleNetworks: {
     color: TEXT_MUTED,
     fontSize: 12,
@@ -891,25 +975,24 @@ const styles = StyleSheet.create({
   planRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 16,
     paddingHorizontal: 16,
-    paddingRight: 40,
     borderRadius: 16,
     marginBottom: 10,
-    backgroundColor: CARD_BG,
+    backgroundColor: '#161A22',
     borderWidth: 1.5,
-    borderColor: '#2C323D',
+    borderColor: 'rgba(255,255,255,0.06)',
     overflow: 'hidden',
     position: 'relative',
   },
   planRowSelected: {
     borderColor: ACCENT,
-    backgroundColor: CARD_BG_ACTIVE,
+    backgroundColor: '#1B1F28',
     shadowColor: ACCENT,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.30,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOpacity: 0.40,
+    shadowRadius: 14,
+    elevation: 8,
   },
   planBadge: {
     position: 'absolute',
@@ -934,12 +1017,13 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     borderWidth: 2,
     borderColor: '#4B5563',
-    marginRight: 12,
+    marginRight: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   radioOuterOn: {
     borderColor: ACCENT,
+    backgroundColor: 'rgba(250,204,21,0.10)',
   },
   radioInner: {
     width: 12,
@@ -952,9 +1036,10 @@ const styles = StyleSheet.create({
   },
   planLabel: {
     color: '#F9FAFB',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.2,
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   planMeta: {
     color: TEXT_MUTED,
@@ -969,6 +1054,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 6,
     letterSpacing: 0.3,
+  },
+  planPriceRight: {
+    color: ACCENT,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+    marginLeft: 12,
   },
   cta: {
     backgroundColor: ACCENT,
@@ -985,26 +1077,26 @@ const styles = StyleSheet.create({
   },
   ctaWrap: {
     width: '100%',
-    minHeight: 56,
-    borderRadius: 16,
+    minHeight: 58,
+    borderRadius: 18,
     alignSelf: 'stretch',
     marginTop: 20,
     marginBottom: 20,
     overflow: 'hidden',
-    elevation: 10,
+    elevation: 14,
     shadowColor: ACCENT,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45,
-    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.55,
+    shadowRadius: 18,
   },
   ctaGradient: {
     flex: 1,
-    minHeight: 56,
-    paddingVertical: 16,
+    minHeight: 58,
+    paddingVertical: 17,
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 16,
+    borderRadius: 18,
   },
   ctaText: {
     color: '#111827',
