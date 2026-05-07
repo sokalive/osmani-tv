@@ -90,6 +90,11 @@ function formatPlanDuration(raw) {
   return `(${value.replace(/^\(|\)$/g, '')})`;
 }
 
+function isSubscriptionActive(subscription) {
+  if (!subscription || typeof subscription !== 'object') return false;
+  return subscription.active === true || subscription.isActive === true;
+}
+
 function normalizePlanRow(raw) {
   const active = raw?.is_active === true || raw?.isActive === true;
   return {
@@ -288,30 +293,38 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
-  /** After ZenoPay reports SUCCESS: show success UI only; global unlock runs on ENDELEA via `handleCompleted`. */
+  /** After ZenoPay reports SUCCESS: verify immediately, then show success UI. */
   const moveToSuccessStep = useCallback(async () => {
     if (doneRef.current) return;
     doneRef.current = true;
     clearTimers();
     closeSse();
+    let verified = null;
+    try {
+      verified = await refreshSubscription();
+      if (isSubscriptionActive(verified)) {
+        unlockChannels(verified);
+      }
+    } catch (e) {
+      console.log('[PAYMENT_SUCCESS_VERIFY]', 'refresh_failed', e?.message ?? e);
+    }
     try {
       const { deviceId } = await getDeviceIdentity();
       const sub = await fetchSubscription(deviceId);
-      setSuccessExpiresAt(sub.expiresAt);
+      setSuccessExpiresAt(verified?.expiresAt ?? sub.expiresAt ?? null);
     } catch {
-      setSuccessExpiresAt(null);
+      setSuccessExpiresAt(verified?.expiresAt ?? null);
     }
     setStep(4);
-  }, [clearTimers, closeSse]);
+  }, [clearTimers, closeSse, refreshSubscription, unlockChannels]);
 
   /** ENDELEA: always await fresh API via context; branch only on returned object (never stale context). */
   const handleCompleted = useCallback(async () => {
     setFinalizingSuccess(true);
     try {
       const subscription = await refreshSubscription();
-      console.log('AFTER REFRESH:', subscription);
-      console.log('SUBSCRIPTION AFTER CLICK:', subscription);
-      if (subscription?.isActive === true) {
+      console.log('[PAYMENT_CONTINUE_VERIFY]', subscription);
+      if (isSubscriptionActive(subscription)) {
         unlockChannels(subscription);
         onUnlockSuccess?.();
         await new Promise((resolve) => {
@@ -344,7 +357,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       if (doneRef.current) return;
       try {
         const latestSubscription = await refreshSubscription();
-        if (latestSubscription?.isActive === true) {
+        if (isSubscriptionActive(latestSubscription)) {
           await moveToSuccessStep();
           return;
         }
@@ -399,10 +412,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         const payload = JSON.parse(event?.data ?? '{}');
         const isActive = payload?.isActive === true || payload?.active === true;
         const expiresAt = payload?.expiresAt ?? payload?.expires_at ?? null;
-        const expTs = expiresAt ? Date.parse(String(expiresAt)) : NaN;
-        const isValid = Number.isFinite(expTs) && expTs > Date.now();
-        if (isActive && isValid) {
-          unlockChannels({ isActive: true, expiresAt: String(expiresAt) });
+        if (isActive) {
+          unlockChannels({ active: true, isActive: true, expiresAt: expiresAt ? String(expiresAt) : null });
           void moveToSuccessStep();
         }
       } catch {

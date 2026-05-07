@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,39 +23,50 @@ import { initiateTransfer, redeemTransfer } from '../api/subscription';
 
 const COLORS = {
   background: '#111215',
-  card: '#1A1D23',
+  card: '#151922',
+  input: '#1D222C',
   yellow: '#FFCB3D',
+  yellowDark: '#E5A020',
   mutedText: '#A1A8B5',
   white: '#FFFFFF',
+  border: 'rgba(255,255,255,0.08)',
 };
 
-const MODAL_W = '85%';
-const MODAL_MAX_W = 400;
+const MODAL_W = '88%';
+const MODAL_MAX_W = 392;
+const TRANSFER_CODE_SECONDS = 120;
 
-const GRADIENT_CTA = [COLORS.yellow, '#E5A020'];
-
-const BULLETS = [
-  'Tengeneza code ya kuhamisha kifurushi kwenda kifaa kingine.',
-  'Code inaisha baada ya muda mfupi — itumie haraka.',
-  'Kifaa cha asili kitapokea ujumbe wa uthibitisho na kupoteza ufikiaji.',
-  'Kifaa kipya kitapata muda uliobaki wa kifurushi mara moja.',
-];
+const GRADIENT_CTA = [COLORS.yellow, COLORS.yellowDark];
 
 const STEPS = Object.freeze({
-  CHOOSE: 'choose',
-  GENERATE: 'generate',
+  INTRO: 'intro',
+  PHONE: 'phone',
+  GENERATED: 'generated',
   REDEEM: 'redeem',
   REDEEMED: 'redeemed',
 });
 
+function formatTimer(totalSeconds) {
+  const safe = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const minutes = Math.floor(safe / 60);
+  const seconds = safe % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function normalizePhone(raw) {
+  return String(raw || '').replace(/[^\d]/g, '').slice(0, 10);
+}
+
 export default function HamishaKifurushiModal({ visible, onClose }) {
   const { height: windowHeight } = useWindowDimensions();
-  const cardMaxHeight = windowHeight * 0.85;
+  const cardMaxHeight = windowHeight * 0.82;
   const { reverifySubscription } = useOsmaniApp();
 
-  const [step, setStep] = useState(STEPS.CHOOSE);
+  const [step, setStep] = useState(STEPS.INTRO);
+  const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [generatedCode, setGeneratedCode] = useState('');
+  const [remainingSeconds, setRemainingSeconds] = useState(TRANSFER_CODE_SECONDS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -82,9 +93,11 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
 
   useEffect(() => {
     if (visible) {
-      setStep(STEPS.CHOOSE);
+      setStep(STEPS.INTRO);
+      setPhone('');
       setCode('');
       setGeneratedCode('');
+      setRemainingSeconds(TRANSFER_CODE_SECONDS);
       setBusy(false);
       setError('');
       runEnterAnim();
@@ -95,33 +108,50 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     onClose?.();
   }, [onClose]);
 
-  const handleGenerate = useCallback(async () => {
-    setBusy(true);
-    setError('');
-    try {
-      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-      const r = await initiateTransfer(deviceId, deviceFingerprint);
-      setGeneratedCode(r.code);
-      setStep(STEPS.GENERATE);
-    } catch (e) {
-      const msg = e?.message ?? String(e ?? 'unknown_error');
-      setError(msg);
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  useEffect(() => {
+    if (!visible || step !== STEPS.GENERATED || !generatedCode) return undefined;
+    setRemainingSeconds(TRANSFER_CODE_SECONDS);
+    const timer = setInterval(() => {
+      setRemainingSeconds((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [visible, step, generatedCode]);
 
-  const handleRedeem = useCallback(async () => {
-    const c = code.trim();
-    if (!c) {
-      setError('Weka code ya uhamisho.');
+  const isPhoneValid = useMemo(() => /^0[67]\d{8}$/.test(phone), [phone]);
+  const redeemCode = code.trim();
+  const isRedeemCodeValid = /^\d{6}$/.test(redeemCode);
+
+  const handleGenerate = useCallback(async () => {
+    if (!isPhoneValid) {
+      setError('Weka namba sahihi ya simu.');
       return;
     }
     setBusy(true);
     setError('');
     try {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-      const r = await redeemTransfer(c, deviceId, deviceFingerprint);
+      const r = await initiateTransfer(deviceId, deviceFingerprint, phone);
+      setGeneratedCode(r.code);
+      setRemainingSeconds(TRANSFER_CODE_SECONDS);
+      setStep(STEPS.GENERATED);
+    } catch (e) {
+      const msg = e?.message ?? String(e ?? 'unknown_error');
+      setError(msg);
+    } finally {
+      setBusy(false);
+    }
+  }, [isPhoneValid, phone]);
+
+  const handleRedeem = useCallback(async () => {
+    if (!isRedeemCodeValid) {
+      setError('Weka code sahihi ya tarakimu 6.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+      const r = await redeemTransfer(redeemCode, deviceId, deviceFingerprint);
       if (r?.active === true) {
         setStep(STEPS.REDEEMED);
         await reverifySubscription?.('transfer-redeem');
@@ -134,7 +164,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     } finally {
       setBusy(false);
     }
-  }, [code, reverifySubscription]);
+  }, [isRedeemCodeValid, redeemCode, reverifySubscription]);
 
   const copyGeneratedCode = useCallback(async () => {
     if (!generatedCode) return;
@@ -163,22 +193,74 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                   <Ionicons name="close" size={26} color={COLORS.white} />
                 </Pressable>
 
-                {step === STEPS.CHOOSE ? (
+                {step === STEPS.INTRO ? (
                   <View style={styles.stepColumn}>
-                    <Text style={styles.stepTitleCenter}>HAMISHA KIFURUSHI</Text>
-                    <View style={styles.bulletBlock}>
-                      {BULLETS.map((line) => (
-                        <Text key={line} style={styles.bulletLine}>
-                          {'\u2022'} {line}
-                        </Text>
-                      ))}
+                    <View style={styles.iconHalo}>
+                      <View style={styles.iconCircle}>
+                        <Ionicons name="swap-horizontal" size={28} color="#111827" />
+                      </View>
                     </View>
+                    <Text style={styles.stepTitleCenter}>HAMISHA KIFURUSHI</Text>
+                    <Text style={styles.introLead}>
+                      Unaweza kuhamisha kifurushi chako kwenda simu nyingine.
+                    </Text>
+                    <Text style={styles.bulletLine}>• Simu ya zamani itapoteza ufikiaji mara moja.</Text>
+                    <Text style={styles.bulletLine}>• Simu ya zamani itahitaji kuthibitisha uhamisho.</Text>
+                    <Text style={styles.bulletLine}>
+                      • Muda uliobaki wa kifurushi utaendelea kwenye simu mpya.
+                    </Text>
                     {error ? <Text style={styles.errorText}>{error}</Text> : null}
-                    <View style={styles.actionsBlock}>
+                    <View style={styles.actionsBlockIntro}>
                       <Pressable
-                        style={[styles.primaryWrap, busy && styles.btnDisabled]}
+                        style={styles.primaryWrap}
+                        onPress={() => {
+                          setError('');
+                          setStep(STEPS.PHONE);
+                        }}
+                      >
+                        <LinearGradient
+                          colors={GRADIENT_CTA}
+                          start={{ x: 0, y: 0.5 }}
+                          end={{ x: 1, y: 0.5 }}
+                          style={styles.primaryGradient}
+                        >
+                          <Text style={styles.primaryText}>ENDELEA KUHAMISHA</Text>
+                        </LinearGradient>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+
+                {step === STEPS.PHONE ? (
+                  <View style={styles.stepColumn}>
+                    <View style={styles.iconHaloSmall}>
+                      <View style={styles.iconCircleSmall}>
+                        <Ionicons name="call" size={22} color="#111827" />
+                      </View>
+                    </View>
+                    <Text style={styles.stepTitleCenter}>Hamisha Kifurushi</Text>
+                    <Text style={styles.descCenter}>
+                      Weka namba ya simu uliyolipia kifurushi.{'\n'}
+                      Tutakutumia code ya kuhamisha.
+                    </Text>
+                    <TextInput
+                      style={styles.phoneInput}
+                      placeholder="06XXXXXXXX au 07XXXXXXXX"
+                      placeholderTextColor="#6B7280"
+                      keyboardType="phone-pad"
+                      maxLength={10}
+                      value={phone}
+                      onChangeText={(t) => {
+                        setError('');
+                        setPhone(normalizePhone(t));
+                      }}
+                    />
+                    {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                    <View style={styles.actionsBlockStep}>
+                      <Pressable
+                        style={[styles.primaryWrap, (!isPhoneValid || busy) && styles.btnDisabled]}
                         onPress={handleGenerate}
-                        disabled={busy}
+                        disabled={!isPhoneValid || busy}
                       >
                         <LinearGradient
                           colors={GRADIENT_CTA}
@@ -189,7 +271,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                           {busy ? (
                             <ActivityIndicator color="#111827" />
                           ) : (
-                            <Text style={styles.primaryText}>TENGENEZA CODE YA UHAMISHO</Text>
+                            <Text style={styles.primaryText}>PATA CODE</Text>
                           )}
                         </LinearGradient>
                       </Pressable>
@@ -200,37 +282,54 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                           setStep(STEPS.REDEEM);
                         }}
                       >
-                        <Text style={styles.secondaryText}>Nina code ya kuhamisha</Text>
+                        <Text style={styles.secondaryText}>Nina code tayari</Text>
                       </Pressable>
                     </View>
                   </View>
                 ) : null}
 
-                {step === STEPS.GENERATE ? (
+                {step === STEPS.GENERATED ? (
                   <View style={styles.stepColumn}>
-                    <Text style={styles.stepTitleLeft}>Code ya Uhamisho</Text>
-                    <Text style={styles.desc}>
-                      Andika au nakili code hii kwenye kifaa kipya, kisha bonyeza
-                      <Text style={styles.descBold}> {'"Nina code ya kuhamisho"'}</Text>.
+                    <View style={styles.iconHaloSmall}>
+                      <View style={styles.iconCircleSmall}>
+                        <Ionicons name="keypad" size={22} color="#111827" />
+                      </View>
+                    </View>
+                    <Text style={styles.stepTitleCenter}>Code ya Uhamisho</Text>
+                    <Text style={styles.descCenter}>
+                      Tumia code hii kwenye simu nyingine.{'\n'}
+                      Code itaisha baada ya dakika 2.
                     </Text>
                     <View style={styles.codeBox}>
                       <Text style={styles.codeText} selectable>
                         {generatedCode}
                       </Text>
                     </View>
-                    <View style={styles.actionsBlockStep2}>
-                      <Pressable style={styles.primaryWrap} onPress={copyGeneratedCode}>
+                    <Pressable style={styles.copyPill} onPress={copyGeneratedCode}>
+                      <Ionicons name="copy-outline" size={17} color={COLORS.yellow} />
+                      <Text style={styles.copyPillText}>Nakili Code</Text>
+                    </Pressable>
+                    <Text style={styles.countdownLabel}>Muda uliobaki</Text>
+                    <Text style={styles.countdownText}>{formatTimer(remainingSeconds)}</Text>
+                    {remainingSeconds <= 0 ? (
+                      <Text style={styles.errorText}>Code imeisha muda. Tengeneza code mpya.</Text>
+                    ) : null}
+                    <View style={styles.actionsBlockStep}>
+                      <Pressable
+                        style={styles.primaryWrap}
+                        onPress={() => {
+                          setError('');
+                          close();
+                        }}
+                      >
                         <LinearGradient
                           colors={GRADIENT_CTA}
                           start={{ x: 0, y: 0.5 }}
                           end={{ x: 1, y: 0.5 }}
                           style={styles.primaryGradient}
                         >
-                          <Text style={styles.primaryText}>NAKILI CODE</Text>
+                          <Text style={styles.primaryText}>THIBITISHA UHAMISHO</Text>
                         </LinearGradient>
-                      </Pressable>
-                      <Pressable style={styles.secondaryBtn} onPress={close}>
-                        <Text style={styles.secondaryText}>Funga</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -238,29 +337,33 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
 
                 {step === STEPS.REDEEM ? (
                   <View style={styles.stepColumn}>
-                    <Text style={styles.stepTitleLeft}>Ingiza Code ya Uhamisho</Text>
-                    <Text style={styles.desc}>
-                      Weka code uliyopata kutoka kifaa cha asili ili kuhamisha
-                      kifurushi kwenye simu hii.
+                    <View style={styles.iconHaloSmall}>
+                      <View style={styles.iconCircleSmall}>
+                        <Ionicons name="lock-open" size={22} color="#111827" />
+                      </View>
+                    </View>
+                    <Text style={styles.stepTitleCenter}>Weka Code</Text>
+                    <Text style={styles.descCenter}>
+                      Weka code ya tarakimu 6 uliyoipata kutoka simu ya zamani.
                     </Text>
                     <TextInput
-                      style={styles.input}
-                      placeholder="Code"
+                      style={styles.codeInput}
+                      placeholder="000000"
                       placeholderTextColor="#6B7280"
-                      autoCapitalize="characters"
-                      autoCorrect={false}
+                      keyboardType="number-pad"
+                      maxLength={6}
                       value={code}
                       onChangeText={(t) => {
                         setError('');
-                        setCode(t.toUpperCase());
+                        setCode(t.replace(/[^\d]/g, '').slice(0, 6));
                       }}
                     />
                     {error ? <Text style={styles.errorText}>{error}</Text> : null}
-                    <View style={styles.actionsBlockStep2}>
+                    <View style={styles.actionsBlockStep}>
                       <Pressable
-                        style={[styles.primaryWrap, busy && styles.btnDisabled]}
+                        style={[styles.primaryWrap, (!isRedeemCodeValid || busy) && styles.btnDisabled]}
                         onPress={handleRedeem}
-                        disabled={busy}
+                        disabled={!isRedeemCodeValid || busy}
                       >
                         <LinearGradient
                           colors={GRADIENT_CTA}
@@ -271,7 +374,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                           {busy ? (
                             <ActivityIndicator color="#111827" />
                           ) : (
-                            <Text style={styles.primaryText}>THIBITISHA</Text>
+                            <Text style={styles.primaryText}>THIBITISHA UHAMISHO</Text>
                           )}
                         </LinearGradient>
                       </Pressable>
@@ -279,10 +382,10 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                         style={styles.secondaryBtn}
                         onPress={() => {
                           setError('');
-                          setStep(STEPS.CHOOSE);
+                          setStep(STEPS.PHONE);
                         }}
                       >
-                        <Text style={styles.secondaryText}>Rudi</Text>
+                        <Text style={styles.secondaryText}>Rudi nyuma</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -290,8 +393,11 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
 
                 {step === STEPS.REDEEMED ? (
                   <View style={styles.stepColumn}>
+                    <View style={styles.successCircle}>
+                      <Ionicons name="checkmark" size={30} color="#111827" />
+                    </View>
                     <Text style={styles.stepTitleCenter}>Umefanikiwa</Text>
-                    <Text style={styles.desc}>
+                    <Text style={styles.descCenter}>
                       Kifurushi kimehamishwa kwenye simu hii. Sasa unaweza kutazama channel zote
                       za kulipia.
                     </Text>
@@ -329,7 +435,7 @@ const styles = StyleSheet.create({
   },
   dimOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.58)',
   },
   centerContent: {
     ...StyleSheet.absoluteFillObject,
@@ -346,10 +452,12 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     backgroundColor: COLORS.card,
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(250,204,21,0.12)',
-    padding: 20,
+    borderColor: 'rgba(255,203,61,0.18)',
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
     elevation: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
@@ -358,109 +466,207 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     position: 'absolute',
-    top: 16,
-    right: 16,
+    top: 14,
+    right: 14,
     zIndex: 10,
     padding: 4,
   },
   stepColumn: {
     width: '100%',
-    paddingTop: 40,
+    paddingTop: 18,
+    alignItems: 'stretch',
+  },
+  iconHalo: {
+    alignSelf: 'center',
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    backgroundColor: 'rgba(255,203,61,0.12)',
+  },
+  iconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.yellow,
+    shadowColor: COLORS.yellow,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.65,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  iconHaloSmall: {
+    alignSelf: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    backgroundColor: 'rgba(255,203,61,0.12)',
+  },
+  iconCircleSmall: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.yellow,
   },
   stepTitleCenter: {
     color: COLORS.white,
-    fontSize: 17,
+    fontSize: 22,
     fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
     letterSpacing: 0.5,
     width: '100%',
   },
-  stepTitleLeft: {
-    color: COLORS.white,
-    fontSize: 17,
-    fontWeight: '800',
-    textAlign: 'left',
-    marginBottom: 12,
-    width: '100%',
-  },
-  bulletBlock: {
-    width: '100%',
-    marginBottom: 20,
+  introLead: {
+    color: '#E5E7EB',
+    fontSize: 15,
+    lineHeight: 23,
+    textAlign: 'center',
+    marginBottom: 22,
+    paddingHorizontal: 4,
   },
   bulletLine: {
-    color: COLORS.mutedText,
+    color: '#F3F4F6',
     fontSize: 14,
-    lineHeight: 22,
-    marginBottom: 12,
+    lineHeight: 23,
+    marginBottom: 14,
     textAlign: 'left',
     width: '100%',
   },
-  desc: {
-    color: COLORS.mutedText,
+  descCenter: {
+    color: '#D1D5DB',
     fontSize: 14,
     lineHeight: 22,
-    marginBottom: 16,
-    textAlign: 'left',
+    marginBottom: 22,
+    textAlign: 'center',
     width: '100%',
   },
-  descBold: {
-    color: COLORS.white,
-    fontWeight: '700',
-  },
-  input: {
+  phoneInput: {
     alignSelf: 'stretch',
     width: '100%',
-    backgroundColor: '#1F2229',
-    borderRadius: 14,
+    backgroundColor: COLORS.input,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 18,
-    letterSpacing: 2,
+    paddingVertical: 16,
+    fontSize: 17,
+    letterSpacing: 0.4,
     color: COLORS.white,
-    marginBottom: 12,
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  codeInput: {
+    alignSelf: 'stretch',
+    width: '100%',
+    backgroundColor: COLORS.input,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    fontSize: 28,
+    letterSpacing: 9,
+    color: COLORS.white,
+    marginBottom: 14,
+    textAlign: 'center',
+    fontWeight: '800',
   },
   errorText: {
     color: '#FCA5A5',
     fontSize: 13,
+    lineHeight: 19,
     marginBottom: 12,
+    textAlign: 'center',
   },
   codeBox: {
-    backgroundColor: '#1F2229',
+    backgroundColor: COLORS.input,
     borderWidth: 1,
-    borderColor: 'rgba(255,203,61,0.25)',
-    borderRadius: 14,
-    paddingVertical: 22,
+    borderColor: 'rgba(255,203,61,0.35)',
+    borderRadius: 18,
+    paddingVertical: 24,
     paddingHorizontal: 16,
     alignItems: 'center',
-    marginBottom: 18,
+    marginBottom: 12,
   },
   codeText: {
     color: COLORS.yellow,
-    fontSize: 28,
+    fontSize: 36,
+    fontWeight: '900',
+    letterSpacing: 7,
+  },
+  copyPill: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,203,61,0.24)',
+    backgroundColor: 'rgba(255,203,61,0.08)',
+    marginBottom: 18,
+  },
+  copyPillText: {
+    color: COLORS.yellow,
+    fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 4,
+  },
+  countdownLabel: {
+    color: COLORS.mutedText,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    letterSpacing: 0.7,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  countdownText: {
+    color: COLORS.yellow,
+    fontSize: 34,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 3,
+    marginBottom: 14,
+  },
+  actionsBlockIntro: {
+    width: '100%',
+    alignSelf: 'stretch',
+    alignItems: 'stretch',
+    marginTop: 12,
   },
   actionsBlock: {
     width: '100%',
     alignSelf: 'stretch',
     alignItems: 'stretch',
+    marginTop: 18,
   },
-  actionsBlockStep2: {
+  actionsBlockStep: {
     width: '100%',
     alignSelf: 'stretch',
     alignItems: 'stretch',
+    marginTop: 6,
   },
   primaryWrap: {
     alignSelf: 'stretch',
     width: '100%',
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: 'hidden',
     elevation: 6,
-    shadowColor: '#000',
+    shadowColor: COLORS.yellow,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
   },
   primaryGradient: {
     width: '100%',
@@ -470,9 +676,10 @@ const styles = StyleSheet.create({
   },
   primaryText: {
     color: '#111827',
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '900',
     letterSpacing: 0.5,
+    textAlign: 'center',
   },
   secondaryBtn: {
     width: '100%',
@@ -483,11 +690,21 @@ const styles = StyleSheet.create({
   },
   secondaryText: {
     color: COLORS.yellow,
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 15,
+    fontWeight: '800',
     textAlign: 'center',
   },
   btnDisabled: {
-    opacity: 0.7,
+    opacity: 0.55,
+  },
+  successCircle: {
+    alignSelf: 'center',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4ADE80',
+    marginBottom: 16,
   },
 });

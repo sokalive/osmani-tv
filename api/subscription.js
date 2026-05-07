@@ -340,13 +340,16 @@ export async function recoverSubscription(deviceId, deviceFingerprint) {
  * that the destination device redeems. Source device retains access
  * until the transfer completes.
  */
-export async function initiateTransfer(deviceId, deviceFingerprint) {
+export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') {
   const url = `${API}/subscription/transfer/initiate`;
   console.log('[TRANSFER_INITIATE]', 'request', { url });
-  const { res, body } = await postJson(url, {
+  const payload = {
     device_id: deviceId,
     device_fingerprint: deviceFingerprint,
-  });
+  };
+  const normalizedPhone = String(phone || '').replace(/[^\d]/g, '');
+  if (normalizedPhone) payload.phone = normalizedPhone;
+  const { res, body } = await postJson(url, payload);
   if (!res.ok) {
     const reason = body?.error ?? body?.message ?? `HTTP ${res.status}`;
     console.log('[TRANSFER_INITIATE]', 'failed', reason);
