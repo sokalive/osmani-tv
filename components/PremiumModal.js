@@ -633,13 +633,18 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                               const failed = !!logoErrors[n.id];
                               const showLogo = !!n.logoUrl && !failed;
                               return (
-                                <View key={n.id} style={styles.networkCard}>
-                                  <View style={styles.networkLogoSlot}>
+                                <View key={n.id} style={styles.networkCardOuter}>
+                                  <View
+                                    style={[
+                                      styles.networkCard,
+                                      !showLogo && { backgroundColor: tint, borderColor: tint },
+                                    ]}
+                                  >
                                     {showLogo ? (
                                       <Image
                                         source={{ uri: n.logoUrl }}
-                                        style={styles.networkLogo}
-                                        resizeMode="contain"
+                                        style={styles.networkLogoFill}
+                                        resizeMode="cover"
                                         onError={() =>
                                           setLogoErrors((prev) =>
                                             prev[n.id] ? prev : { ...prev, [n.id]: true },
@@ -647,9 +652,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                                         }
                                       />
                                     ) : (
-                                      <View style={[styles.networkInitial, { backgroundColor: tint }]}>
-                                        <Text style={styles.networkInitialText}>{initial}</Text>
-                                      </View>
+                                      <Text style={styles.networkInitialFillText}>{initial}</Text>
                                     )}
                                   </View>
                                   <Text style={styles.networkCardText} numberOfLines={1}>
@@ -1255,49 +1258,38 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 16,
   },
-  networkCard: {
+  networkCardOuter: {
     width: '48%',
-    minHeight: 108,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    marginBottom: 10,
-    backgroundColor: '#1F242E',
+    marginBottom: 12,
+  },
+  networkCard: {
+    width: '100%',
+    height: 84,
     borderRadius: 14,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#1F242E',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.18,
     shadowRadius: 4,
   },
-  networkLogoSlot: {
-    width: 56,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
+  networkLogoFill: {
+    width: '100%',
+    height: '100%',
   },
-  networkLogo: {
-    width: 56,
-    height: 56,
-  },
-  networkInitial: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  networkInitialText: {
+  networkInitialFillText: {
     color: '#0F172A',
-    fontSize: 22,
+    fontSize: 32,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
   networkCardText: {
+    marginTop: 8,
     color: '#E5E7EB',
     fontSize: 13,
     fontWeight: '700',
