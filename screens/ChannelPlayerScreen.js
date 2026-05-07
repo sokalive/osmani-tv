@@ -43,6 +43,14 @@ function pickPlaybackRoute(url) {
   return 'embed-webview';
 }
 
+function baseUrlFromUrl(url) {
+  try {
+    return `${new URL(url).origin}/`;
+  } catch {
+    return 'https://localhost/';
+  }
+}
+
 function playbackFailureMessage(reasonText) {
   const r = String(reasonText ?? '');
   if (/404|not[\s_-]?found|http\s*404/i.test(r)) return 'Stream link imeisha au haipatikani (404).';
@@ -89,7 +97,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const hlsWebViewSource = useMemo(() => {
     if (!useHlsWebView || !proxiedHlsUrl) return null;
-    return { html: buildHlsJsPlayerHtml(proxiedHlsUrl), baseUrl: 'https://localhost/' };
+    return {
+      html: buildHlsJsPlayerHtml(proxiedHlsUrl, { diagnostics: __DEV__ }),
+      baseUrl: baseUrlFromUrl(proxiedHlsUrl),
+    };
   }, [useHlsWebView, proxiedHlsUrl]);
 
   /** Plain WebView source for player.php / embed/iframe HTML pages. Headers as-is. */
@@ -419,6 +430,28 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (!msg || typeof msg !== 'object') return;
     const kind = String(msg.kind || '');
     const payload = msg.payload ?? null;
+    if (
+      kind === 'html_boot' ||
+      kind === 'hls_src' ||
+      kind === 'hls_script_load' ||
+      kind === 'hls_supported' ||
+      kind === 'hls_load_source' ||
+      kind === 'hls_media_attached' ||
+      kind === 'html_fetch_start' ||
+      kind === 'html_fetch_result'
+    ) {
+      console.log('[player][debug] hls.js webview diagnostic:', kind, payload);
+      return;
+    }
+    if (
+      kind === 'hls_script_error' ||
+      kind === 'html_fetch_error' ||
+      kind === 'window_error' ||
+      kind === 'window_unhandled_rejection'
+    ) {
+      console.log('[player][debug] hls.js webview error diagnostic:', kind, payload);
+      return;
+    }
     if (kind === 'hls_manifest_parsed' || kind === 'hls_level_loaded') {
       console.log('[player][debug] hls.js event:', kind);
       return;
