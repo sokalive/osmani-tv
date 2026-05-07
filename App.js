@@ -24,6 +24,7 @@ import EmergencyModal from './components/EmergencyModal';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import PremiumModal from './components/PremiumModal';
 import UpdateOverlay from './components/UpdateOverlay';
+import OtaDebugOverlay, { OtaDebugTitleTap } from './components/OtaDebugOverlay';
 import AkauntiYanguScreen from './screens/AkauntiYanguScreen';
 import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
@@ -352,7 +353,9 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
         <View style={styles.topRow}>
           <View style={styles.titleWrap}>
             <View style={styles.titleLine}>
-              <Text style={styles.appTitle}>Osmani TV</Text>
+              <OtaDebugTitleTap>
+                <Text style={styles.appTitle}>Osmani TV</Text>
+              </OtaDebugTitleTap>
               <Ionicons name="search" size={22} color={COLORS.white} />
             </View>
             <Text style={styles.subtitle}>Tazama Live Kila Mahali</Text>
@@ -612,6 +615,7 @@ export default function App() {
           <RootNavigator />
         </NavigationContainer>
         <UpdateOverlay />
+        <OtaDebugOverlay />
       </OsmaniAppProvider>
     </SafeAreaProvider>
   );
