@@ -299,27 +299,25 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
             </View>
           )}
           <View style={styles.cardBadgesRow} pointerEvents="none">
-            {item.showHD ? (
-              <View style={styles.hdBadge}>
-                <Text style={styles.hdBadgeText}>HD</Text>
-              </View>
-            ) : (
-              <View style={styles.hdBadgePlaceholder} />
-            )}
-            <View style={styles.cardBadgesRight}>
+            <View style={styles.cardBadgesLeft}>
+              {item.showHD ? (
+                <View style={styles.hdBadge}>
+                  <Text style={styles.hdBadgeText}>HD</Text>
+                </View>
+              ) : null}
               <View style={[styles.statusPill, { backgroundColor: item.livePillColor }]}>
                 <Text style={styles.liveBadgeText}>{item.liveLabel}</Text>
               </View>
-              <View style={[styles.statusPill, { backgroundColor: item.accessBadgeColor }]}>
-                <Text
-                  style={[
-                    styles.liveBadgeText,
-                    item.accessBadge === 'KULIPIA' ? styles.liveBadgeTextOnYellow : null,
-                  ]}
-                >
-                  {item.accessBadge}
-                </Text>
-              </View>
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: item.accessBadgeColor }]}>
+              <Text
+                style={[
+                  styles.liveBadgeText,
+                  item.accessBadge === 'KULIPIA' ? styles.liveBadgeTextOnYellow : null,
+                ]}
+              >
+                {item.accessBadge}
+              </Text>
             </View>
           </View>
           <LinearGradient
@@ -777,6 +775,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   cardBadgesRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cardBadgesLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
