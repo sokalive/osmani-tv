@@ -70,13 +70,33 @@ function formatPriceTz(n) {
   }
 }
 
+function formatPlanDuration(raw) {
+  const value = String(raw ?? '').trim();
+  if (!value || value === '-' || value === '—') return '(—)';
+  const match = value.match(/\d+/);
+  if (match) return `(${match[0]} siku)`;
+  return `(${value.replace(/^\(|\)$/g, '')})`;
+}
+
 function normalizePlanRow(raw) {
   const active = raw?.is_active === true || raw?.isActive === true;
   return {
     id: String(raw?.id ?? raw?.plan_id ?? '').trim(),
     name: String(raw?.name ?? raw?.title ?? '').trim(),
     price: Number(raw?.price ?? raw?.amount ?? 0),
-    duration: String(raw?.duration ?? raw?.duration_label ?? raw?.duration_text ?? '').trim(),
+    duration: String(
+      raw?.duration_days ??
+        raw?.durationDays ??
+        raw?.days ??
+        raw?.validity_days ??
+        raw?.validityDays ??
+        raw?.period_days ??
+        raw?.periodDays ??
+        raw?.duration ??
+        raw?.duration_label ??
+        raw?.duration_text ??
+        '',
+    ).trim(),
     isActive: active,
   };
 }
@@ -481,7 +501,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                             <Ionicons name="diamond" size={26} color="#0F172A" />
                           </View>
                         </View>
-                        <Text style={styles.titleCentered}>Fungua Premium</Text>
+                        <Text style={styles.titleCentered}>Karibu Osman TV</Text>
                         <Text style={styles.subtitleCentered} numberOfLines={2}>
                           {channelName} ni channel ya premium
                         </Text>
@@ -515,9 +535,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                                 </View>
                                 <View style={styles.planTextCol}>
                                   <Text style={styles.planLabel}>{plan.name}</Text>
-                                  <Text style={styles.planMeta}>
-                                    {plan.duration ? `(${plan.duration})` : '(—)'}
-                                  </Text>
+                                  <Text style={styles.planMeta}>{formatPlanDuration(plan.duration)}</Text>
                                 </View>
                                 <Text style={styles.planPriceRight}>
                                   TSh {formatPriceTz(plan.price)}
@@ -528,10 +546,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         </View>
                         <View style={styles.benefitsList}>
                           {[
-                            'Channel zote za Premium',
-                            'HD & 4K streaming',
-                            'Bila matangazo',
-                            'Upatikanaji wa muda wote',
+                            'Ukilipia Una Tazama Channel zote',
+                            'Channel Zote Ni HD & 4K Streaming',
+                            'Hakuna Kuganda kwa Channel',
+                            'Channel Zipo Live Muda Wote',
                           ].map((line) => (
                             <View key={line} style={styles.benefitRow}>
                               <Ionicons name="checkmark-circle" size={18} color={ACCENT} />
