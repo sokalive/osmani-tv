@@ -13,11 +13,14 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useOsmaniApp } from '../context/OsmaniAppContext';
+import { getDeviceIdentity } from '../lib/deviceIdentity';
+import { initiateTransfer, redeemTransfer } from '../api/subscription';
 
-/** Matches AkauntiYanguScreen / App theme — same as LIPIA TENA */
 const COLORS = {
   background: '#111215',
   card: '#1A1D23',
@@ -32,31 +35,29 @@ const MODAL_MAX_W = 400;
 const GRADIENT_CTA = [COLORS.yellow, '#E5A020'];
 
 const BULLETS = [
-  'Unaweza kuhamisha kifurushi chako kwenda simu nyingine.',
-  'Simu ya zamani itapoteza ufikiaji mara moja.',
-  'Simu ya zamani itahitaji kuthibitisha uhamisho.',
-  'Muda uliobaki wa kifurushi utaendelea kwenye simu mpya.',
+  'Tengeneza code ya kuhamisha kifurushi kwenda kifaa kingine.',
+  'Code inaisha baada ya muda mfupi — itumie haraka.',
+  'Kifaa cha asili kitapokea ujumbe wa uthibitisho na kupoteza ufikiaji.',
+  'Kifaa kipya kitapata muda uliobaki wa kifurushi mara moja.',
 ];
 
-async function requestTransferSms(phone) {
-  await new Promise((r) => setTimeout(r, 900));
-  return { ok: true };
-}
-
-async function verifyTransferCode(phone, code) {
-  await new Promise((r) => setTimeout(r, 600));
-  return { ok: true };
-}
+const STEPS = Object.freeze({
+  CHOOSE: 'choose',
+  GENERATE: 'generate',
+  REDEEM: 'redeem',
+  REDEEMED: 'redeemed',
+});
 
 export default function HamishaKifurushiModal({ visible, onClose }) {
   const { height: windowHeight } = useWindowDimensions();
   const cardMaxHeight = windowHeight * 0.85;
+  const { reverifySubscription } = useOsmaniApp();
 
-  const [step, setStep] = useState(1);
-  const [phone, setPhone] = useState('');
+  const [step, setStep] = useState(STEPS.CHOOSE);
   const [code, setCode] = useState('');
-  const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
+  const [generatedCode, setGeneratedCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.92)).current;
@@ -81,9 +82,11 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
 
   useEffect(() => {
     if (visible) {
-      setStep(1);
-      setPhone('');
+      setStep(STEPS.CHOOSE);
       setCode('');
+      setGeneratedCode('');
+      setBusy(false);
+      setError('');
       runEnterAnim();
     }
   }, [visible, runEnterAnim]);
@@ -92,52 +95,52 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     onClose?.();
   }, [onClose]);
 
-  const goStep2 = () => setStep(2);
-
-  const handlePataCode = async () => {
-    const p = phone.trim();
-    if (!p) {
-      Alert.alert('', 'Weka namba ya simu kwanza');
-      return;
-    }
-    setSending(true);
+  const handleGenerate = useCallback(async () => {
+    setBusy(true);
+    setError('');
     try {
-      await requestTransferSms(p);
-      Alert.alert('', 'Code imetumwa kwenye namba yako');
-      setStep(3);
-    } catch {
-      Alert.alert('', 'Imeshindikana. Jaribu tena.');
+      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+      const r = await initiateTransfer(deviceId, deviceFingerprint);
+      setGeneratedCode(r.code);
+      setStep(STEPS.GENERATE);
+    } catch (e) {
+      const msg = e?.message ?? String(e ?? 'unknown_error');
+      setError(msg);
     } finally {
-      setSending(false);
+      setBusy(false);
     }
-  };
+  }, []);
 
-  const handleNinaCode = () => {
-    setStep(3);
-  };
-
-  const handleThibitisha = async () => {
-    const p = phone.trim();
-    if (!p) {
-      Alert.alert('', 'Weka namba ya simu kwanza (Rudi hatua ya 2)');
-      return;
-    }
+  const handleRedeem = useCallback(async () => {
     const c = code.trim();
     if (!c) {
-      Alert.alert('', 'Weka code ya uthibitisho');
+      setError('Weka code ya uhamisho.');
       return;
     }
-    setVerifying(true);
+    setBusy(true);
+    setError('');
     try {
-      await verifyTransferCode(p, c);
-      Alert.alert('', 'Uhamisho umethibitishwa');
-      close();
-    } catch {
-      Alert.alert('', 'Code si sahihi');
+      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+      const r = await redeemTransfer(c, deviceId, deviceFingerprint);
+      if (r?.active === true) {
+        setStep(STEPS.REDEEMED);
+        await reverifySubscription?.('transfer-redeem');
+      } else {
+        setError('Code haijafanikiwa. Hakikisha umeingiza code sahihi.');
+      }
+    } catch (e) {
+      const msg = e?.message ?? String(e ?? 'unknown_error');
+      setError(msg);
     } finally {
-      setVerifying(false);
+      setBusy(false);
     }
-  };
+  }, [code, reverifySubscription]);
+
+  const copyGeneratedCode = useCallback(async () => {
+    if (!generatedCode) return;
+    await Clipboard.setStringAsync(generatedCode);
+    Alert.alert('', 'Code imenakiliwa');
+  }, [generatedCode]);
 
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={close}>
@@ -160,50 +163,22 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                   <Ionicons name="close" size={26} color={COLORS.white} />
                 </Pressable>
 
-                {step === 1 ? (
+                {step === STEPS.CHOOSE ? (
                   <View style={styles.stepColumn}>
                     <Text style={styles.stepTitleCenter}>HAMISHA KIFURUSHI</Text>
                     <View style={styles.bulletBlock}>
                       {BULLETS.map((line) => (
                         <Text key={line} style={styles.bulletLine}>
-                          • {line}
+                          {'\u2022'} {line}
                         </Text>
                       ))}
                     </View>
+                    {error ? <Text style={styles.errorText}>{error}</Text> : null}
                     <View style={styles.actionsBlock}>
-                      <Pressable style={styles.primaryWrap} onPress={goStep2}>
-                        <LinearGradient
-                          colors={GRADIENT_CTA}
-                          start={{ x: 0, y: 0.5 }}
-                          end={{ x: 1, y: 0.5 }}
-                          style={styles.primaryGradient}
-                        >
-                          <Text style={styles.primaryText}>ENDELEA KUHAMISHA</Text>
-                        </LinearGradient>
-                      </Pressable>
-                    </View>
-                  </View>
-                ) : null}
-
-                {step === 2 ? (
-                  <View style={styles.stepColumn}>
-                    <Text style={styles.stepTitleLeft}>Hamisha Kifurushi</Text>
-                    <Text style={styles.desc}>
-                      Weka namba ya simu uliyolipia kifurushi. Tutakutumia code ya kuhamisha.
-                    </Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="06XXXXXXXX au 07XXXXXXXX"
-                      placeholderTextColor="#6B7280"
-                      keyboardType="phone-pad"
-                      value={phone}
-                      onChangeText={setPhone}
-                    />
-                    <View style={styles.actionsBlockStep2}>
                       <Pressable
-                        style={[styles.primaryWrap, sending && styles.btnDisabled]}
-                        onPress={handlePataCode}
-                        disabled={sending}
+                        style={[styles.primaryWrap, busy && styles.btnDisabled]}
+                        onPress={handleGenerate}
+                        disabled={busy}
                       >
                         <LinearGradient
                           colors={GRADIENT_CTA}
@@ -211,39 +186,81 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                           end={{ x: 1, y: 0.5 }}
                           style={styles.primaryGradient}
                         >
-                          {sending ? (
+                          {busy ? (
                             <ActivityIndicator color="#111827" />
                           ) : (
-                            <Text style={styles.primaryText}>PATA CODE</Text>
+                            <Text style={styles.primaryText}>TENGENEZA CODE YA UHAMISHO</Text>
                           )}
                         </LinearGradient>
                       </Pressable>
-                      <Pressable style={styles.secondaryBtn} onPress={handleNinaCode}>
-                        <Text style={styles.secondaryText}>Nina code tayari</Text>
+                      <Pressable
+                        style={styles.secondaryBtn}
+                        onPress={() => {
+                          setError('');
+                          setStep(STEPS.REDEEM);
+                        }}
+                      >
+                        <Text style={styles.secondaryText}>Nina code ya kuhamisha</Text>
                       </Pressable>
                     </View>
                   </View>
                 ) : null}
 
-                {step === 3 ? (
+                {step === STEPS.GENERATE ? (
                   <View style={styles.stepColumn}>
-                    <Text style={styles.stepTitleLeft}>Thibitisha Code</Text>
+                    <Text style={styles.stepTitleLeft}>Code ya Uhamisho</Text>
                     <Text style={styles.desc}>
-                      Weka code ya uthibitisho uliopokea kwa SMS au uliyonayo tayari.
+                      Andika au nakili code hii kwenye kifaa kipya, kisha bonyeza
+                      <Text style={styles.descBold}> {'"Nina code ya kuhamisho"'}</Text>.
+                    </Text>
+                    <View style={styles.codeBox}>
+                      <Text style={styles.codeText} selectable>
+                        {generatedCode}
+                      </Text>
+                    </View>
+                    <View style={styles.actionsBlockStep2}>
+                      <Pressable style={styles.primaryWrap} onPress={copyGeneratedCode}>
+                        <LinearGradient
+                          colors={GRADIENT_CTA}
+                          start={{ x: 0, y: 0.5 }}
+                          end={{ x: 1, y: 0.5 }}
+                          style={styles.primaryGradient}
+                        >
+                          <Text style={styles.primaryText}>NAKILI CODE</Text>
+                        </LinearGradient>
+                      </Pressable>
+                      <Pressable style={styles.secondaryBtn} onPress={close}>
+                        <Text style={styles.secondaryText}>Funga</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+
+                {step === STEPS.REDEEM ? (
+                  <View style={styles.stepColumn}>
+                    <Text style={styles.stepTitleLeft}>Ingiza Code ya Uhamisho</Text>
+                    <Text style={styles.desc}>
+                      Weka code uliyopata kutoka kifaa cha asili ili kuhamisha
+                      kifurushi kwenye simu hii.
                     </Text>
                     <TextInput
                       style={styles.input}
                       placeholder="Code"
                       placeholderTextColor="#6B7280"
-                      keyboardType="number-pad"
+                      autoCapitalize="characters"
+                      autoCorrect={false}
                       value={code}
-                      onChangeText={setCode}
+                      onChangeText={(t) => {
+                        setError('');
+                        setCode(t.toUpperCase());
+                      }}
                     />
+                    {error ? <Text style={styles.errorText}>{error}</Text> : null}
                     <View style={styles.actionsBlockStep2}>
                       <Pressable
-                        style={[styles.primaryWrap, verifying && styles.btnDisabled]}
-                        onPress={handleThibitisha}
-                        disabled={verifying}
+                        style={[styles.primaryWrap, busy && styles.btnDisabled]}
+                        onPress={handleRedeem}
+                        disabled={busy}
                       >
                         <LinearGradient
                           colors={GRADIENT_CTA}
@@ -251,15 +268,43 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                           end={{ x: 1, y: 0.5 }}
                           style={styles.primaryGradient}
                         >
-                          {verifying ? (
+                          {busy ? (
                             <ActivityIndicator color="#111827" />
                           ) : (
                             <Text style={styles.primaryText}>THIBITISHA</Text>
                           )}
                         </LinearGradient>
                       </Pressable>
-                      <Pressable style={styles.secondaryBtn} onPress={() => setStep(2)}>
+                      <Pressable
+                        style={styles.secondaryBtn}
+                        onPress={() => {
+                          setError('');
+                          setStep(STEPS.CHOOSE);
+                        }}
+                      >
                         <Text style={styles.secondaryText}>Rudi</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+
+                {step === STEPS.REDEEMED ? (
+                  <View style={styles.stepColumn}>
+                    <Text style={styles.stepTitleCenter}>Umefanikiwa</Text>
+                    <Text style={styles.desc}>
+                      Kifurushi kimehamishwa kwenye simu hii. Sasa unaweza kutazama channel zote
+                      za kulipia.
+                    </Text>
+                    <View style={styles.actionsBlock}>
+                      <Pressable style={styles.primaryWrap} onPress={close}>
+                        <LinearGradient
+                          colors={GRADIENT_CTA}
+                          start={{ x: 0, y: 0.5 }}
+                          end={{ x: 1, y: 0.5 }}
+                          style={styles.primaryGradient}
+                        >
+                          <Text style={styles.primaryText}>SAWA</Text>
+                        </LinearGradient>
                       </Pressable>
                     </View>
                   </View>
@@ -273,7 +318,6 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   );
 }
 
-/** Same primary CTA metrics as AkauntiYanguScreen `primaryWrap` / `primaryGradient` / `primaryText` */
 const styles = StyleSheet.create({
   kav: {
     flex: 1,
@@ -360,6 +404,10 @@ const styles = StyleSheet.create({
     textAlign: 'left',
     width: '100%',
   },
+  descBold: {
+    color: COLORS.white,
+    fontWeight: '700',
+  },
   input: {
     alignSelf: 'stretch',
     width: '100%',
@@ -367,9 +415,31 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 17,
+    fontSize: 18,
+    letterSpacing: 2,
     color: COLORS.white,
-    marginBottom: 16,
+    marginBottom: 12,
+  },
+  errorText: {
+    color: '#FCA5A5',
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  codeBox: {
+    backgroundColor: '#1F2229',
+    borderWidth: 1,
+    borderColor: 'rgba(255,203,61,0.25)',
+    borderRadius: 14,
+    paddingVertical: 22,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  codeText: {
+    color: COLORS.yellow,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 4,
   },
   actionsBlock: {
     width: '100%',
@@ -400,7 +470,7 @@ const styles = StyleSheet.create({
   },
   primaryText: {
     color: '#111827',
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '800',
     letterSpacing: 0.5,
   },

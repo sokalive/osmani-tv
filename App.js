@@ -24,6 +24,8 @@ import EmergencyModal from './components/EmergencyModal';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import PremiumModal from './components/PremiumModal';
 import PopupSettingsModal from './components/PopupSettingsModal';
+import TransferConfirmModal from './components/TransferConfirmModal';
+import TransferredAwayModal from './components/TransferredAwayModal';
 import UpdateOverlay from './components/UpdateOverlay';
 import OtaDebugOverlay, { OtaDebugTitleTap } from './components/OtaDebugOverlay';
 import WhatsAppFloatingButton from './components/WhatsAppFloatingButton';
@@ -639,8 +641,73 @@ export default function App() {
         <WhatsAppFloatingButton />
         <UpdateOverlay />
         <OtaDebugOverlay />
+        <SubscriptionLifecycleGates />
       </OsmaniAppProvider>
     </SafeAreaProvider>
+  );
+}
+
+/**
+ * Mounts the two global subscription-lifecycle modals so they are always
+ * available regardless of which screen the user is on.
+ *   - TransferConfirmModal:    shown on the SOURCE device when the
+ *     backend pushes `transfer_requested` over /api/sync/stream.
+ *   - TransferredAwayModal:    hard-block shown after `subscription_revoked`,
+ *     `transfer_completed` (when the backend confirms this device lost
+ *     access), or any pre-play verify that returns active=false.
+ */
+function SubscriptionLifecycleGates() {
+  const {
+    revokedReason,
+    dismissRevoked,
+    pendingTransfer,
+    dismissPendingTransfer,
+    reverifySubscription,
+  } = useOsmaniApp();
+  const [recovering, setRecovering] = useState(false);
+  const [plansOpen, setPlansOpen] = useState(false);
+
+  const onRecover = useCallback(async () => {
+    if (recovering) return;
+    setRecovering(true);
+    try {
+      const r = await reverifySubscription('user-recover');
+      if (r?.active === true) {
+        dismissRevoked();
+      }
+    } finally {
+      setRecovering(false);
+    }
+  }, [dismissRevoked, recovering, reverifySubscription]);
+
+  const onOpenPlans = useCallback(() => {
+    setPlansOpen(true);
+    dismissRevoked();
+  }, [dismissRevoked]);
+
+  const onPlansClose = useCallback(() => {
+    setPlansOpen(false);
+  }, []);
+
+  const onPlansUnlock = useCallback(() => {
+    setPlansOpen(false);
+    void reverifySubscription('plan-unlock');
+  }, [reverifySubscription]);
+
+  return (
+    <>
+      {pendingTransfer ? (
+        <TransferConfirmModal event={pendingTransfer} onDismiss={dismissPendingTransfer} />
+      ) : null}
+      <TransferredAwayModal
+        visible={Boolean(revokedReason) && !plansOpen}
+        reason={revokedReason ?? 'transferred'}
+        recovering={recovering}
+        onRecover={onRecover}
+        onOpenPlans={onOpenPlans}
+      />
+      <PremiumModal visible={plansOpen} onClose={onPlansClose} onUnlockSuccess={onPlansUnlock} />
+    </>
   );
 }
 

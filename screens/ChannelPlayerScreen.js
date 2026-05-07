@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
 import { clearActiveChannel, setActiveChannel } from '../lib/presenceTracker';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
+import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
 import { buildHlsProxyUrl, STREAM_PROXY_BASE } from '../lib/streamProxy';
@@ -92,8 +93,21 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const initialChannel = route?.params?.channel ?? null;
   const [liveChannel, setLiveChannel] = useState(initialChannel);
   const [channelDisabledNotified, setChannelDisabledNotified] = useState(false);
-  const { rawChannels, freeMode } = useOsmaniApp();
+  const {
+    rawChannels,
+    freeMode,
+    gateForPlayback,
+    reverifySubscription,
+  } = useOsmaniApp();
   const channel = liveChannel ?? initialChannel;
+  const channelIsPremium = Boolean(
+    channel?.isPremium ||
+    channel?.accessPremium ||
+    channel?.access_premium ||
+    String(channel?.accessType ?? '').toLowerCase() === 'premium',
+  );
+  const [accessChecked, setAccessChecked] = useState(false);
+  const [accessAllowed, setAccessAllowed] = useState(!channelIsPremium || freeMode);
 
   const streams = [
     channel?.url,
@@ -222,6 +236,68 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setLiveChannel(route?.params?.channel ?? null);
     setChannelDisabledNotified(false);
   }, [route?.params?.channel]);
+
+  /**
+   * Hard pre-play gate: APP -> BACKEND VERIFY -> PLAY.
+   *
+   * The backend is the only source of truth for "active". We refuse to
+   * mount the player surface for premium channels until the backend
+   * confirms `active === true`. If it returns false, we navigate back
+   * immediately and the global TransferredAwayModal takes over.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    if (!channel) return undefined;
+    if (!channelIsPremium || freeMode) {
+      setAccessChecked(true);
+      setAccessAllowed(true);
+      return undefined;
+    }
+    setAccessChecked(false);
+    setAccessAllowed(false);
+    (async () => {
+      const ok = await gateForPlayback('player-mount');
+      if (cancelled) return;
+      setAccessChecked(true);
+      setAccessAllowed(ok);
+      if (!ok) {
+        console.log('[player][gate]', 'denied', { channel: channel?.name });
+        try {
+          navigation.goBack();
+        } catch {}
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    channel?.id,
+    channel?.channel_id,
+    channel?.url,
+    channelIsPremium,
+    freeMode,
+    gateForPlayback,
+    navigation,
+  ]);
+
+  // Realtime revoke / transfer-away kills the player instantly.
+  useEffect(() => {
+    if (!channelIsPremium) return undefined;
+    const handleKill = (label) => () => {
+      console.log('[player][gate]', `kill:${label}`);
+      setAccessAllowed(false);
+      void reverifySubscription(`player-${label}`);
+      try {
+        navigation.goBack();
+      } catch {}
+    };
+    const offRevoked = subscribeRealtimeEvent('subscription_revoked', handleKill('revoked'));
+    const offCompleted = subscribeRealtimeEvent('transfer_completed', handleKill('transfer_completed'));
+    return () => {
+      offRevoked();
+      offCompleted();
+    };
+  }, [channelIsPremium, navigation, reverifySubscription]);
 
   // Realtime stream/channel updates from live app catalog.
   useEffect(() => {
@@ -833,6 +909,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     },
   ];
 
+  if (channelIsPremium && !freeMode && (!accessChecked || !accessAllowed)) {
+    return (
+      <View style={[styles.root, styles.gateScreen]}>
+        <ActivityIndicator color="#FBBF24" size="large" />
+        <Text style={styles.gateText}>
+          {accessChecked ? 'Hauna kifurushi hai' : 'Inathibitisha kifurushi…'}
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.root}>
 
@@ -988,6 +1075,18 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
+  gateScreen: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    paddingHorizontal: 28,
+  },
+  gateText: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
 
   video: {
     ...StyleSheet.absoluteFillObject,

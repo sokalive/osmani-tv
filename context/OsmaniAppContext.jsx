@@ -1,8 +1,14 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { getBanners, getChannels, getServerHealth } from '../api';
 import { getSettings } from '../api/settings';
-import { fetchSubscription, verifySubscriptionActive } from '../api/payment';
+import {
+  clearSubscriptionCache,
+  readSubscriptionCache,
+  recoverSubscription,
+  verifySubscription,
+  writeSubscriptionCache,
+} from '../api/subscription';
 import { readBannersCache, writeBannersCache } from '../lib/bannersCache';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
@@ -28,48 +34,99 @@ export function OsmaniAppProvider({ children }) {
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState(null);
   /** Bumps after subscription fetch so consumers can invalidate memos tied to premium access. */
   const [subscriptionVersion, setSubscriptionVersion] = useState(0);
+  /** Set when the backend reports the subscription is no longer active on this device. */
+  const [revokedReason, setRevokedReason] = useState(null);
+  /** Active `transfer_requested` payload (source-device approval popup). */
+  const [pendingTransfer, setPendingTransfer] = useState(null);
 
-  const refreshSubscription = useCallback(async () => {
+  const verifyInFlightRef = useRef(false);
+  const lastVerifyKeyRef = useRef(0);
+
+  /**
+   * Single trust path. Always hits the backend and treats `active` as the
+   * sole source of truth. Updates context state, AsyncStorage cache, and
+   * the revoked banner. Returns the verify response so callers (e.g. the
+   * player) can gate playback on the same atomic answer.
+   */
+  const reverifySubscription = useCallback(async (reason = 'manual') => {
+    if (verifyInFlightRef.current) {
+      console.log('[SUBSCRIPTION_VERIFY]', 'in-flight; skipping duplicate', { reason });
+    }
+    verifyInFlightRef.current = true;
+    const verifyKey = ++lastVerifyKeyRef.current;
     try {
-      const { deviceId } = await getDeviceIdentity();
-      const sub = await fetchSubscription(deviceId);
-      const expiresAt = sub.expiresAt != null ? String(sub.expiresAt) : null;
-      const expiryTs = expiresAt ? Date.parse(expiresAt) : NaN;
-      const isActive = sub.active === true && Number.isFinite(expiryTs) && expiryTs > Date.now();
-      /** Always derive from this fetch — do not read React state here. */
-      const subscription = { isActive, expiresAt };
-      if (isActive) {
-        setIsSubscribed(true);
-        setSubscriptionExpiresAt(expiresAt);
+      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+      const r = await verifySubscription(deviceId, deviceFingerprint);
+      if (verifyKey !== lastVerifyKeyRef.current) return r;
+      const active = r.active === true;
+      const expiresAt = r.expiresAt ?? null;
+      setIsSubscribed(active);
+      setSubscriptionExpiresAt(active ? expiresAt : null);
+      setSubscriptionVersion((v) => v + 1);
+      if (active) {
+        setRevokedReason(null);
+        await writeSubscriptionCache({ active: true, expiresAt, deviceId, fingerprint: deviceFingerprint });
       } else {
+        await clearSubscriptionCache(`verify:${reason}`);
+      }
+      console.log('[SUBSCRIPTION_VERIFY]', reason, { active, expiresAt });
+      return r;
+    } catch (e) {
+      console.log('[SUBSCRIPTION_VERIFY]', reason, 'error', e?.message ?? e);
+      if (verifyKey === lastVerifyKeyRef.current) {
         setIsSubscribed(false);
         setSubscriptionExpiresAt(null);
+        setSubscriptionVersion((v) => v + 1);
+        await clearSubscriptionCache(`verify-error:${reason}`);
       }
-      setSubscriptionVersion((v) => v + 1);
-      return subscription;
-    } catch {
-      const subscription = { isActive: false, expiresAt: null };
-      setIsSubscribed(false);
-      setSubscriptionExpiresAt(null);
-      setSubscriptionVersion((v) => v + 1);
-      return subscription;
+      return { active: false, expiresAt: null, error: String(e?.message ?? e) };
+    } finally {
+      verifyInFlightRef.current = false;
     }
   }, []);
 
-  /** Apply the same object returned from `refreshSubscription` / API (strict `isActive`). */
+  /**
+   * Reinstall recovery on cold start. Asks the backend to attach this
+   * device to any active subscription bound to it, then reverifies. The
+   * recover call is idempotent and safe to retry.
+   */
+  const recoverAndVerify = useCallback(async (reason = 'launch') => {
+    try {
+      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+      const r = await recoverSubscription(deviceId, deviceFingerprint);
+      console.log('[SUBSCRIPTION_RECOVER]', reason, { active: r.active, expiresAt: r.expiresAt });
+    } catch (e) {
+      console.log('[SUBSCRIPTION_RECOVER]', reason, 'error', e?.message ?? e);
+    }
+    return reverifySubscription(reason);
+  }, [reverifySubscription]);
+
+  /**
+   * Pre-playback gate. EVERY playback attempt MUST call this — the
+   * boolean answer is sourced from the backend, not the device clock.
+   * @returns {Promise<boolean>}
+   */
+  const gateForPlayback = useCallback(async (reason = 'play') => {
+    const r = await reverifySubscription(`gate:${reason}`);
+    const active = r?.active === true;
+    if (!active) {
+      console.log('[PLAYBACK_GATE]', 'denied', reason);
+      setRevokedReason((cur) => cur ?? 'expired');
+    } else {
+      console.log('[PLAYBACK_GATE]', 'allowed', reason);
+    }
+    return active;
+  }, [reverifySubscription]);
+
+  /** Apply the same object returned from `reverifySubscription` / API (strict `isActive`). */
   const unlockChannels = useCallback((subscription) => {
-    if (!subscription || subscription.isActive !== true) return;
+    if (!subscription) return;
+    const active = subscription.isActive === true || subscription.active === true;
+    if (!active) return;
     setIsSubscribed(true);
     if (subscription.expiresAt != null) setSubscriptionExpiresAt(String(subscription.expiresAt));
-  }, []);
-
-  const verifySubscriptionBeforePlay = useCallback(async () => {
-    try {
-      const { deviceId } = await getDeviceIdentity();
-      return await verifySubscriptionActive(deviceId);
-    } catch {
-      return false;
-    }
+    setRevokedReason(null);
+    setSubscriptionVersion((v) => v + 1);
   }, []);
 
   const refreshServerHealth = useCallback(async (reason = 'fetch') => {
@@ -90,6 +147,23 @@ export function OsmaniAppProvider({ children }) {
       if (cancelled || !cached?.banners?.length) return;
       setRawBanners(cached.banners);
     });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * Optimistic UI hint from local cache. NEVER used to grant playback —
+   * `gateForPlayback` always reverifies against the backend before play.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const cached = await readSubscriptionCache();
+      if (cancelled || !cached?.active) return;
+      setIsSubscribed(true);
+      if (cached.expiresAt) setSubscriptionExpiresAt(cached.expiresAt);
+    })();
     return () => {
       cancelled = true;
     };
@@ -135,9 +209,10 @@ export function OsmaniAppProvider({ children }) {
     refresh();
   }, [refresh]);
 
+  // Cold-start: recover (in case of reinstall) and immediately verify.
   useEffect(() => {
-    refreshSubscription();
-  }, [refreshSubscription]);
+    void recoverAndVerify('cold-start');
+  }, [recoverAndVerify]);
 
   useEffect(() => {
     void refreshServerHealth('initial');
@@ -152,7 +227,53 @@ export function OsmaniAppProvider({ children }) {
     return unsubscribe;
   }, [refresh, refreshServerHealth]);
 
-  // Realtime sync via efficient foreground polling with automatic reconnect/backoff.
+  // Realtime subscription lifecycle events from /api/sync/stream.
+  useEffect(() => {
+    const offRevoked = subscribeRealtimeEvent('subscription_revoked', (payload) => {
+      console.log('[SUBSCRIPTION_REVOKED]', 'sse', payload);
+      const reason =
+        (payload && typeof payload === 'object' && typeof payload.reason === 'string')
+          ? payload.reason
+          : 'revoked';
+      setRevokedReason(reason);
+      setIsSubscribed(false);
+      setSubscriptionExpiresAt(null);
+      void clearSubscriptionCache('sse:subscription_revoked');
+      void reverifySubscription('sse:subscription_revoked');
+    });
+    const offCompleted = subscribeRealtimeEvent('transfer_completed', (payload) => {
+      console.log('[TRANSFER_COMPLETED]', 'sse', payload);
+      // The source device loses access; the destination gains it. Either
+      // way, ask the backend who owns the subscription right now.
+      setPendingTransfer(null);
+      void reverifySubscription('sse:transfer_completed').then((r) => {
+        if (r?.active !== true) {
+          setRevokedReason('transferred');
+        }
+      });
+    });
+    const offRequested = subscribeRealtimeEvent('transfer_requested', (payload) => {
+      console.log('[TRANSFER_REQUESTED]', 'sse', payload);
+      if (payload && typeof payload === 'object' && typeof payload.code === 'string') {
+        setPendingTransfer(payload);
+      } else {
+        setPendingTransfer({ code: '', raw: payload });
+      }
+    });
+    const offSettings = subscribeRealtimeEvent('app_settings_changed', (payload) => {
+      console.log('[APP_SETTINGS_CHANGED]', 'sse', payload);
+      void refresh({ showGlobalLoading: false, preserveDataOnError: true });
+      void reverifySubscription('sse:app_settings_changed');
+    });
+    return () => {
+      offRevoked();
+      offCompleted();
+      offRequested();
+      offSettings();
+    };
+  }, [refresh, reverifySubscription]);
+
+  // Foreground sync: refresh catalog + reverify periodically while app is active.
   useEffect(() => {
     let stopped = false;
     let timer = null;
@@ -180,7 +301,7 @@ export function OsmaniAppProvider({ children }) {
       inFlight = true;
       try {
         await refresh({ showGlobalLoading: false, preserveDataOnError: true });
-        await refreshSubscription();
+        await reverifySubscription('foreground-tick');
         failCount = 0;
       } catch {
         failCount += 1;
@@ -194,6 +315,7 @@ export function OsmaniAppProvider({ children }) {
       appState = next;
       if (next === 'active') {
         schedule(1000);
+        void reverifySubscription('app-resume');
       }
     });
 
@@ -204,7 +326,15 @@ export function OsmaniAppProvider({ children }) {
       if (timer) clearTimeout(timer);
       sub.remove();
     };
-  }, [refresh, refreshSubscription]);
+  }, [refresh, reverifySubscription]);
+
+  const dismissRevoked = useCallback(() => {
+    setRevokedReason(null);
+  }, []);
+
+  const dismissPendingTransfer = useCallback(() => {
+    setPendingTransfer(null);
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -222,9 +352,18 @@ export function OsmaniAppProvider({ children }) {
       setIsSubscribed,
       subscriptionExpiresAt,
       subscriptionVersion,
-      refreshSubscription,
+      // canonical names
+      reverifySubscription,
+      gateForPlayback,
+      // legacy aliases (kept for existing screens)
+      refreshSubscription: reverifySubscription,
+      verifySubscriptionBeforePlay: gateForPlayback,
       unlockChannels,
-      verifySubscriptionBeforePlay,
+      // revoke / transfer
+      revokedReason,
+      dismissRevoked,
+      pendingTransfer,
+      dismissPendingTransfer,
     }),
     [
       settings,
@@ -237,9 +376,13 @@ export function OsmaniAppProvider({ children }) {
       isSubscribed,
       subscriptionExpiresAt,
       subscriptionVersion,
-      refreshSubscription,
+      reverifySubscription,
+      gateForPlayback,
       unlockChannels,
-      verifySubscriptionBeforePlay,
+      revokedReason,
+      dismissRevoked,
+      pendingTransfer,
+      dismissPendingTransfer,
     ],
   );
 
