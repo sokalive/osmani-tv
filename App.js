@@ -28,6 +28,7 @@ import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
 import { BASE_URL } from './api';
 import { trackInstallOnce } from './api/analytics';
+import { startPresence, stopPresence } from './lib/presenceTracker';
 import { resolveStream } from './lib/channelStream';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
@@ -589,6 +590,10 @@ function AppTabs() {
 export default function App() {
   useEffect(() => {
     void trackInstallOnce();
+    void startPresence();
+    return () => {
+      void stopPresence();
+    };
   }, []);
 
   return (

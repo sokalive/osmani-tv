@@ -1,13 +1,28 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import * as Crypto from 'expo-crypto';
 import { nativeApplicationVersion } from 'expo-application';
 import { BASE_URL } from '../api';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 
 const INSTALL_TRACKED_KEY = 'osmani:install_tracked_v1';
 const PING_MS = 30000;
+/** Heartbeat for the app-level presence layer (decoupled from channel session). */
+const PRESENCE_PING_MS = 25000;
 const RETRY_DELAYS_MS = [0, 700, 1800];
 const ANALYTICS_DEBUG = true;
+
+let cachedAppSessionId = '';
+
+async function getOrCreateAppSessionId() {
+  if (cachedAppSessionId) return cachedAppSessionId;
+  try {
+    cachedAppSessionId = await Crypto.randomUUID();
+  } catch {
+    cachedAppSessionId = `s-${Date.now()}-${Math.floor(Math.random() * 1e9).toString(36)}`;
+  }
+  return cachedAppSessionId;
+}
 
 function detectCountry() {
   try {
@@ -165,4 +180,84 @@ export async function pingLiveSession(deviceId, channelId) {
   });
 }
 
-export { PING_MS };
+/**
+ * App-level presence (Live User Locations). Fires the moment the app
+ * opens — independent of channel playback. Channel context is attached
+ * later via `pingAppPresence`/`stopAppPresence` payloads.
+ *
+ * @returns {Promise<{ sessionId: string; deviceId: string; ok: boolean }>}
+ */
+export async function startAppPresence() {
+  try {
+    const sessionId = await getOrCreateAppSessionId();
+    const { deviceId } = await getDeviceIdentity();
+    if (ANALYTICS_DEBUG) {
+      console.log('[analytics] presence start:', {
+        session_id: sessionId,
+        device_id: deviceId,
+      });
+    }
+    const ok = await postJson('/api/analytics/presence/start', {
+      session_id: sessionId,
+      device_id: deviceId,
+      platform: Platform.OS,
+      app_version: nativeApplicationVersion ?? 'unknown',
+      device_model: detectDeviceModel(),
+      country: detectCountry(),
+      started_at: new Date().toISOString(),
+    });
+    return { sessionId, deviceId, ok };
+  } catch {
+    return { sessionId: '', deviceId: '', ok: false };
+  }
+}
+
+/**
+ * @param {{ sessionId: string; deviceId?: string; channelId?: string|null;
+ *           channelName?: string|null }} args
+ */
+export async function pingAppPresence(args) {
+  const sessionId = args?.sessionId;
+  if (!sessionId) return false;
+  if (ANALYTICS_DEBUG) {
+    console.log('[analytics] presence heartbeat:', {
+      session_id: sessionId,
+      channel_id: args?.channelId ?? null,
+      every_ms: PRESENCE_PING_MS,
+    });
+  }
+  return postJson(
+    '/api/analytics/presence/heartbeat',
+    {
+      session_id: sessionId,
+      device_id: args?.deviceId ?? null,
+      channel_id: args?.channelId != null && args.channelId !== '' ? String(args.channelId) : null,
+      channel_name:
+        args?.channelName != null && args.channelName !== '' ? String(args.channelName) : null,
+      timestamp: new Date().toISOString(),
+    },
+    { retries: [0] },
+  );
+}
+
+/**
+ * @param {{ sessionId: string; deviceId?: string }} args
+ */
+export async function stopAppPresence(args) {
+  const sessionId = args?.sessionId;
+  if (!sessionId) return false;
+  if (ANALYTICS_DEBUG) {
+    console.log('[analytics] presence stop:', { session_id: sessionId });
+  }
+  return postJson(
+    '/api/analytics/presence/stop',
+    {
+      session_id: sessionId,
+      device_id: args?.deviceId ?? null,
+      ended_at: new Date().toISOString(),
+    },
+    { retries: [0, 600] },
+  );
+}
+
+export { PING_MS, PRESENCE_PING_MS };

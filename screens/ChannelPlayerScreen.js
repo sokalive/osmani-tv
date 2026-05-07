@@ -18,6 +18,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
+import { clearActiveChannel, setActiveChannel } from '../lib/presenceTracker';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
@@ -326,6 +327,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       channel_name: channelName,
     });
 
+    // App-level presence: attach the channel to the live session so the
+    // admin Live User Locations watcher count updates immediately.
+    setActiveChannel(channelId, channelName);
+
     (async () => {
       const deviceId = await startLiveSession(channelId, channelName);
       if (cancelled) return;
@@ -360,6 +365,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         });
         void stopLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
       }
+      // Detach channel from the app-level presence session so the
+      // admin watcher count drops without waiting for the next tick.
+      clearActiveChannel();
     };
   }, [channel?.id, channel?.channel_id, channel?.name]);
 
