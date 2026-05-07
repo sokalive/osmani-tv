@@ -38,7 +38,8 @@
       }
     },
     "plugins": [
-      "expo-video"
+      "expo-video",
+      "./plugins/withOsmaniUpdate.js"
     ]
   }
 }
