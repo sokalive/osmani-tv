@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -21,6 +21,8 @@ import PremiumModal from '../components/PremiumModal';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { formatSubscriptionExpiry } from '../lib/formatExpiry';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
+import { getDeviceLabel } from '../lib/deviceLabel';
+import { computeSubscriptionProgress } from '../lib/subscriptionMath';
 
 /** Matches App.js theme — do not diverge */
 const COLORS = {
@@ -52,9 +54,38 @@ function StatCard({ icon, value, label }) {
   return (
     <View style={styles.statCard}>
       <Ionicons name={icon} size={22} color={COLORS.yellow} style={styles.statIcon} />
-      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statValue} numberOfLines={1}>
+        {value}
+      </Text>
       <Text style={styles.statLabel}>{label}</Text>
     </View>
+  );
+}
+
+/**
+ * Backend-authoritative formatters. None of these grant or revoke access;
+ * they purely render values that the verify endpoint already returned.
+ */
+function formatPrice(amount, currency) {
+  if (amount == null || !Number.isFinite(Number(amount))) return null;
+  const n = Number(amount);
+  const code = String(currency || '').toUpperCase();
+  const prefix = code === 'TZS' || code === '' ? 'TSh' : code;
+  let formatted;
+  try {
+    formatted = n.toLocaleString('en-US');
+  } catch {
+    formatted = String(n);
+  }
+  return `${prefix} ${formatted}`;
+}
+
+function isPremiumChannel(raw, freeMode) {
+  if (freeMode) return false;
+  return (
+    raw?.accessType === 'premium' ||
+    raw?.accessPremium === true ||
+    raw?.access_premium === true
   );
 }
 
@@ -65,10 +96,73 @@ export default function AkauntiYanguScreen() {
   const [hamishaModalVisible, setHamishaModalVisible] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [deviceIdFull, setDeviceIdFull] = useState('');
-  const { isSubscribed, subscriptionExpiresAt, refreshSubscription } = useOsmaniApp();
+  const {
+    isSubscribed,
+    subscriptionExpiresAt,
+    subscriptionDetails,
+    rawChannels,
+    freeMode,
+    refreshSubscription,
+  } = useOsmaniApp();
 
+  // Local "now" tick used ONLY by the visual progress bar interpolator.
+  // Trust for access decisions still flows through the backend — see
+  // `gateForPlayback` / `subscription_revoked` SSE handlers in context.
+  const [tickNowMs, setTickNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!subscriptionDetails) return undefined;
+    const id = setInterval(() => setTickNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [subscriptionDetails]);
+
+  const deviceLabel = useMemo(() => getDeviceLabel(), []);
   const deviceShort =
     deviceIdFull.length >= 8 ? deviceIdFull.slice(0, 8).toUpperCase() : deviceIdFull || '—';
+
+  // ---- Card-level derived values (data binding only) -----------------
+  const totalChannels = Array.isArray(rawChannels) ? rawChannels.length : 0;
+  const unlockedChannels = useMemo(() => {
+    if (!Array.isArray(rawChannels)) return 0;
+    if (freeMode || isSubscribed) return rawChannels.length;
+    let n = 0;
+    for (const ch of rawChannels) if (!isPremiumChannel(ch, false)) n += 1;
+    return n;
+  }, [rawChannels, freeMode, isSubscribed]);
+
+  const progress = useMemo(
+    () =>
+      computeSubscriptionProgress({
+        startedAt: subscriptionDetails?.startedAt ?? null,
+        expiresAt: subscriptionDetails?.expiresAt ?? subscriptionExpiresAt ?? null,
+        planDurationDays: subscriptionDetails?.planDurationDays ?? null,
+        serverTime: subscriptionDetails?.serverTime ?? null,
+        serverTimeFetchedAt: subscriptionDetails?.serverTimeFetchedAt ?? null,
+        nowMsOverride: tickNowMs,
+      }),
+    [subscriptionDetails, subscriptionExpiresAt, tickNowMs],
+  );
+
+  // Card 1: Malipo / Kifurushi
+  const paymentValue = useMemo(() => {
+    if (!isSubscribed) return 'Hapana';
+    return formatPrice(subscriptionDetails?.amount, subscriptionDetails?.currency) ?? 'Hai';
+  }, [isSubscribed, subscriptionDetails]);
+
+  // Card 2: Hali ya Ufikiaji  ->  "Channel Zilizofunguka" + "X / Y"
+  const accessValue = totalChannels > 0
+    ? `${unlockedChannels} / ${totalChannels}`
+    : (isSubscribed ? 'Hai' : 'Hakuna');
+
+  // Card 3: Muda wa Kifurushi  -> "{N} siku" from backend-anchored remaining.
+  const durationValue = useMemo(() => {
+    if (!isSubscribed) return '—';
+    if (progress.ok && progress.remainingDays > 0) return `${progress.remainingDays} siku`;
+    if (progress.ok && progress.remainingDays === 0) return 'Leo';
+    return 'Hai';
+  }, [isSubscribed, progress]);
+
+  // Card 5 (status)
+  const statusLabel = isSubscribed ? 'ACTIVE' : 'HUNA USAJILI';
 
   useFocusEffect(
     useCallback(() => {
@@ -114,30 +208,55 @@ export default function AkauntiYanguScreen() {
             </View>
             <View style={styles.headerTextCol}>
               <Text style={styles.companyTitle} numberOfLines={2}>
-                Osmani TV
+                {deviceLabel}
               </Text>
               <Text style={styles.deviceSubtitle}>ID: {deviceShort}</Text>
             </View>
           </View>
         </View>
 
+        {isSubscribed && progress.ok ? (
+          <View style={styles.infoCard}>
+            <View style={styles.usageHeaderRow}>
+              <Text style={styles.infoCardTitle}>Matumizi ya Kifurushi</Text>
+              <Text style={styles.usagePercentText}>
+                {Math.round(progress.percentRemaining)}%
+              </Text>
+            </View>
+            <View style={styles.usageBarTrack}>
+              <View
+                style={[
+                  styles.usageBarFill,
+                  { width: `${Math.max(0, Math.min(100, progress.percentRemaining))}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.usageMetaText} numberOfLines={1}>
+              {progress.remainingDays} siku zimebaki
+              {progress.startMs && progress.expiresMs
+                ? `  •  ${formatSubscriptionExpiry(new Date(progress.startMs).toISOString())} → ${formatSubscriptionExpiry(new Date(progress.expiresMs).toISOString())}`
+                : ''}
+            </Text>
+          </View>
+        ) : null}
+
         <View style={styles.statsGrid}>
           <View style={styles.statsRow}>
             <StatCard
               icon="wallet-outline"
-              value={isSubscribed ? 'Ndiyo' : 'Hapana'}
+              value={paymentValue}
               label="Malipo / Kifurushi"
             />
             <StatCard
               icon="tv-outline"
-              value={isSubscribed ? 'Hai' : 'Hakuna'}
-              label="Hali ya ufikiaji"
+              value={accessValue}
+              label="Channel Zilizofunguka"
             />
           </View>
           <View style={styles.statsRow}>
             <StatCard
               icon="hourglass-outline"
-              value={isSubscribed ? 'Hai' : '—'}
+              value={durationValue}
               label="Muda wa Kifurushi"
             />
             <StatCard
@@ -151,7 +270,7 @@ export default function AkauntiYanguScreen() {
         <View style={styles.infoCard}>
           <Text style={styles.infoCardTitle}>Hali ya Usajili</Text>
           <Text style={[styles.statusBad, isSubscribed && styles.statusGood]}>
-            {isSubscribed ? 'KIFURUSHI HAI' : 'HAKUNA'}
+            {statusLabel}
           </Text>
         </View>
 
@@ -342,6 +461,34 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     lineHeight: 22,
+  },
+  usageHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  usagePercentText: {
+    color: COLORS.yellow,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  usageBarTrack: {
+    height: 8,
+    borderRadius: 6,
+    backgroundColor: '#2A2E37',
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  usageBarFill: {
+    height: '100%',
+    backgroundColor: COLORS.yellow,
+    borderRadius: 6,
+  },
+  usageMetaText: {
+    color: COLORS.mutedText,
+    fontSize: 12,
+    lineHeight: 16,
   },
   primaryWrap: {
     marginTop: 20,

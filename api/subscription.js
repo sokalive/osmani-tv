@@ -76,6 +76,134 @@ function pickExpiresAt(body) {
   return v != null ? String(v) : null;
 }
 
+/**
+ * Extract the subscription start timestamp. Backends may name this many
+ * things, and some never include it. Caller MUST be prepared to derive it
+ * from `expiresAt - planDurationDays` when missing.
+ */
+function pickStartedAt(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  const pay = isPlainObject(body.payment) ? body.payment : null;
+  const v =
+    body.started_at ??
+    body.startedAt ??
+    body.start_at ??
+    body.startAt ??
+    body.activated_at ??
+    body.activatedAt ??
+    body.paid_at ??
+    body.paidAt ??
+    body.payment_date ??
+    body.paymentDate ??
+    body.created_at ??
+    body.createdAt ??
+    data?.started_at ??
+    data?.startedAt ??
+    data?.paid_at ??
+    data?.paidAt ??
+    data?.created_at ??
+    data?.createdAt ??
+    sub?.started_at ??
+    sub?.startedAt ??
+    sub?.activated_at ??
+    sub?.activatedAt ??
+    sub?.created_at ??
+    sub?.createdAt ??
+    pay?.paid_at ??
+    pay?.paidAt ??
+    pay?.created_at ??
+    pay?.createdAt ??
+    null;
+  return v != null ? String(v) : null;
+}
+
+function pickServerTime(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const v =
+    body.server_time ??
+    body.serverTime ??
+    body.now ??
+    body.timestamp ??
+    data?.server_time ??
+    data?.serverTime ??
+    data?.now ??
+    null;
+  return v != null ? String(v) : null;
+}
+
+function pickNumber(...candidates) {
+  for (const c of candidates) {
+    if (c == null) continue;
+    const n = typeof c === 'number' ? c : Number(c);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function pickAmount(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  const plan = isPlainObject(body.plan) ? body.plan : null;
+  const subPlan = isPlainObject(sub?.plan) ? sub.plan : null;
+  const pay = isPlainObject(body.payment) ? body.payment : null;
+  return pickNumber(
+    body.amount,
+    body.price,
+    data?.amount,
+    data?.price,
+    sub?.amount,
+    sub?.price,
+    plan?.price,
+    plan?.amount,
+    subPlan?.price,
+    subPlan?.amount,
+    pay?.amount,
+    pay?.price,
+  );
+}
+
+function pickPlan(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  return (
+    (isPlainObject(body.plan) && body.plan) ||
+    (isPlainObject(sub?.plan) && sub.plan) ||
+    (isPlainObject(data?.plan) && data.plan) ||
+    null
+  );
+}
+
+function pickPlans(body) {
+  if (!isPlainObject(body)) return [];
+  const data = isPlainObject(body.data) ? body.data : null;
+  const candidates = [body.plans, body.available_plans, body.availablePlans, data?.plans];
+  for (const c of candidates) {
+    if (Array.isArray(c) && c.length > 0) return c;
+  }
+  return [];
+}
+
+function pickCurrency(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  const plan = isPlainObject(body.plan) ? body.plan : null;
+  const v =
+    body.currency ??
+    body.currency_code ??
+    body.currencyCode ??
+    data?.currency ??
+    sub?.currency ??
+    plan?.currency ??
+    null;
+  return v != null ? String(v) : null;
+}
+
 function pickTransferCode(body) {
   if (!isPlainObject(body)) return '';
   const data = isPlainObject(body.data) ? body.data : null;
@@ -95,12 +223,39 @@ function pickStringList(...keys) {
  */
 function normalizeVerifyResponse(body, fallback = {}) {
   if (!isPlainObject(body)) {
-    return { active: false, expiresAt: null, raw: body, ...fallback };
+    return {
+      active: false,
+      expiresAt: null,
+      startedAt: null,
+      serverTime: null,
+      amount: null,
+      currency: null,
+      planName: null,
+      planDurationDays: null,
+      plans: [],
+      raw: body,
+      ...fallback,
+    };
   }
+  const plan = pickPlan(body);
+  const planName = plan?.name ?? plan?.title ?? body.plan_name ?? body.planName ?? null;
+  const planDurationDays = pickNumber(
+    plan?.duration_days,
+    plan?.durationDays,
+    plan?.days,
+    body.duration_days,
+    body.durationDays,
+  );
   return {
     active: pickActive(body),
     expiresAt: pickExpiresAt(body),
-    serverTime: pickStringList(body.server_time, body.serverTime),
+    startedAt: pickStartedAt(body),
+    serverTime: pickServerTime(body),
+    amount: pickAmount(body),
+    currency: pickCurrency(body),
+    planName: planName != null ? String(planName) : null,
+    planDurationDays,
+    plans: pickPlans(body),
     deviceId: pickStringList(body.device_id, body.deviceId),
     raw: body,
   };

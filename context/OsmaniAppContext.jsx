@@ -32,6 +32,15 @@ export function OsmaniAppProvider({ children }) {
   const [serverHealth, setServerHealth] = useState(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState(null);
+  /**
+   * Live, backend-derived view of the active subscription. UI-only: the
+   * `active` boolean state lives in `isSubscribed`. This struct exposes
+   * `amount`, `planName`, `startedAt`, `serverTime` (+ the local
+   * `serverTimeFetchedAt` anchor used for monotonic interpolation) and
+   * the available `plans` list returned by the backend.
+   */
+  const [subscriptionDetails, setSubscriptionDetails] = useState(null);
+  const [availablePlans, setAvailablePlans] = useState([]);
   /** Bumps after subscription fetch so consumers can invalidate memos tied to premium access. */
   const [subscriptionVersion, setSubscriptionVersion] = useState(0);
   /** Set when the backend reports the subscription is no longer active on this device. */
@@ -60,8 +69,29 @@ export function OsmaniAppProvider({ children }) {
       if (verifyKey !== lastVerifyKeyRef.current) return r;
       const active = r.active === true;
       const expiresAt = r.expiresAt ?? null;
+      // Capture the monotonic anchor for the server-time at the instant
+      // we received the response. Used by `subscriptionMath` for the
+      // visual progress bar — never for trust.
+      const serverTimeFetchedAt = Date.now();
       setIsSubscribed(active);
       setSubscriptionExpiresAt(active ? expiresAt : null);
+      if (Array.isArray(r.plans) && r.plans.length > 0) {
+        setAvailablePlans(r.plans);
+      }
+      setSubscriptionDetails(active
+        ? {
+            amount: r.amount ?? null,
+            currency: r.currency ?? null,
+            planName: r.planName ?? null,
+            planDurationDays: r.planDurationDays ?? null,
+            startedAt: r.startedAt ?? null,
+            expiresAt,
+            serverTime: r.serverTime ?? null,
+            serverTimeFetchedAt,
+            plans: Array.isArray(r.plans) ? r.plans : [],
+          }
+        : null,
+      );
       setSubscriptionVersion((v) => v + 1);
       if (active) {
         setRevokedReason(null);
@@ -69,13 +99,21 @@ export function OsmaniAppProvider({ children }) {
       } else {
         await clearSubscriptionCache(`verify:${reason}`);
       }
-      console.log('[SUBSCRIPTION_VERIFY]', reason, { active, expiresAt });
+      console.log('[SUBSCRIPTION_VERIFY]', reason, {
+        active,
+        expiresAt,
+        amount: r.amount ?? null,
+        planName: r.planName ?? null,
+        startedAt: r.startedAt ?? null,
+        serverTime: r.serverTime ?? null,
+      });
       return r;
     } catch (e) {
       console.log('[SUBSCRIPTION_VERIFY]', reason, 'error', e?.message ?? e);
       if (verifyKey === lastVerifyKeyRef.current) {
         setIsSubscribed(false);
         setSubscriptionExpiresAt(null);
+        setSubscriptionDetails(null);
         setSubscriptionVersion((v) => v + 1);
         await clearSubscriptionCache(`verify-error:${reason}`);
       }
@@ -238,6 +276,7 @@ export function OsmaniAppProvider({ children }) {
       setRevokedReason(reason);
       setIsSubscribed(false);
       setSubscriptionExpiresAt(null);
+      setSubscriptionDetails(null);
       void clearSubscriptionCache('sse:subscription_revoked');
       void reverifySubscription('sse:subscription_revoked');
     });
@@ -351,6 +390,8 @@ export function OsmaniAppProvider({ children }) {
       isSubscribed,
       setIsSubscribed,
       subscriptionExpiresAt,
+      subscriptionDetails,
+      availablePlans,
       subscriptionVersion,
       // canonical names
       reverifySubscription,
@@ -375,6 +416,8 @@ export function OsmaniAppProvider({ children }) {
       refresh,
       isSubscribed,
       subscriptionExpiresAt,
+      subscriptionDetails,
+      availablePlans,
       subscriptionVersion,
       reverifySubscription,
       gateForPlayback,
