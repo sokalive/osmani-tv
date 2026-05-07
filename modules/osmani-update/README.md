@@ -19,7 +19,7 @@ Autolinking — no manual linking required.
 
 ## Backend contract
 
-### `GET /api/app-update/check`
+### `GET /api/update-check`
 
 Query parameters:
 
@@ -43,11 +43,18 @@ camelCase aliases are accepted for compatibility.
   "apk_sha256": "abcd…64-hex…",
   "apk_size_bytes": 12345678,
   "play_store_url": "https://play.google.com/store/apps/details?id=com.osmantv.app",
-  "release_notes": "Markdown or plaintext"
+  "playstore_url": "https://play.google.com/store/apps/details?id=com.osmantv.app",
+  "release_notes": "Markdown or plaintext",
+  "notice": "Short user-facing update message",
+  "source": "apk | play | notice"
 }
 ```
 
-### Realtime: `GET /api/app-settings/stream` (Server-Sent Events)
+`apk_sha256` is optional in the current production backend. If it is
+blank/missing, the app still allows HTTPS APK downloads and skips local
+SHA verification. If a hash is provided, it remains a hard install gate.
+
+### Realtime: `GET /api/sync/stream` (Server-Sent Events)
 
 The mobile app subscribes via `react-native-sse`. Whenever the admin
 changes `app_settings` / `app_version` rows, the backend publishes
@@ -63,7 +70,7 @@ data: {"changed":["force_update","auto_download"]}
 
 The mobile client treats both as a "re-check immediately" signal — no
 state from the SSE payload is trusted directly. The next authoritative
-state comes from `/api/app-update/check`.
+state comes from `/api/update-check`.
 
 ## Decision semantics
 
@@ -76,14 +83,14 @@ state comes from `/api/app-update/check`.
 
 ## Security guarantees
 
-- **HTTPS only** — `ApkDownloader` rejects any non-HTTPS APK URL at runtime,
-  and `UpdateApi` downgrades a non-HTTPS APK URL to `PLAY_STORE` / `NONE`
-  before the JS layer ever sees it.
-- **SHA-256 verification before install** — `HashVerifier` does a
-  constant-time, length-strict, case-insensitive hex compare. Empty,
-  too-short, or non-hex expected values are rejected as
-  `missing_expected_hash` / `invalid_expected_hash_format`. Mismatches
-  yield `hash_mismatch` and the staged APK is deleted.
+- **HTTPS only** — `ApkDownloader` rejects any non-HTTPS APK URL at runtime.
+  Backend decisions are still rendered even when they are notice-only or
+  Play-Store-only.
+- **Optional SHA-256 verification before install** — when the backend provides
+  `apk_sha256`, `HashVerifier` does a constant-time, length-strict,
+  case-insensitive hex compare. Mismatches yield `hash_mismatch` and the
+  staged APK is deleted. When the backend leaves the hash blank, verification
+  is skipped by design.
 - **Single-APK cache** — old downloads are wiped before each new one.
 - **No silent install** — install always requires an explicit user tap
   in the system installer UI; this module never claims signature-level

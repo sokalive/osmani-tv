@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Public JS API (called from `lib/updateClient.js`):
  *   - getInstalledVersion()                                  → Bundle  (sync)
  *   - checkForUpdate(apiBase, deviceId?)                     → Promise<Bundle>
- *   - downloadAndInstall(apkUrl, expectedSha256)             → Promise<Bundle>
+ *   - downloadAndInstall(apkUrl, expectedSha256?)            → Promise<Bundle>
  *   - cancelDownload()                                       → void
  *   - quitApp()                                              → void   (FORCE cancel)
  *
@@ -99,7 +99,7 @@ class UpdateManager : Module() {
             }
         }
 
-        AsyncFunction("downloadAndInstall") { apkUrl: String, expectedSha256: String, promise: Promise ->
+        AsyncFunction("downloadAndInstall") { apkUrl: String, expectedSha256: String?, promise: Promise ->
             if (!downloading.compareAndSet(false, true)) {
                 promise.reject("ERR_UPDATE_BUSY", "download already in progress", null)
                 return@AsyncFunction
@@ -134,17 +134,27 @@ class UpdateManager : Module() {
                         )
                     }
 
-                    emit(stateBundle("verifying"))
-                    val verify = withContext(Dispatchers.IO) {
-                        HashVerifier.verify(file, expectedSha256)
-                    }
-
-                    if (!verify.ok) {
-                        try { file.delete() } catch (_: Throwable) {}
-                        val err = "hash_verify_failed:${verify.reason}"
-                        emit(stateBundle("failed", error = err))
-                        promise.reject("ERR_UPDATE_VERIFY", err, null)
-                        return@launch
+                    val verify: HashVerifier.VerifyResult? =
+                        if (!expectedSha256.isNullOrBlank()) {
+                            emit(stateBundle("verifying"))
+                            withContext(Dispatchers.IO) {
+                                HashVerifier.verify(file, expectedSha256)
+                            }.also {
+                                if (!it.ok) {
+                                    try { file.delete() } catch (_: Throwable) {}
+                                    val err = "hash_verify_failed:${it.reason}"
+                                    emit(stateBundle("failed", error = err))
+                                    promise.reject("ERR_UPDATE_VERIFY", err, null)
+                                    return@launch
+                                }
+                            }
+                        } else {
+                            // Backend 71174a6 made SHA optional for permissive
+                            // update decisions. Install still requires HTTPS APK
+                            // transport, but hash verification is skipped when
+                            // no expected hash is provided.
+                            null
+                        }
                     }
 
                     emit(
@@ -161,7 +171,8 @@ class UpdateManager : Module() {
                                 Bundle().apply {
                                     putString("status", "installer_launched")
                                     putString("filePath", file.absolutePath)
-                                    putString("verifiedSha256", verify.actual ?: "")
+                                    putString("verifiedSha256", verify?.actual ?: "")
+                                    putBoolean("sha256Verified", verify != null)
                                 }
                             )
                         }
@@ -276,6 +287,8 @@ private fun UpdateInfo.toBundle(installedVersionCode: Int, installedVersionName:
         putDouble("apkSizeBytes", apkSizeBytes.toDouble())
         putString("playStoreUrl", playStoreUrl ?: "")
         putString("releaseNotes", releaseNotes ?: "")
+        putString("notice", notice ?: "")
+        putString("source", source ?: "")
         putInt("installedVersionCode", installedVersionCode)
         putString("installedVersionName", installedVersionName)
     }

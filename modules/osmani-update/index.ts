@@ -17,6 +17,8 @@ export interface UpdateInfo {
   apkSizeBytes: number;
   playStoreUrl: string;
   releaseNotes: string;
+  notice: string;
+  source: string;
   installedVersionCode: number;
   installedVersionName: string;
 }
@@ -45,6 +47,7 @@ export interface InstallResult {
   status: 'installer_launched' | 'needs_unknown_sources_permission';
   filePath: string;
   verifiedSha256?: string;
+  sha256Verified?: boolean;
 }
 
 const STATE_EVENT: string = NativeModule.STATE_EVENT ?? 'OsmaniUpdate.state';
@@ -65,11 +68,11 @@ export async function checkForUpdate(
 
 export async function downloadAndInstall(
   apkUrl: string,
-  expectedSha256: string,
+  expectedSha256?: string | null,
 ): Promise<InstallResult> {
   return (await NativeModule.downloadAndInstall(
     apkUrl,
-    expectedSha256,
+    expectedSha256 ?? null,
   )) as InstallResult;
 }
 

@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   cancelDownload,
   dismissSoft,
+  getUpdateAction,
   isNativeAvailable,
   openPlayStoreFromInfo,
   quitForForceCancel,
@@ -47,12 +48,28 @@ export default function UpdateOverlay() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!ui) return;
+    try {
+      console.log('[update] overlay render state', {
+        decision: ui.decision,
+        visible: ui.visible,
+        notice: ui.info?.notice,
+        source: ui.info?.source,
+        apkUrl: ui.info?.apkUrl,
+        playStoreUrl: ui.info?.playStoreUrl,
+        failedReason: ui.failedReason,
+      });
+    } catch {}
+  }, [ui]);
+
   if (Platform.OS !== 'android' || !isNativeAvailable()) return null;
   if (!ui || !ui.visible) return null;
 
   const isForce = ui.decision === 'FORCE';
   const isPlayStore = ui.decision === 'PLAY_STORE';
   const info = ui.info ?? {};
+  const action = getUpdateAction(info);
   const installedName = info.installedVersionName || '';
   const latestName = info.latestVersionName || '';
   const sizeText = formatMB(info.apkSizeBytes);
@@ -72,11 +89,11 @@ export default function UpdateOverlay() {
       : 'Sasisho linapatikana';
 
   const subtitle = isForce
-    ? 'Toleo jipya ni la lazima ili kuendelea kutumia Osmani TV.'
-    : 'Toleo jipya la Osmani TV liko tayari kupakuliwa.';
+    ? (info.notice || 'Toleo jipya ni la lazima ili kuendelea kutumia Osmani TV.')
+    : (info.notice || 'Toleo jipya la Osmani TV liko tayari kupakuliwa.');
 
   const onPrimary = () => {
-    if (isPlayStore) {
+    if (isPlayStore || (!action.canDownload && action.canOpenStore)) {
       void openPlayStoreFromInfo();
       return;
     }
@@ -101,7 +118,8 @@ export default function UpdateOverlay() {
         : 'Inapakua…';
     }
     if (ui.needsUnknownSourcesPermission) return 'Ruhusu kisha ujaribu tena';
-    if (isPlayStore) return 'Fungua Play Store';
+    if (isPlayStore || (!action.canDownload && action.canOpenStore)) return 'Fungua Play Store';
+    if (!action.canDownload) return 'Hakuna APK ya kupakua';
     return 'Pakua na Sakinisha';
   })();
 
@@ -189,7 +207,7 @@ export default function UpdateOverlay() {
           <View style={styles.actions}>
             <Pressable
               onPress={onPrimary}
-              disabled={inProgress}
+              disabled={inProgress || (!action.canDownload && !action.canOpenStore)}
               style={({ pressed }) => [
                 styles.primaryBtn,
                 pressed && { opacity: 0.85 },

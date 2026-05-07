@@ -14,7 +14,7 @@ import java.nio.charset.StandardCharsets
  *
  * The endpoint contract (documented in modules/osmani-update/README.md):
  *
- *   GET {apiBase}/api/app-update/check
+ *   GET {apiBase}/update-check
  *       ?platform=android
  *       &package={pkg}
  *       &version_code={int}
@@ -32,11 +32,14 @@ import java.nio.charset.StandardCharsets
  *     "apk_sha256": "abcd…64hex…",
  *     "apk_size_bytes": 12345678,
  *     "play_store_url": "https://play.google.com/...",
- *     "release_notes": "…"
+ *     "playstore_url": "https://play.google.com/...",
+ *     "release_notes": "…",
+ *     "notice": "…",
+ *     "source": "apk" | "play" | "notice"
  *   }
  *
- * Security: only HTTPS responses are honored when the response carries
- * an `apk_url`; an HTTP-only APK URL is forced into [UpdateDecision.NONE].
+ * The backend decision is authoritative. APK transport validation happens
+ * only when a download is actually attempted, in [ApkDownloader].
  */
 internal object UpdateApi {
 
@@ -51,19 +54,44 @@ internal object UpdateApi {
         deviceId: String?,
     ): UpdateInfo {
         val base = apiBase.trim().trimEnd('/')
-        val url = Uri.parse("$base/api/app-update/check")
-            .buildUpon()
-            .appendQueryParameter("platform", "android")
-            .appendQueryParameter("package", packageName)
-            .appendQueryParameter("version_code", currentVersionCode.toString())
-            .appendQueryParameter("version_name", currentVersionName)
-            .apply { if (!deviceId.isNullOrBlank()) appendQueryParameter("device_id", deviceId) }
-            .build()
-            .toString()
+        val endpoints = endpointCandidates(base)
+        var lastError: Throwable? = null
+        for (endpoint in endpoints) {
+            val url = Uri.parse(endpoint)
+                .buildUpon()
+                .appendQueryParameter("platform", "android")
+                .appendQueryParameter("package", packageName)
+                .appendQueryParameter("version_code", currentVersionCode.toString())
+                .appendQueryParameter("version_name", currentVersionName)
+                .apply { if (!deviceId.isNullOrBlank()) appendQueryParameter("device_id", deviceId) }
+                .build()
+                .toString()
+            try {
+                val raw = httpGet(url)
+                val json = JSONObject(raw)
+                return UpdateInfo.fromJson(json)
+            } catch (t: Throwable) {
+                lastError = t
+            }
+        }
+        throw lastError ?: RuntimeException("No update endpoint candidates available")
+    }
 
-        val raw = httpGet(url)
-        val json = JSONObject(raw)
-        return UpdateInfo.fromJson(json)
+    private fun endpointCandidates(base: String): List<String> {
+        val normalized = base.trimEnd('/')
+        val apiBase = if (normalized.endsWith("/api", ignoreCase = true)) {
+            normalized
+        } else {
+            "$normalized/api"
+        }
+        // Production contract is /api/update-check. Keep legacy candidates so
+        // already-built apps remain tolerant while backend routes settle.
+        return listOf(
+            "$apiBase/update-check",
+            "$apiBase/app-update/check",
+            "$apiBase/app-version/check",
+            "$apiBase/update/check",
+        ).distinct()
     }
 
     private fun httpGet(urlStr: String): String {
@@ -122,24 +150,15 @@ internal data class UpdateInfo(
     val apkSizeBytes: Long,
     val playStoreUrl: String?,
     val releaseNotes: String?,
+    val notice: String?,
+    val source: String?,
 ) {
     companion object {
         fun fromJson(j: JSONObject): UpdateInfo {
             val rawDecision = pickString(j, "decision", "update_decision", "updateDecision")
-            var decision = UpdateDecision.parse(rawDecision)
+            val decision = UpdateDecision.parse(rawDecision)
             val apkUrl = pickString(j, "apk_url", "apkUrl")
             val apkSha = pickString(j, "apk_sha256", "apkSha256", "sha256")
-
-            // Refuse plain-HTTP APK URLs at the parse layer.
-            if (decision == UpdateDecision.SOFT || decision == UpdateDecision.FORCE) {
-                if (apkUrl == null || !apkUrl.startsWith("https://", ignoreCase = true)) {
-                    decision = if (pickString(j, "play_store_url", "playStoreUrl") != null) {
-                        UpdateDecision.PLAY_STORE
-                    } else {
-                        UpdateDecision.NONE
-                    }
-                }
-            }
 
             return UpdateInfo(
                 decision = decision,
@@ -150,8 +169,10 @@ internal data class UpdateInfo(
                 apkUrl = apkUrl,
                 apkSha256 = apkSha?.lowercase(),
                 apkSizeBytes = pickLong(j, "apk_size_bytes", "apkSizeBytes") ?: 0L,
-                playStoreUrl = pickString(j, "play_store_url", "playStoreUrl"),
+                playStoreUrl = pickString(j, "play_store_url", "playStoreUrl", "playstore_url", "playstoreUrl"),
                 releaseNotes = pickString(j, "release_notes", "releaseNotes"),
+                notice = pickString(j, "notice", "message", "update_notice", "updateNotice"),
+                source = pickString(j, "source", "update_source", "updateSource"),
             )
         }
 
