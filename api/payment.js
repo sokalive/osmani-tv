@@ -109,6 +109,74 @@ export async function getPlans() {
   throw new Error('Invalid plans response');
 }
 
+function pickProviderLogoUrl(raw) {
+  const candidates = [
+    raw?.logoUrl,
+    raw?.logo_url,
+    raw?.logoURL,
+    raw?.logo,
+    raw?.image,
+    raw?.image_url,
+    raw?.imageUrl,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string') {
+      const v = c.trim();
+      if (v !== '') return v;
+    }
+  }
+  return null;
+}
+
+function pickProviderActive(raw) {
+  const candidates = [raw?.active, raw?.is_active, raw?.isActive, raw?.enabled];
+  for (const c of candidates) {
+    if (c === false || c === 0 || c === 'false' || c === '0') return false;
+    if (c === true || c === 1 || c === 'true' || c === '1') return true;
+  }
+  return true;
+}
+
+function normalizeProviderRow(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const name = String(raw.name ?? raw.title ?? raw.label ?? '').trim();
+  if (!name) return null;
+  const id = String(raw.id ?? raw.provider_id ?? raw.code ?? raw.slug ?? name)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-');
+  return {
+    id: id || name.toLowerCase(),
+    name,
+    logoUrl: pickProviderLogoUrl(raw),
+    active: pickProviderActive(raw),
+  };
+}
+
+/**
+ * Live payment providers (admin-managed). Falls back to caller's local
+ * defaults when the endpoint is unreachable or returns nothing.
+ *
+ * GET /api/payment-providers → []|{ providers: [] }|{ data: [] }
+ *
+ * @returns {Promise<{ id: string; name: string; logoUrl: string|null; active: boolean }[]>}
+ */
+export async function getPaymentProviders() {
+  const res = await fetch(`${P}/payment-providers`);
+  const body = await readJson(res);
+  if (!res.ok) {
+    const msg = body?.error != null ? String(body.error) : `HTTP ${res.status}`;
+    throw new Error(msg || 'Could not load providers');
+  }
+  let raw = [];
+  if (Array.isArray(body)) raw = body;
+  else if (body && Array.isArray(body.providers)) raw = body.providers;
+  else if (body && Array.isArray(body.data)) raw = body.data;
+  return raw
+    .map(normalizeProviderRow)
+    .filter((p) => p && p.active === true);
+}
+
 /**
  * @param {{ phone: string; plan_id: string; amount: number; device_id: string; device_fingerprint: string }} payload
  * @returns {Promise<{ order_id: string; expiresInSeconds?: number }>}

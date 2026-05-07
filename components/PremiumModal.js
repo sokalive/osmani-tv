@@ -24,6 +24,7 @@ import EventSource from 'react-native-sse';
 import {
   createPayment,
   fetchSubscription,
+  getPaymentProviders,
   getPaymentStatus,
   getPlans,
 } from '../api/payment';
@@ -53,15 +54,15 @@ const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
 const POLL_MS = 3000;
 
 /**
- * Provider list. `logo` accepts an admin-uploaded URL; when null/empty,
- * the card falls back to a colored initial chip. Order/structure here
- * is the only place new providers or logos plug in.
+ * Local fallback used only when GET /api/payment-providers fails or
+ * returns an empty list. Live admin-managed providers + logos populate
+ * the grid at runtime via `getPaymentProviders()`.
  */
-const NETWORKS = [
-  { id: 'tigo', name: 'Tigo', logo: null },
-  { id: 'mpesa', name: 'M-Pesa', logo: null },
-  { id: 'airtel', name: 'Airtel', logo: null },
-  { id: 'halopesa', name: 'HaloPesa', logo: null },
+const FALLBACK_NETWORKS = [
+  { id: 'tigo', name: 'Tigo', logoUrl: null, active: true },
+  { id: 'mpesa', name: 'M-Pesa', logoUrl: null, active: true },
+  { id: 'airtel', name: 'Airtel', logoUrl: null, active: true },
+  { id: 'halopesa', name: 'HaloPesa', logoUrl: null, active: true },
 ];
 
 function formatCountdown(totalSeconds) {
@@ -131,6 +132,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [failureReason, setFailureReason] = useState('');
   const [successExpiresAt, setSuccessExpiresAt] = useState(null);
   const [finalizingSuccess, setFinalizingSuccess] = useState(false);
+  const [providers, setProviders] = useState(FALLBACK_NETWORKS);
+  const [logoErrors, setLogoErrors] = useState({});
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -260,6 +263,30 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     if (!visible) return undefined;
     void refreshSubscription();
   }, [visible, refreshSubscription]);
+
+  /**
+   * Fetch admin-managed payment providers when the modal opens.
+   * On failure or empty list, the local FALLBACK_NETWORKS stays in place.
+   */
+  useEffect(() => {
+    if (!visible) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await getPaymentProviders();
+        if (cancelled) return;
+        if (Array.isArray(list) && list.length > 0) {
+          setProviders(list);
+          setLogoErrors({});
+        }
+      } catch {
+        // keep fallback providers; do not surface to user
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
 
   /** After ZenoPay reports SUCCESS: show success UI only; global unlock runs on ENDELEA via `handleCompleted`. */
   const moveToSuccessStep = useCallback(async () => {
@@ -600,17 +627,24 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                           </View>
                           <Text style={[styles.networksLabel, styles.step2GapClear]}>Mitandao inayokubaliwa</Text>
                           <View style={[styles.networksGrid, styles.step2GapClear]}>
-                            {NETWORKS.map((n) => {
+                            {providers.map((n) => {
                               const tint = NETWORK_COLORS[n.name] || ACCENT;
                               const initial = (n.name || '').slice(0, 1).toUpperCase();
+                              const failed = !!logoErrors[n.id];
+                              const showLogo = !!n.logoUrl && !failed;
                               return (
                                 <View key={n.id} style={styles.networkCard}>
                                   <View style={styles.networkLogoSlot}>
-                                    {n.logo ? (
+                                    {showLogo ? (
                                       <Image
-                                        source={{ uri: n.logo }}
+                                        source={{ uri: n.logoUrl }}
                                         style={styles.networkLogo}
                                         resizeMode="contain"
+                                        onError={() =>
+                                          setLogoErrors((prev) =>
+                                            prev[n.id] ? prev : { ...prev, [n.id]: true },
+                                          )
+                                        }
                                       />
                                     ) : (
                                       <View style={[styles.networkInitial, { backgroundColor: tint }]}>
