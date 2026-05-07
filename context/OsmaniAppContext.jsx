@@ -1,10 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState } from 'react-native';
-import { getBanners, getChannels } from '../api';
+import { getBanners, getChannels, getServerHealth } from '../api';
 import { getSettings } from '../api/settings';
 import { fetchSubscription, verifySubscriptionActive } from '../api/payment';
 import { readBannersCache, writeBannersCache } from '../lib/bannersCache';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
+import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 
 const defaultSettings = {
   freeMode: false,
@@ -22,6 +23,7 @@ export function OsmaniAppProvider({ children }) {
   const [rawBanners, setRawBanners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [serverHealth, setServerHealth] = useState(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState(null);
   /** Bumps after subscription fetch so consumers can invalidate memos tied to premium access. */
@@ -67,6 +69,18 @@ export function OsmaniAppProvider({ children }) {
       return await verifySubscriptionActive(deviceId);
     } catch {
       return false;
+    }
+  }, []);
+
+  const refreshServerHealth = useCallback(async (reason = 'fetch') => {
+    try {
+      const payload = await getServerHealth();
+      console.log('[SERVER_HEALTH_UPDATE]', reason, payload);
+      setServerHealth(payload);
+      return payload;
+    } catch (e) {
+      console.log('[SERVER_HEALTH_UPDATE]', 'fetch_failed', e?.message ?? e);
+      return null;
     }
   }, []);
 
@@ -124,6 +138,19 @@ export function OsmaniAppProvider({ children }) {
   useEffect(() => {
     refreshSubscription();
   }, [refreshSubscription]);
+
+  useEffect(() => {
+    void refreshServerHealth('initial');
+    const unsubscribe = subscribeRealtimeEvent('server_health_changed', (payload) => {
+      console.log('[SERVER_HEALTH_UPDATE]', 'sse', payload);
+      if (payload && typeof payload === 'object') {
+        setServerHealth(payload);
+      }
+      void refreshServerHealth('sse');
+      void refresh({ showGlobalLoading: false, preserveDataOnError: true });
+    });
+    return unsubscribe;
+  }, [refresh, refreshServerHealth]);
 
   // Realtime sync via efficient foreground polling with automatic reconnect/backoff.
   useEffect(() => {
@@ -187,6 +214,7 @@ export function OsmaniAppProvider({ children }) {
       maintenanceMode: settings.maintenanceMode,
       rawChannels,
       rawBanners,
+      serverHealth,
       loading,
       error,
       refresh,
@@ -202,6 +230,7 @@ export function OsmaniAppProvider({ children }) {
       settings,
       rawChannels,
       rawBanners,
+      serverHealth,
       loading,
       error,
       refresh,

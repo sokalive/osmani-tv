@@ -23,14 +23,17 @@ import { Ionicons } from '@expo/vector-icons';
 import EmergencyModal from './components/EmergencyModal';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import PremiumModal from './components/PremiumModal';
+import PopupSettingsModal from './components/PopupSettingsModal';
 import UpdateOverlay from './components/UpdateOverlay';
 import OtaDebugOverlay, { OtaDebugTitleTap } from './components/OtaDebugOverlay';
+import WhatsAppFloatingButton from './components/WhatsAppFloatingButton';
 import AkauntiYanguScreen from './screens/AkauntiYanguScreen';
 import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
 import { BASE_URL } from './api';
 import { trackInstallOnce } from './api/analytics';
 import { startPresence, stopPresence } from './lib/presenceTracker';
+import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
 import { resolveStream } from './lib/channelStream';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
@@ -135,11 +138,26 @@ function matchesPillFilter(r, pill) {
   return true;
 }
 
-function mapApiChannelToCard(raw, index, freeMode = false) {
+function findServerHealthForChannel(serverHealth, name) {
+  if (!serverHealth || !Array.isArray(serverHealth.channels)) return null;
+  const wanted = String(name ?? '').trim().toLowerCase();
+  if (!wanted) return null;
+  return serverHealth.channels.find((row) => String(row?.name ?? '').trim().toLowerCase() === wanted) || null;
+}
+
+function mapApiChannelToCard(raw, index, freeMode = false, serverHealth = null) {
   const name = raw?.name != null ? String(raw.name) : `Channel ${index + 1}`;
   const stableId =
     raw?.id != null && String(raw.id).length > 0 ? String(raw.id) : `ch-${index}-${name.slice(0, 24)}`;
-  const isLive = raw?.isLive !== undefined ? Boolean(raw.isLive) : Boolean(raw?.live);
+  const health = findServerHealthForChannel(serverHealth, name);
+  const healthStatus = typeof health?.status === 'string' ? health.status.toLowerCase() : '';
+  const isLiveFromApi = raw?.isLive !== undefined ? Boolean(raw.isLive) : Boolean(raw?.live);
+  const isLive =
+    healthStatus === 'online'
+      ? true
+      : healthStatus === 'offline'
+        ? false
+        : isLiveFromApi;
   const isHD = raw?.isHD !== undefined ? Boolean(raw.isHD) : raw?.hd !== false;
   const isPremiumApi =
     raw?.accessType === 'premium' || Boolean(raw?.accessPremium === true || raw?.access_premium === true);
@@ -174,6 +192,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
     maintenanceMode,
     rawChannels,
     rawBanners,
+    serverHealth,
     loading,
     error,
     refresh,
@@ -210,8 +229,8 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
     } else if (selectedFilter === 'Sports' || selectedFilter === 'Movies') {
       rows = rows.filter((r) => matchesPillFilter(r, selectedFilter));
     }
-    return rows.map((raw, i) => mapApiChannelToCard(raw, i, freeMode));
-  }, [rawChannels, bottomTabFilter, selectedFilter, freeMode]);
+    return rows.map((raw, i) => mapApiChannelToCard(raw, i, freeMode, serverHealth));
+  }, [rawChannels, bottomTabFilter, selectedFilter, freeMode, serverHealth]);
 
   const bannerSlides = useMemo(() => {
     if (!Array.isArray(rawBanners)) return [];
@@ -596,9 +615,11 @@ export default function App() {
   useEffect(() => {
     void trackInstallOnce();
     void startPresence();
+    startRealtimeSync();
     startUpdateClient();
     return () => {
       void stopPresence();
+      stopRealtimeSync();
       stopUpdateClient();
     };
   }, []);
@@ -614,6 +635,8 @@ export default function App() {
         >
           <RootNavigator />
         </NavigationContainer>
+        <PopupSettingsModal />
+        <WhatsAppFloatingButton />
         <UpdateOverlay />
         <OtaDebugOverlay />
       </OsmaniAppProvider>

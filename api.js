@@ -63,3 +63,54 @@ export async function getBanners() {
   }
   return body;
 }
+
+export async function getWhatsappSettings() {
+  const res = await fetch(`${BASE_URL}/api/whatsapp-settings`);
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (!res.ok) {
+    throw new Error(`Could not load WhatsApp settings (${res.status})`);
+  }
+  if (!body || typeof body !== 'object') {
+    throw new Error('Could not load WhatsApp settings (invalid response)');
+  }
+  return body;
+}
+
+export async function getPopupSettings() {
+  const res = await fetch(`${BASE_URL}/api/popup-settings`);
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (!res.ok) {
+    throw new Error(`Could not load popup settings (${res.status})`);
+  }
+  if (!body || typeof body !== 'object') {
+    throw new Error('Could not load popup settings (invalid response)');
+  }
+  return body;
+}
+
+export async function getServerHealth() {
+  const res = await fetch(`${BASE_URL}/api/server-health`);
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (!res.ok) {
+    throw new Error(`Could not load server health (${res.status})`);
+  }
+  if (!body || typeof body !== 'object') {
+    throw new Error('Could not load server health (invalid response)');
+  }
+  return body;
+}
