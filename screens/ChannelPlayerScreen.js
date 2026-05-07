@@ -540,6 +540,29 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
     if (kind === 'stall_detected') {
       console.log('[player][debug] hls.js: stall_detected', payload);
+      setIsBuffering(true);
+      return;
+    }
+    if (kind === 'reconnect_backoff') {
+      console.log('[player][debug] hls.js: reconnect_backoff', payload);
+      return;
+    }
+    if (kind === 'recovery_attempt') {
+      console.log('[player][debug] hls.js: recovery_attempt', payload);
+      setIsBuffering(true);
+      return;
+    }
+    if (kind === 'recovery_success') {
+      console.log('[player][debug] hls.js: recovery_success', payload);
+      setIsBuffering(false);
+      setPlaybackError('');
+      return;
+    }
+    if (kind === 'recovery_failed') {
+      console.log('[player][debug] hls.js: recovery_failed', payload);
+      if (payload?.mode === 'max-consecutive' || payload?.mode === 'cooldown') {
+        applyPlaybackFailure(`hls-recovery:${payload?.mode || 'failed'}`);
+      }
       return;
     }
     if (kind === 'hls_recover') {
@@ -549,7 +572,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (kind === 'hls_error') {
       const fatal = Boolean(payload?.fatal);
       console.log('[player][debug] hls.js error', { fatal, ...payload });
-      if (fatal) applyPlaybackFailure(`hls.js:${payload?.type || ''}:${payload?.details || ''}`);
+      if (fatal) setIsBuffering(true);
       return;
     }
     if (kind === 'video_error') {
