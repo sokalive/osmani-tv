@@ -5,6 +5,7 @@ import {
   Animated,
   Dimensions,
   Easing,
+  Image,
   InteractionManager,
   KeyboardAvoidingView,
   Modal,
@@ -51,7 +52,17 @@ const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
 
 const POLL_MS = 3000;
 
-const NETWORKS = ['Tigo', 'M-Pesa', 'Airtel', 'HaloPesa'];
+/**
+ * Provider list. `logo` accepts an admin-uploaded URL; when null/empty,
+ * the card falls back to a colored initial chip. Order/structure here
+ * is the only place new providers or logos plug in.
+ */
+const NETWORKS = [
+  { id: 'tigo', name: 'Tigo', logo: null },
+  { id: 'mpesa', name: 'M-Pesa', logo: null },
+  { id: 'airtel', name: 'Airtel', logo: null },
+  { id: 'halopesa', name: 'HaloPesa', logo: null },
+];
 
 function formatCountdown(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds));
@@ -588,18 +599,31 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                             />
                           </View>
                           <Text style={[styles.networksLabel, styles.step2GapClear]}>Mitandao inayokubaliwa</Text>
-                          <View style={[styles.networksRow, styles.step2GapClear]}>
-                            {NETWORKS.map((n) => (
-                              <View key={n} style={styles.networkChip}>
-                                <View
-                                  style={[
-                                    styles.networkDot,
-                                    { backgroundColor: NETWORK_COLORS[n] || ACCENT },
-                                  ]}
-                                />
-                                <Text style={styles.networkChipText}>{n}</Text>
-                              </View>
-                            ))}
+                          <View style={[styles.networksGrid, styles.step2GapClear]}>
+                            {NETWORKS.map((n) => {
+                              const tint = NETWORK_COLORS[n.name] || ACCENT;
+                              const initial = (n.name || '').slice(0, 1).toUpperCase();
+                              return (
+                                <View key={n.id} style={styles.networkCard}>
+                                  <View style={styles.networkLogoSlot}>
+                                    {n.logo ? (
+                                      <Image
+                                        source={{ uri: n.logo }}
+                                        style={styles.networkLogo}
+                                        resizeMode="contain"
+                                      />
+                                    ) : (
+                                      <View style={[styles.networkInitial, { backgroundColor: tint }]}>
+                                        <Text style={styles.networkInitialText}>{initial}</Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                  <Text style={styles.networkCardText} numberOfLines={1}>
+                                    {n.name}
+                                  </Text>
+                                </View>
+                              );
+                            })}
                           </View>
                         </View>
                         <View style={styles.step2FlexSpacer} />
@@ -1189,6 +1213,62 @@ const styles = StyleSheet.create({
     color: '#E5E7EB',
     fontSize: 12,
     fontWeight: '600',
+  },
+  networksGrid: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  networkCard: {
+    width: '48%',
+    minHeight: 108,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    marginBottom: 10,
+    backgroundColor: '#1F242E',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+  },
+  networkLogoSlot: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  networkLogo: {
+    width: 56,
+    height: 56,
+  },
+  networkInitial: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  networkInitialText: {
+    color: '#0F172A',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  networkCardText: {
+    color: '#E5E7EB',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
   step3Wrap: {
     alignItems: 'center',
