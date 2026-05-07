@@ -1,10 +1,25 @@
 const { Pool } = require("pg");
 const express = require("express");
 const createPaymentsRouter = require("./routes/payments");
+const {
+  handleStreamProxy,
+  handleStreamProxyTest,
+} = require("./routes/streamProxy");
 const cors = require("cors");
 
 const app = express();
 app.use(express.json());
+
+// ======================
+// STREAM PROXY (registered BEFORE global CORS so it owns its own permissive
+// CORS headers and is not blocked by the allowed-origins whitelist used by the
+// rest of the API).
+// IMPORTANT: no compression/buffering middleware must touch these routes.
+// ======================
+app.options("/stream-proxy", handleStreamProxy);
+app.get("/stream-proxy", handleStreamProxy);
+app.options("/stream-proxy-test", handleStreamProxyTest);
+app.get("/stream-proxy-test", handleStreamProxyTest);
 
 // ======================
 // CORS (web preflight)
