@@ -153,26 +153,39 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   }, [visible, step, generatedCode]);
 
   /**
-   * Revoke watcher.
+   * Revoke watcher (SOURCE-side only).
    *
-   * The moment the backend reports this device lost access (via
-   * `subscription_revoked` or `transfer_completed` SSE, or any verify
-   * tick that returns active=false), tear down the local transfer flow:
+   * Tears down the local transfer flow ONLY when this device was
+   * actively acting as the SOURCE (had generated a code) and the
+   * backend just told us we lost access. In that case we:
    *   - stop the countdown interval defensively
    *   - clear all transfer-related state (code, generatedCode, phone,
    *     step, error)
    *   - close the modal so the global `TransferredAwayModal` ("Kifurushi
    *     Kimehamishwa" + LIPIA TENA) becomes the sole foreground UI
    *
-   * Skip when the modal is not visible (no UI to dismiss) or already on
-   * the success screen (REDEEMED is a target-side outcome and does NOT
-   * imply the source revoke path).
+   * Critically, we do NOT close the modal for target / unsubscribed
+   * devices: they open this modal precisely to redeem a transfer code
+   * and arrive with `isSubscribed === false` from the very start —
+   * which is the normal initial state, not a transition. Detecting
+   * "was acting as source" via `generatedCode` (or step=GENERATED) is
+   * the correct gate because that state is only reachable after a
+   * successful `/api/transfer/request`.
+   *
+   * Skipped on REDEEMED (target-side success outcome) and when the
+   * modal is not visible.
    */
   useEffect(() => {
     if (!visible) return;
-    const revoked = Boolean(revokedReason) || isSubscribed === false;
-    if (!revoked) return;
     if (step === STEPS.REDEEMED) return;
+    const revokeSignal = Boolean(revokedReason) || isSubscribed === false;
+    if (!revokeSignal) return;
+    // Only the SOURCE-side flow should auto-tear down. A target /
+    // unsubscribed device opening the modal to redeem MUST remain
+    // open. `generatedCode` is the unambiguous signal that this
+    // device is acting as the source for an in-flight transfer.
+    const wasActingAsSource = step === STEPS.GENERATED || Boolean(generatedCode);
+    if (!wasActingAsSource) return;
     console.log('[HAMISHA_MODAL]', 'revoke_detected', {
       revokedReason,
       isSubscribed,
