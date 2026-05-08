@@ -8,12 +8,12 @@ import { BASE_URL } from '../api';
  * The app NEVER compares `expires_at` against the device clock.
  *
  * Endpoints (production /api):
- *   POST /api/subscription/verify             { device_id, device_fingerprint }
- *   POST /api/subscription/recover            { device_id, device_fingerprint }
- *   POST /api/subscription/transfer/initiate  { device_id, device_fingerprint }
- *   POST /api/subscription/transfer/redeem    { code, device_id, device_fingerprint }
+ *   POST /api/subscription/verify   { device_id, device_fingerprint }
+ *   POST /api/subscription/recover  { device_id, device_fingerprint }
+ *   POST /api/transfer/request      { source_device_id, target_device_id, phone? }
+ *   POST /api/transfer/confirm      { code, target_device_id, device_fingerprint }
  *   GET  /api/subscription/transfer/:code
- *   POST /api/transfer/respond                { code, decision }
+ *   POST /api/transfer/respond      { code, decision }
  */
 
 const API = `${BASE_URL.replace(/\/+$/, '')}/api`;
@@ -336,14 +336,36 @@ export async function recoverSubscription(deviceId, deviceFingerprint) {
 }
 
 /**
+ * Strip / re-add the "TR-" prefix used by the backend's transfer codes.
+ * The mobile UI accepts a 6-digit code, while the backend issues
+ * `TR-XXXXXX`. We normalize at the API boundary so neither side cares.
+ */
+function stripTransferPrefix(raw) {
+  return String(raw || '').trim().replace(/^TR[\s\-_]*/i, '');
+}
+
+function ensureTransferPrefix(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  return /^TR[-_]/i.test(s) ? s.toUpperCase().replace(/^TR[_]/, 'TR-') : `TR-${s}`;
+}
+
+/**
  * Initiate a transfer FROM the calling device. Returns a one-time code
- * that the destination device redeems. Source device retains access
- * until the transfer completes.
+ * that the destination device confirms. The current device is treated
+ * as the source; backend rebinds ownership to the actual `target_device_id`
+ * passed at confirm time.
+ *
+ * Backend route: POST /api/transfer/request
  */
 export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') {
-  const url = `${API}/subscription/transfer/initiate`;
-  console.log('[TRANSFER_INITIATE]', 'request', { url });
+  const url = `${API}/transfer/request`;
+  console.log('[TRANSFER_REQUEST]', 'request', { url });
   const payload = {
+    source_device_id: deviceId,
+    // The source device doesn't yet know the target id. Backend rebinds
+    // ownership to whatever `target_device_id` is presented at confirm.
+    target_device_id: deviceId,
     device_id: deviceId,
     device_fingerprint: deviceFingerprint,
   };
@@ -352,38 +374,79 @@ export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') 
   const { res, body } = await postJson(url, payload);
   if (!res.ok) {
     const reason = body?.error ?? body?.message ?? `HTTP ${res.status}`;
-    console.log('[TRANSFER_INITIATE]', 'failed', reason);
+    console.log('[TRANSFER_REQUEST]', 'failed', reason);
     throw new Error(String(reason));
   }
-  const code = pickTransferCode(body);
-  if (!code) throw new Error('Transfer code missing in response');
-  console.log('[TRANSFER_INITIATE]', 'response', { code, raw: body });
+  const rawCode = pickTransferCode(body);
+  if (!rawCode) throw new Error('Transfer code missing in response');
+  // Strip the "TR-" prefix so the existing 6-digit modal display + input
+  // keeps working unchanged. We re-add the prefix at confirm time.
+  const stripped = stripTransferPrefix(rawCode);
+  const expiresAt = pickExpiresAt(body) ?? body?.expires_at ?? null;
+  console.log('[TRANSFER_REQUEST]', 'response', {
+    code: stripped || rawCode,
+    expiresAt,
+    transferMode: body?.transfer_mode ?? null,
+  });
   return {
-    code,
-    expiresAt: pickExpiresAt(body),
+    code: stripped || rawCode,
+    expiresAt,
     raw: body,
   };
 }
 
 /**
- * Redeem a transfer code on the destination device.
+ * Confirm / redeem a transfer code on the destination device. After the
+ * backend accepts the confirm, we immediately call the canonical verify
+ * endpoint so the returned `active` flag is sourced from the same
+ * place the rest of the app trusts — never the confirm response alone.
+ *
+ * Backend route: POST /api/transfer/confirm
  */
 export async function redeemTransfer(code, deviceId, deviceFingerprint) {
-  const url = `${API}/subscription/transfer/redeem`;
-  console.log('[TRANSFER_REDEEM]', 'request', { url, code });
+  const url = `${API}/transfer/confirm`;
+  const codeWithPrefix = ensureTransferPrefix(code);
+  console.log('[TRANSFER_CONFIRM]', 'request', { url, code: codeWithPrefix });
   const { res, body } = await postJson(url, {
-    code: String(code).trim(),
+    code: codeWithPrefix,
+    target_device_id: deviceId,
     device_id: deviceId,
     device_fingerprint: deviceFingerprint,
   });
   if (!res.ok) {
     const reason = body?.error ?? body?.message ?? `HTTP ${res.status}`;
-    console.log('[TRANSFER_REDEEM]', 'failed', reason);
+    console.log('[TRANSFER_CONFIRM]', 'failed', reason);
     throw new Error(String(reason));
   }
-  const out = normalizeVerifyResponse(body);
-  console.log('[TRANSFER_REDEEM]', 'response', { active: out.active, expiresAt: out.expiresAt });
-  return out;
+  const confirmedActiveSignal =
+    body?.ok === true ||
+    body?.success === true ||
+    body?.active === true ||
+    body?.is_active === true;
+  let verified = null;
+  try {
+    verified = await verifySubscription(deviceId, deviceFingerprint);
+  } catch (e) {
+    console.log('[TRANSFER_CONFIRM]', 'verify_failed', e?.message ?? e);
+  }
+  if (verified && verified.active === true) {
+    console.log('[TRANSFER_CONFIRM]', 'response', {
+      active: true,
+      expiresAt: verified.expiresAt,
+    });
+    return verified;
+  }
+  if (confirmedActiveSignal) {
+    const out = normalizeVerifyResponse(body);
+    console.log('[TRANSFER_CONFIRM]', 'response', {
+      active: true,
+      expiresAt: out.expiresAt,
+      source: 'confirm-body',
+    });
+    return { ...out, active: true };
+  }
+  console.log('[TRANSFER_CONFIRM]', 'response', { active: false });
+  return { ...normalizeVerifyResponse(body), active: false };
 }
 
 /**
