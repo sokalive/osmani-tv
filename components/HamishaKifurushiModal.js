@@ -19,8 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
-import { getTransferStatus, initiateTransfer, redeemTransfer } from '../api/subscription';
-import { subscribeRealtimeEvent } from '../lib/realtimeSync';
+import { initiateTransfer, redeemTransfer } from '../api/subscription';
 
 const COLORS = {
   background: '#111215',
@@ -39,14 +38,23 @@ const TRANSFER_CODE_SECONDS = 120;
 
 const GRADIENT_CTA = [COLORS.yellow, COLORS.yellowDark];
 
+/**
+ * Simple device-transfer flow:
+ *   INTRO     → introduction copy + "ENDELEA KUHAMISHA"
+ *   PHONE     → enter source phone, fetch one-time code
+ *   GENERATED → display code + countdown for the receiving device
+ *   REDEEM    → enter code on the receiving device
+ *   REDEEMED  → activation success
+ *
+ * No approve/reject popup, no waiting state, no SSE handshake — the
+ * backend rebinds ownership directly on POST /api/transfer/confirm.
+ */
 const STEPS = Object.freeze({
   INTRO: 'intro',
   PHONE: 'phone',
   GENERATED: 'generated',
   REDEEM: 'redeem',
-  WAITING: 'waiting',
   REDEEMED: 'redeemed',
-  REJECTED: 'rejected',
 });
 
 function formatTimer(totalSeconds) {
@@ -60,54 +68,10 @@ function normalizePhone(raw) {
   return String(raw || '').replace(/[^\d]/g, '').slice(0, 10);
 }
 
-/**
- * Strip "TR-" prefix and non-alphanumerics so we can compare codes from
- * different sources (raw user entry, prefixed backend payload, etc.).
- */
-function bareCode(raw) {
-  return String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^TR/, '');
-}
-
-/**
- * Best-effort code extraction from an SSE payload object — different
- * backend versions key this differently.
- */
-function pickEventCode(payload) {
-  if (!payload || typeof payload !== 'object') return '';
-  return String(
-    payload.code ??
-      payload.transfer_code ??
-      payload.transferCode ??
-      payload.transfer?.code ??
-      '',
-  );
-}
-
-function pickPayloadString(payload, keys) {
-  if (!payload || typeof payload !== 'object') return '';
-  for (const key of keys) {
-    const value = key.split('.').reduce((acc, part) => (acc && typeof acc === 'object' ? acc[part] : undefined), payload);
-    if (value != null && String(value).trim() !== '') return String(value).trim();
-  }
-  return '';
-}
-
-function pickSourceDeviceId(payload) {
-  return pickPayloadString(payload, [
-    'source_device_id',
-    'sourceDeviceId',
-    'source_device.device_id',
-    'source_device.id',
-    'sourceDevice.deviceId',
-    'sourceDevice.id',
-    'source.id',
-  ]);
-}
-
 export default function HamishaKifurushiModal({ visible, onClose }) {
   const { height: windowHeight } = useWindowDimensions();
   const cardMaxHeight = windowHeight * 0.82;
-  const { reverifySubscription, pendingTransfer, triggerPendingTransfer } = useOsmaniApp();
+  const { reverifySubscription } = useOsmaniApp();
 
   const [step, setStep] = useState(STEPS.INTRO);
   const [phone, setPhone] = useState('');
@@ -116,13 +80,6 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   const [remainingSeconds, setRemainingSeconds] = useState(TRANSFER_CODE_SECONDS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  /**
-   * Code currently being awaited by the TARGET device, matched against
-   * `transfer_approved` / `transfer_rejected` / `transfer_completed` SSE
-   * payloads. Empty unless the WAITING step is active.
-   */
-  const [waitingCode, setWaitingCode] = useState('');
-  const [rejectionReason, setRejectionReason] = useState('');
 
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.92)).current;
@@ -154,8 +111,6 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       setRemainingSeconds(TRANSFER_CODE_SECONDS);
       setBusy(false);
       setError('');
-      setWaitingCode('');
-      setRejectionReason('');
       runEnterAnim();
     }
   }, [visible, runEnterAnim]);
@@ -176,173 +131,6 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   const isPhoneValid = useMemo(() => /^0[67]\d{8}$/.test(phone), [phone]);
   const redeemCode = code.trim();
   const isRedeemCodeValid = /^\d{6}$/.test(redeemCode);
-
-  /**
-   * SOURCE-device bridge.
-   *
-   * The global context owns `TransferConfirmModal`, but this native
-   * `<Modal>` can visually cover it on Android. While the GENERATED step
-   * is showing the 6-digit code we MUST close this modal as soon as we
-   * have ANY signal that the target device has confirmed — we let the
-   * global approval modal take over. We also force-set the global
-   * `pendingTransfer` context so the approve/reject popup absolutely
-   * shows even if the SSE event was missed by the consumer entirely.
-   *
-   * Permissive matching: while we are in GENERATED with our own code, any
-   * source-targeted transfer event is treated as belonging to us — this
-   * device is the only one in this state.
-   */
-  useEffect(() => {
-    if (!visible) return undefined;
-    let cancelled = false;
-    const onConfirmationRequired = (eventName) => async (payload) => {
-      if (cancelled) return;
-      let currentDeviceId = '';
-      try {
-        const identity = await getDeviceIdentity();
-        currentDeviceId = identity?.deviceId ? String(identity.deviceId) : '';
-      } catch {}
-      if (cancelled) return;
-      const sourceDeviceId = pickSourceDeviceId(payload);
-      const eventCode = pickEventCode(payload);
-      const codeMatches = Boolean(generatedCode) && bareCode(generatedCode) === bareCode(eventCode);
-      const sourceMatches = Boolean(sourceDeviceId && currentDeviceId && sourceDeviceId === currentDeviceId);
-      // While we are showing the GENERATED step, this device is the
-      // ONLY device in source-of-transfer state — accept the event as
-      // ours unless it is *explicitly* tagged for another device.
-      const inSourceFlow = step === STEPS.GENERATED && Boolean(generatedCode);
-      const explicitlyOtherDevice =
-        Boolean(sourceDeviceId && currentDeviceId && sourceDeviceId !== currentDeviceId);
-      const shouldClose =
-        codeMatches ||
-        sourceMatches ||
-        (inSourceFlow && !explicitlyOtherDevice);
-      console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'hamisha_modal_event', {
-        eventName,
-        payload,
-        currentDeviceId,
-        sourceDeviceId,
-        eventCode,
-        codeMatches,
-        sourceMatches,
-        inSourceFlow,
-        explicitlyOtherDevice,
-        shouldClose,
-        modalStep: step,
-      });
-      if (shouldClose) {
-        console.log('[transfer-ui]', 'closing code modal', {
-          source: 'sse',
-          eventName,
-          generatedCode,
-          eventCode,
-        });
-        // Force the global context to render the approve/reject modal
-        // even if the upstream context listener somehow dropped this
-        // payload — defensive double-set is idempotent.
-        const merged = (payload && typeof payload === 'object')
-          ? { ...payload, code: eventCode || generatedCode }
-          : { code: eventCode || generatedCode };
-        try {
-          triggerPendingTransfer?.(merged, `sse:${eventName}`);
-        } catch {}
-        console.log('[transfer-ui]', 'opening confirm modal', {
-          source: 'sse',
-          eventName,
-          code: merged.code,
-        });
-        close();
-      }
-    };
-    const offConfirmationRequired = subscribeRealtimeEvent(
-      'transfer_confirmation_required',
-      onConfirmationRequired('transfer_confirmation_required'),
-    );
-    const offRequested = subscribeRealtimeEvent(
-      'transfer_requested',
-      onConfirmationRequired('transfer_requested'),
-    );
-    const offPending = subscribeRealtimeEvent(
-      'transfer_pending',
-      onConfirmationRequired('transfer_pending'),
-    );
-    return () => {
-      cancelled = true;
-      offConfirmationRequired();
-      offRequested();
-      offPending();
-    };
-  }, [visible, step, generatedCode, waitingCode, redeemCode, close, triggerPendingTransfer]);
-
-  /**
-   * Auto-close fail-safe. If the global context decides a pending
-   * transfer popup should appear (from SSE OR from the polling fallback
-   * below) we MUST close this native modal — otherwise it visually
-   * stacks on top of `TransferConfirmModal` on Android and blocks the
-   * approve/reject buttons.
-   *
-   * Skip close on terminal target-side states (REDEEMED/REJECTED) which
-   * already replaced the GENERATED UI.
-   */
-  useEffect(() => {
-    if (!visible) return;
-    if (!pendingTransfer) return;
-    if (step === STEPS.REDEEMED || step === STEPS.REJECTED) return;
-    console.log('[transfer-ui]', 'closing code modal', {
-      source: 'context.pendingTransfer',
-      modalStep: step,
-      pendingCode: pendingTransfer?.code ?? null,
-    });
-    close();
-  }, [visible, pendingTransfer, step, close]);
-
-  /**
-   * Polling fallback. SSE may fail silently (network, proxy, sleep).
-   * While the GENERATED step is showing the code, poll the backend every
-   * 2 seconds for a `pending_confirmation` state. The polling helper
-   * gracefully tolerates missing endpoints (multi-URL probe with 404
-   * fallback), so this becomes a no-op until the backend exposes a
-   * status route — but the moment one exists, the source device flips
-   * into the approval state without waiting for SSE.
-   */
-  useEffect(() => {
-    if (!visible) return undefined;
-    if (step !== STEPS.GENERATED) return undefined;
-    if (!generatedCode) return undefined;
-    let cancelled = false;
-    let timer = null;
-    const tick = async () => {
-      if (cancelled) return;
-      try {
-        const r = await getTransferStatus(generatedCode);
-        if (cancelled) return;
-        if (r?.pending === true || r?.status === 'pending_confirmation') {
-          console.log('[transfer-ui]', 'pending transfer detected', {
-            source: 'poll',
-            url: r?.url ?? null,
-            generatedCode,
-          });
-          const payload = (r?.raw && typeof r.raw === 'object') ? r.raw : { code: generatedCode };
-          try {
-            triggerPendingTransfer?.({ ...payload, code: payload.code || generatedCode }, 'poll');
-          } catch {}
-          console.log('[transfer-ui]', 'closing code modal', { source: 'poll' });
-          console.log('[transfer-ui]', 'opening confirm modal', { source: 'poll' });
-          close();
-          return;
-        }
-      } catch (e) {
-        console.log('[transfer-ui]', 'poll_error', e?.message ?? e);
-      }
-      if (cancelled) return;
-      timer = setTimeout(tick, 2000);
-    };
-    timer = setTimeout(tick, 1500);
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [visible, step, generatedCode, close, triggerPendingTransfer]);
 
   const handleGenerate = useCallback(async () => {
     if (!isPhoneValid) {
@@ -365,6 +153,11 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     }
   }, [isPhoneValid, phone]);
 
+  /**
+   * Direct activation. The backend rebinds ownership on a successful
+   * confirm, so we just verify and flip to REDEEMED if the backend
+   * agrees we are now active. No waiting, no SSE.
+   */
   const handleRedeem = useCallback(async () => {
     if (!isRedeemCodeValid) {
       setError('Weka code sahihi ya tarakimu 6.');
@@ -372,20 +165,14 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     }
     setBusy(true);
     setError('');
-    setRejectionReason('');
     try {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
       const r = await redeemTransfer(redeemCode, deviceId, deviceFingerprint);
-      // Pending mode: backend is waiting for SOURCE device to approve.
-      // Switch to the WAITING step and listen for SSE outcome events.
-      if (r?.status === 'pending') {
-        setWaitingCode(String(r.code ?? redeemCode));
-        setStep(STEPS.WAITING);
-        return;
-      }
       if (r?.active === true) {
         setStep(STEPS.REDEEMED);
-        await reverifySubscription?.('transfer-redeem');
+        try {
+          await reverifySubscription?.('transfer-redeem');
+        } catch {}
         return;
       }
       setError('Code haijafanikiwa. Hakikisha umeingiza code sahihi.');
@@ -396,60 +183,6 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       setBusy(false);
     }
   }, [isRedeemCodeValid, redeemCode, reverifySubscription]);
-
-  /**
-   * TARGET-device SSE bridge. Active only while the modal is on the
-   * WAITING step. Resolves to REDEEMED on `transfer_approved` /
-   * `transfer_completed` (matching code), or REJECTED on
-   * `transfer_rejected`. Verify is ALWAYS re-issued before unlocking
-   * so backend remains the source of truth.
-   */
-  useEffect(() => {
-    if (!visible || step !== STEPS.WAITING || !waitingCode) return undefined;
-    const targetBare = bareCode(waitingCode);
-    const matches = (payload) => {
-      const incoming = bareCode(pickEventCode(payload));
-      // Empty payload is treated as a match — backend may broadcast
-      // without a code, and this device is the only one in WAITING.
-      return !incoming || !targetBare || incoming === targetBare;
-    };
-    const offApproved = subscribeRealtimeEvent('transfer_approved', async (payload) => {
-      if (!matches(payload)) return;
-      console.log('[TRANSFER_APPROVED]', 'target_redeem', payload);
-      try {
-        await reverifySubscription?.('transfer_approved');
-      } catch {}
-      setStep(STEPS.REDEEMED);
-    });
-    const offCompleted = subscribeRealtimeEvent('transfer_completed', async (payload) => {
-      if (!matches(payload)) return;
-      console.log('[TRANSFER_COMPLETED]', 'target_redeem', payload);
-      try {
-        await reverifySubscription?.('transfer_completed');
-      } catch {}
-      setStep(STEPS.REDEEMED);
-    });
-    const offRejected = subscribeRealtimeEvent('transfer_rejected', (payload) => {
-      if (!matches(payload)) return;
-      console.log('[TRANSFER_REJECTED]', 'target_redeem', payload);
-      const reason =
-        (payload && typeof payload === 'object' && typeof payload.reason === 'string')
-          ? payload.reason
-          : '';
-      setRejectionReason(reason);
-      setStep(STEPS.REJECTED);
-    });
-    const offPending = subscribeRealtimeEvent('transfer_pending', (payload) => {
-      if (!matches(payload)) return;
-      console.log('[TRANSFER_PENDING]', 'target_redeem', payload);
-    });
-    return () => {
-      offApproved();
-      offCompleted();
-      offRejected();
-      offPending();
-    };
-  }, [visible, step, waitingCode, reverifySubscription]);
 
   const copyGeneratedCode = useCallback(async () => {
     if (!generatedCode) return;
@@ -490,7 +223,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                       Unaweza kuhamisha kifurushi chako kwenda simu nyingine.
                     </Text>
                     <Text style={styles.bulletLine}>• Simu ya zamani itapoteza ufikiaji mara moja.</Text>
-                    <Text style={styles.bulletLine}>• Simu ya zamani itahitaji kuthibitisha uhamisho.</Text>
+                    <Text style={styles.bulletLine}>• Simu mpya itaanza kutumia kifurushi mara moja.</Text>
                     <Text style={styles.bulletLine}>
                       • Muda uliobaki wa kifurushi utaendelea kwenye simu mpya.
                     </Text>
@@ -613,7 +346,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                           end={{ x: 1, y: 0.5 }}
                           style={styles.primaryGradient}
                         >
-                          <Text style={styles.primaryText}>THIBITISHA UHAMISHO</Text>
+                          <Text style={styles.primaryText}>NIMETUMA CODE</Text>
                         </LinearGradient>
                       </Pressable>
                     </View>
@@ -676,31 +409,6 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                   </View>
                 ) : null}
 
-                {step === STEPS.WAITING ? (
-                  <View style={styles.stepColumn}>
-                    <View style={styles.iconHaloSmall}>
-                      <View style={styles.iconCircleSmall}>
-                        <Ionicons name="hourglass" size={22} color="#111827" />
-                      </View>
-                    </View>
-                    <Text style={styles.stepTitleCenter}>Subiri Uthibitisho</Text>
-                    <Text style={styles.descCenter}>
-                      Tunasubiri uthibitisho kutoka kwenye simu yenye kifurushi...
-                    </Text>
-                    <View style={styles.waitingSpinnerWrap}>
-                      <ActivityIndicator size="large" color={COLORS.yellow} />
-                    </View>
-                    <Text style={styles.waitingHint}>
-                      Mwombe mtumiaji wa simu ya zamani akubali ombi la uhamisho.
-                    </Text>
-                    <View style={styles.actionsBlockStep}>
-                      <Pressable style={styles.secondaryBtn} onPress={close}>
-                        <Text style={styles.secondaryText}>Funga</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                ) : null}
-
                 {step === STEPS.REDEEMED ? (
                   <View style={styles.stepColumn}>
                     <View style={styles.successCircle}>
@@ -721,44 +429,6 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                         >
                           <Text style={styles.primaryText}>SAWA</Text>
                         </LinearGradient>
-                      </Pressable>
-                    </View>
-                  </View>
-                ) : null}
-
-                {step === STEPS.REJECTED ? (
-                  <View style={styles.stepColumn}>
-                    <View style={styles.rejectCircle}>
-                      <Ionicons name="close" size={28} color="#FFFFFF" />
-                    </View>
-                    <Text style={styles.stepTitleCenter}>Uhamisho Umekataliwa</Text>
-                    <Text style={styles.descCenter}>
-                      {rejectionReason
-                        ? rejectionReason
-                        : 'Mtumiaji wa simu ya zamani amekataa ombi la uhamisho.'}
-                    </Text>
-                    <View style={styles.actionsBlockStep}>
-                      <Pressable
-                        style={styles.primaryWrap}
-                        onPress={() => {
-                          setError('');
-                          setRejectionReason('');
-                          setWaitingCode('');
-                          setCode('');
-                          setStep(STEPS.REDEEM);
-                        }}
-                      >
-                        <LinearGradient
-                          colors={GRADIENT_CTA}
-                          start={{ x: 0, y: 0.5 }}
-                          end={{ x: 1, y: 0.5 }}
-                          style={styles.primaryGradient}
-                        >
-                          <Text style={styles.primaryText}>JARIBU TENA</Text>
-                        </LinearGradient>
-                      </Pressable>
-                      <Pressable style={styles.secondaryBtn} onPress={close}>
-                        <Text style={styles.secondaryText}>Funga</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -1054,26 +724,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#4ADE80',
     marginBottom: 16,
-  },
-  rejectCircle: {
-    alignSelf: 'center',
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EF4444',
-    marginBottom: 16,
-  },
-  waitingSpinnerWrap: {
-    alignSelf: 'center',
-    marginBottom: 14,
-  },
-  waitingHint: {
-    color: COLORS.mutedText,
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'center',
-    marginBottom: 18,
   },
 });

@@ -23,36 +23,6 @@ const LIVE_SYNC_MAX_MS = 120000;
 
 const OsmaniAppContext = createContext(null);
 
-function pickPayloadString(payload, keys) {
-  if (!payload || typeof payload !== 'object') return '';
-  for (const key of keys) {
-    const value = key.split('.').reduce((acc, part) => (acc && typeof acc === 'object' ? acc[part] : undefined), payload);
-    if (value != null && String(value).trim() !== '') return String(value).trim();
-  }
-  return '';
-}
-
-function pickSourceDeviceId(payload) {
-  return pickPayloadString(payload, [
-    'source_device_id',
-    'sourceDeviceId',
-    'source_device.device_id',
-    'source_device.id',
-    'sourceDevice.deviceId',
-    'sourceDevice.id',
-    'source.id',
-  ]);
-}
-
-function pickTransferCode(payload) {
-  return pickPayloadString(payload, [
-    'code',
-    'transfer_code',
-    'transferCode',
-    'transfer.code',
-  ]);
-}
-
 export function OsmaniAppProvider({ children }) {
   const [settings, setSettings] = useState(defaultSettings);
   const [rawChannels, setRawChannels] = useState([]);
@@ -75,8 +45,6 @@ export function OsmaniAppProvider({ children }) {
   const [subscriptionVersion, setSubscriptionVersion] = useState(0);
   /** Set when the backend reports the subscription is no longer active on this device. */
   const [revokedReason, setRevokedReason] = useState(null);
-  /** Active `transfer_requested` payload (source-device approval popup). */
-  const [pendingTransfer, setPendingTransfer] = useState(null);
 
   const verifyInFlightRef = useRef(false);
   const lastVerifyKeyRef = useRef(0);
@@ -296,6 +264,10 @@ export function OsmaniAppProvider({ children }) {
   }, [refresh, refreshServerHealth]);
 
   // Realtime subscription lifecycle events from /api/sync/stream.
+  // Only the security-critical reactive listeners are kept — the simple
+  // device-transfer flow has no approve/reject handshake, so the UI no
+  // longer needs `transfer_requested` / `transfer_confirmation_required`
+  // / `transfer_approved` / `transfer_pending` / `transfer_rejected`.
   useEffect(() => {
     const offRevoked = subscribeRealtimeEvent('subscription_revoked', (payload) => {
       console.log('[SUBSCRIPTION_REVOKED]', 'sse', payload);
@@ -314,69 +286,12 @@ export function OsmaniAppProvider({ children }) {
       console.log('[TRANSFER_COMPLETED]', 'sse', payload);
       // The source device loses access; the destination gains it. Either
       // way, ask the backend who owns the subscription right now.
-      setPendingTransfer(null);
       void reverifySubscription('sse:transfer_completed').then((r) => {
         if (r?.active !== true) {
           setRevokedReason('transferred');
         }
       });
     });
-    // `transfer_approved` fires on the TARGET device once the source
-    // approves the pending transfer. Treat it the same as
-    // `transfer_completed` for context purposes — the destination
-    // refreshes and gains access.
-    const offApproved = subscribeRealtimeEvent('transfer_approved', (payload) => {
-      console.log('[TRANSFER_APPROVED]', 'sse', payload);
-      setPendingTransfer(null);
-      void reverifySubscription('sse:transfer_approved');
-    });
-    // Source-device approve/reject popup fires on EITHER event name —
-    // the new backend uses `transfer_confirmation_required`; the older
-    // alias `transfer_requested` is kept as a fallback for backward
-    // compatibility.
-    const handleSourceTransferRequest = (eventName) => async (payload) => {
-      let deviceId = '';
-      try {
-        const identity = await getDeviceIdentity();
-        deviceId = identity?.deviceId ? String(identity.deviceId) : '';
-      } catch {}
-      const sourceDeviceId = pickSourceDeviceId(payload);
-      // Permissive matching: only DROP an event when we have a confirmed
-      // mismatch between two known device ids. Missing values are treated
-      // as a match — the source device is the only one in this state, so
-      // erring on the side of showing the approve/reject popup is safer.
-      const sourceMatches = !sourceDeviceId || !deviceId || sourceDeviceId === deviceId;
-      console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'event_received', {
-        eventName,
-        payload,
-        currentDeviceId: deviceId,
-        sourceDeviceId,
-        sourceMatches,
-      });
-      if (!sourceMatches) {
-        console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'ignored_non_source_device', {
-          currentDeviceId: deviceId,
-          sourceDeviceId,
-        });
-        return;
-      }
-      const code = pickTransferCode(payload);
-      console.log('[transfer-ui]', 'pending transfer detected', { eventName, code, source: 'sse' });
-      if (payload && typeof payload === 'object') {
-        setPendingTransfer({ ...payload, code });
-      } else {
-        setPendingTransfer({ code, raw: payload });
-      }
-      console.log('[transfer-ui]', 'source approval state entered', { code, source: 'sse' });
-    };
-    const offRequested = subscribeRealtimeEvent(
-      'transfer_requested',
-      handleSourceTransferRequest('transfer_requested'),
-    );
-    const offConfirmationRequired = subscribeRealtimeEvent(
-      'transfer_confirmation_required',
-      handleSourceTransferRequest('transfer_confirmation_required'),
-    );
     const offSettings = subscribeRealtimeEvent('app_settings_changed', (payload) => {
       console.log('[APP_SETTINGS_CHANGED]', 'sse', payload);
       void refresh({ showGlobalLoading: false, preserveDataOnError: true });
@@ -385,9 +300,6 @@ export function OsmaniAppProvider({ children }) {
     return () => {
       offRevoked();
       offCompleted();
-      offApproved();
-      offRequested();
-      offConfirmationRequired();
       offSettings();
     };
   }, [refresh, reverifySubscription]);
@@ -451,28 +363,6 @@ export function OsmaniAppProvider({ children }) {
     setRevokedReason(null);
   }, []);
 
-  const dismissPendingTransfer = useCallback(() => {
-    setPendingTransfer(null);
-  }, []);
-
-  /**
-   * Force-set the pending transfer payload from an external code path
-   * (polling fallback, optimistic local transition, etc). Logs the
-   * transition explicitly so the source-device approval state entry is
-   * always traceable in the device console.
-   */
-  const triggerPendingTransfer = useCallback((payload, reason = 'external') => {
-    if (!payload || typeof payload !== 'object') {
-      setPendingTransfer({ code: '', raw: payload, source: reason });
-      console.log('[transfer-ui]', 'source approval state entered', { reason, payloadType: typeof payload });
-      return;
-    }
-    const code = pickTransferCode(payload) || (typeof payload.code === 'string' ? payload.code : '');
-    console.log('[transfer-ui]', 'pending transfer detected', { reason, code });
-    setPendingTransfer({ ...payload, code });
-    console.log('[transfer-ui]', 'source approval state entered', { reason, code });
-  }, []);
-
   const value = useMemo(
     () => ({
       settings,
@@ -498,12 +388,9 @@ export function OsmaniAppProvider({ children }) {
       refreshSubscription: reverifySubscription,
       verifySubscriptionBeforePlay: gateForPlayback,
       unlockChannels,
-      // revoke / transfer
+      // revoke
       revokedReason,
       dismissRevoked,
-      pendingTransfer,
-      dismissPendingTransfer,
-      triggerPendingTransfer,
     }),
     [
       settings,
@@ -523,9 +410,6 @@ export function OsmaniAppProvider({ children }) {
       unlockChannels,
       revokedReason,
       dismissRevoked,
-      pendingTransfer,
-      dismissPendingTransfer,
-      triggerPendingTransfer,
     ],
   );
 

@@ -24,7 +24,6 @@ import EmergencyModal from './components/EmergencyModal';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import PremiumModal from './components/PremiumModal';
 import PopupSettingsModal from './components/PopupSettingsModal';
-import TransferConfirmModal from './components/TransferConfirmModal';
 import TransferredAwayModal from './components/TransferredAwayModal';
 import UpdateOverlay from './components/UpdateOverlay';
 import OtaDebugOverlay, { OtaDebugTitleTap } from './components/OtaDebugOverlay';
@@ -648,20 +647,21 @@ export default function App() {
 }
 
 /**
- * Mounts the two global subscription-lifecycle modals so they are always
+ * Mounts the global subscription-lifecycle modal that is always
  * available regardless of which screen the user is on.
- *   - TransferConfirmModal:    shown on the SOURCE device when the
- *     backend pushes `transfer_requested` over /api/sync/stream.
- *   - TransferredAwayModal:    hard-block shown after `subscription_revoked`,
+ *   - TransferredAwayModal: hard-block shown after `subscription_revoked`,
  *     `transfer_completed` (when the backend confirms this device lost
  *     access), or any pre-play verify that returns active=false.
+ *
+ * The simple device-transfer flow has no approve/reject popup — the
+ * source device just loses access automatically when the target redeems
+ * the code, and the next foreground reverify tick (or the
+ * `transfer_completed` SSE) flips `revokedReason` so this modal appears.
  */
 function SubscriptionLifecycleGates() {
   const {
     revokedReason,
     dismissRevoked,
-    pendingTransfer,
-    dismissPendingTransfer,
     reverifySubscription,
   } = useOsmaniApp();
   const [recovering, setRecovering] = useState(false);
@@ -696,9 +696,6 @@ function SubscriptionLifecycleGates() {
 
   return (
     <>
-      {pendingTransfer ? (
-        <TransferConfirmModal event={pendingTransfer} onDismiss={dismissPendingTransfer} />
-      ) : null}
       <TransferredAwayModal
         visible={Boolean(revokedReason) && !plansOpen}
         reason={revokedReason ?? 'transferred'}

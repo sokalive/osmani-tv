@@ -7,13 +7,20 @@ import { BASE_URL } from '../api';
  * Single source of truth: the backend's `active` field.
  * The app NEVER compares `expires_at` against the device clock.
  *
+ * Simple device-transfer flow (no approve/reject handshake):
+ *   1. Source calls /api/transfer/request, receives a one-time code.
+ *   2. Target calls /api/transfer/confirm with the code.
+ *   3. Backend rebinds ownership to target on success.
+ *   4. Target calls /api/subscription/verify to confirm activation.
+ *   5. Source loses access automatically — its next foreground reverify
+ *      (or the broadcast `transfer_completed` / `subscription_revoked`
+ *      SSE event, when present) returns active=false.
+ *
  * Endpoints (production /api):
  *   POST /api/subscription/verify   { device_id, device_fingerprint }
  *   POST /api/subscription/recover  { device_id, device_fingerprint }
  *   POST /api/transfer/request      { source_device_id, target_device_id, phone? }
  *   POST /api/transfer/confirm      { code, target_device_id, device_fingerprint }
- *   GET  /api/subscription/transfer/:code
- *   POST /api/transfer/respond      { code, decision }
  */
 
 const API = `${BASE_URL.replace(/\/+$/, '')}/api`;
@@ -396,36 +403,12 @@ export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') 
 }
 
 /**
- * Detect whether the confirm response indicates the backend is waiting for
- * the SOURCE device to approve/reject the transfer before activating.
- * Multiple flag names accepted to stay forward-compatible with backend
- * naming changes.
- */
-function isPendingConfirmation(body) {
-  if (!isPlainObject(body)) return false;
-  const status = String(body.status ?? body.state ?? '').toLowerCase();
-  if (status === 'pending' || status === 'awaiting_confirmation' || status === 'awaiting_approval') return true;
-  if (body.pending === true) return true;
-  if (body.awaiting_confirmation === true) return true;
-  if (body.requires_confirmation === true) return true;
-  if (body.needs_confirmation === true) return true;
-  if (body.transfer_mode === 'confirmation' && body.active !== true && body.is_active !== true) return true;
-  return false;
-}
-
-/**
  * Confirm / redeem a transfer code on the destination device.
  *
- * The backend supports a "pending confirmation" mode where the SOURCE
- * device must approve the transfer before activation. In that case the
- * confirm endpoint returns success but does NOT yet activate the
- * subscription on this device — we surface a `{ status: 'pending' }`
- * response and the caller waits for the realtime `transfer_approved`
- * or `transfer_rejected` SSE event.
- *
- * Legacy / direct-activation responses still flow through the canonical
- * `/api/subscription/verify` endpoint for the authoritative `active`
- * answer; we never trust the confirm response alone.
+ * Simple direct-activation flow: the backend rebinds ownership to the
+ * target device immediately on successful confirm. We then re-issue
+ * /api/subscription/verify so the authoritative `active` answer comes
+ * straight from the backend (never the confirm body alone).
  *
  * Backend route: POST /api/transfer/confirm
  */
@@ -444,25 +427,8 @@ export async function redeemTransfer(code, deviceId, deviceFingerprint) {
     console.log('[TRANSFER_CONFIRM]', 'failed', reason);
     throw new Error(String(reason));
   }
-  if (isPendingConfirmation(body)) {
-    console.log('[TRANSFER_CONFIRM]', 'pending', {
-      code: codeWithPrefix,
-      transferMode: body?.transfer_mode ?? null,
-    });
-    return {
-      status: 'pending',
-      active: false,
-      code: codeWithPrefix,
-      expiresAt: pickExpiresAt(body) ?? body?.expires_at ?? null,
-      raw: body,
-    };
-  }
-  // Legacy direct-activation path (no SOURCE confirmation step).
-  const confirmedActiveSignal =
-    body?.ok === true ||
-    body?.success === true ||
-    body?.active === true ||
-    body?.is_active === true;
+  // Always reverify against the canonical /subscription/verify so the
+  // `active` answer is the backend's, not a possibly-stale confirm body.
   let verified = null;
   try {
     verified = await verifySubscription(deviceId, deviceFingerprint);
@@ -473,103 +439,27 @@ export async function redeemTransfer(code, deviceId, deviceFingerprint) {
     console.log('[TRANSFER_CONFIRM]', 'response', {
       active: true,
       expiresAt: verified.expiresAt,
-      status: 'approved',
     });
-    return { ...verified, status: 'approved' };
+    return { ...verified, status: 'active' };
   }
+  // Some backends already activate inside the confirm response itself;
+  // accept it as a fallback only when verify hasn't yet caught up.
+  const confirmedActiveSignal =
+    body?.ok === true ||
+    body?.success === true ||
+    body?.active === true ||
+    body?.is_active === true;
   if (confirmedActiveSignal) {
     const out = normalizeVerifyResponse(body);
     console.log('[TRANSFER_CONFIRM]', 'response', {
       active: true,
       expiresAt: out.expiresAt,
-      status: 'approved',
       source: 'confirm-body',
     });
-    return { ...out, active: true, status: 'approved' };
+    return { ...out, active: true, status: 'active' };
   }
-  console.log('[TRANSFER_CONFIRM]', 'response', { active: false, status: 'unknown' });
-  return { ...normalizeVerifyResponse(body), active: false, status: 'unknown' };
-}
-
-/**
- * Respond to a `transfer_requested` SSE event on the SOURCE device.
- * @param {'approve'|'reject'} decision
- */
-export async function respondToTransfer(code, decision) {
-  const url = `${API}/transfer/respond`;
-  console.log('[TRANSFER_RESPOND]', 'request', { url, code, decision });
-  const { res, body } = await postJson(url, {
-    code: String(code).trim(),
-    decision: String(decision).toLowerCase(),
-  });
-  if (!res.ok) {
-    const reason = body?.error ?? body?.message ?? `HTTP ${res.status}`;
-    console.log('[TRANSFER_RESPOND]', 'failed', reason);
-    throw new Error(String(reason));
-  }
-  console.log('[TRANSFER_RESPOND]', 'response', body);
-  return body ?? {};
-}
-
-/**
- * Optional polling for the source device while it shows "transfer in progress".
- * The backend has been renamed multiple times across deploys; we probe a list
- * of candidate URLs and gracefully fall back on 404 so this keeps working when
- * the backend adds (or renames) the route. Failure modes never throw — the
- * caller just waits for SSE.
- */
-const TRANSFER_STATUS_PATHS = Object.freeze([
-  '/transfer/status/{code}',
-  '/transfer/status?code={code}',
-  '/transfer/{code}',
-  '/transfer/poll/{code}',
-  '/transfer/info/{code}',
-  '/subscription/transfer/{code}',
-  '/subscription/transfer/status/{code}',
-]);
-
-/**
- * Heuristic: does this body indicate the backend is awaiting source-device
- * approval for an in-flight transfer?
- */
-function isPendingPollBody(body) {
-  if (!isPlainObject(body)) return false;
-  if (isPendingConfirmation(body)) return true;
-  const sub =
-    (isPlainObject(body.transfer) && body.transfer) ||
-    (isPlainObject(body.data) && body.data) ||
-    null;
-  if (sub && isPendingConfirmation(sub)) return true;
-  if (typeof body.target_device_id === 'string' && body.target_device_id) return true;
-  if (sub && typeof sub.target_device_id === 'string' && sub.target_device_id) return true;
-  return false;
-}
-
-export async function getTransferStatus(code) {
-  const trimmed = String(code ?? '').trim();
-  if (!trimmed) return { status: 'unknown' };
-  const codeWithPrefix = ensureTransferPrefix(trimmed);
-  const codeBare = stripTransferPrefix(trimmed);
-  const candidates = TRANSFER_STATUS_PATHS.flatMap((path) => {
-    return [codeWithPrefix, codeBare].map((c) =>
-      `${API}${path.replace('{code}', encodeURIComponent(c))}`,
-    );
-  });
-  for (const url of candidates) {
-    let res;
-    let body;
-    try {
-      res = await fetch(url, { headers: { Accept: 'application/json' } });
-      body = await readJson(res);
-    } catch {
-      continue;
-    }
-    if (!res || res.status === 404) continue;
-    if (!res.ok) continue;
-    const pending = isPendingPollBody(body);
-    return { status: pending ? 'pending_confirmation' : (body?.status ?? 'ok'), pending, raw: body, url };
-  }
-  return { status: 'unknown', pending: false };
+  console.log('[TRANSFER_CONFIRM]', 'response', { active: false, status: 'inactive' });
+  return { ...normalizeVerifyResponse(body), active: false, status: 'inactive' };
 }
 
 /* -----------------------------------------------------------------
