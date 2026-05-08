@@ -55,6 +55,7 @@ const STEPS = Object.freeze({
   GENERATED: 'generated',
   REDEEM: 'redeem',
   REDEEMED: 'redeemed',
+  COOLDOWN: 'cooldown',
 });
 
 function formatTimer(totalSeconds) {
@@ -80,6 +81,13 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   const [remainingSeconds, setRemainingSeconds] = useState(TRANSFER_CODE_SECONDS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  /**
+   * Backend-anchored cooldown expiry. The backend enforces and supplies
+   * the duration; the UI just renders a countdown to the absolute
+   * timestamp. Never compute or hardcode a duration here.
+   */
+  const [cooldownUntilMs, setCooldownUntilMs] = useState(null);
+  const [cooldownSecondsLeft, setCooldownSecondsLeft] = useState(0);
   /**
    * Manual countdown ref. The interval-based effect below already
    * clears itself on visibility/step change, but we keep this ref so
@@ -119,6 +127,8 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       setRemainingSeconds(TRANSFER_CODE_SECONDS);
       setBusy(false);
       setError('');
+      setCooldownUntilMs(null);
+      setCooldownSecondsLeft(0);
       runEnterAnim();
     }
   }, [visible, runEnterAnim]);
@@ -180,6 +190,8 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     setPhone('');
     setError('');
     setBusy(false);
+    setCooldownUntilMs(null);
+    setCooldownSecondsLeft(0);
     setStep(STEPS.INTRO);
     console.log('[HAMISHA_MODAL]', 'transfer_state_cleared');
     onClose?.();
@@ -204,12 +216,56 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       setRemainingSeconds(TRANSFER_CODE_SECONDS);
       setStep(STEPS.GENERATED);
     } catch (e) {
+      // Backend-enforced cooldown: surface a dedicated screen with a
+      // live countdown anchored to the backend's expiry timestamp.
+      // Duration is NEVER hardcoded — `cooldownUntilMs` comes from the
+      // backend response (admin-configurable on the server).
+      if (e?.code === 'TRANSFER_COOLDOWN') {
+        const untilMs = Number.isFinite(e?.cooldownUntilMs) ? Number(e.cooldownUntilMs) : null;
+        const initialLeft = untilMs
+          ? Math.max(0, Math.ceil((untilMs - Date.now()) / 1000))
+          : (Number.isFinite(e?.retryAfterSec) ? Math.max(0, Math.floor(e.retryAfterSec)) : 0);
+        console.log('[TRANSFER_COOLDOWN]', 'enter_cooldown_step', {
+          cooldownUntilMs: untilMs,
+          retryAfterSec: e?.retryAfterSec ?? null,
+          initialLeft,
+          backendMessage: e?.message ?? null,
+        });
+        setCooldownUntilMs(untilMs);
+        setCooldownSecondsLeft(initialLeft);
+        setError('');
+        setStep(STEPS.COOLDOWN);
+        return;
+      }
       const msg = e?.message ?? String(e ?? 'unknown_error');
       setError(msg);
     } finally {
       setBusy(false);
     }
   }, [isPhoneValid, phone]);
+
+  /**
+   * Cooldown countdown ticker. Drives `cooldownSecondsLeft` by sampling
+   * the backend-anchored absolute expiry every second. When no
+   * `cooldownUntilMs` is available (older backend that only returns a
+   * raw seconds value) we still tick down the local copy — but never
+   * extend it.
+   */
+  useEffect(() => {
+    if (!visible) return undefined;
+    if (step !== STEPS.COOLDOWN) return undefined;
+    const tick = () => {
+      if (Number.isFinite(cooldownUntilMs) && cooldownUntilMs > 0) {
+        const left = Math.max(0, Math.ceil((cooldownUntilMs - Date.now()) / 1000));
+        setCooldownSecondsLeft(left);
+      } else {
+        setCooldownSecondsLeft((prev) => Math.max(0, prev - 1));
+      }
+    };
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [visible, step, cooldownUntilMs]);
 
   /**
    * Direct activation. The backend rebinds ownership on a successful
@@ -491,6 +547,51 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                     </View>
                   </View>
                 ) : null}
+
+                {step === STEPS.COOLDOWN ? (
+                  <View style={styles.stepColumn}>
+                    <View style={styles.iconHaloSmall}>
+                      <View style={styles.iconCircleSmall}>
+                        <Ionicons name="time-outline" size={24} color="#111827" />
+                      </View>
+                    </View>
+                    <Text style={styles.stepTitleCenter}>Hamisha Kifurushi</Text>
+                    <Text style={styles.descCenter}>
+                      Subiri kidogo kabla ya kuhamisha tena kifurushi.
+                    </Text>
+                    <Text style={styles.cooldownLabel}>Jaribu tena baada ya:</Text>
+                    <Text style={styles.cooldownTimer}>{formatTimer(cooldownSecondsLeft)}</Text>
+                    <View style={styles.actionsBlockStep}>
+                      <Pressable
+                        style={[
+                          styles.primaryWrap,
+                          (cooldownSecondsLeft > 0 || busy) && styles.btnDisabled,
+                        ]}
+                        onPress={() => {
+                          setError('');
+                          setCooldownUntilMs(null);
+                          setCooldownSecondsLeft(0);
+                          setStep(STEPS.PHONE);
+                        }}
+                        disabled={cooldownSecondsLeft > 0 || busy}
+                        accessibilityRole="button"
+                        accessibilityLabel="Jaribu tena"
+                      >
+                        <LinearGradient
+                          colors={GRADIENT_CTA}
+                          start={{ x: 0, y: 0.5 }}
+                          end={{ x: 1, y: 0.5 }}
+                          style={styles.primaryGradient}
+                        >
+                          <Text style={styles.primaryText}>JARIBU TENA</Text>
+                        </LinearGradient>
+                      </Pressable>
+                      <Pressable style={styles.secondaryBtn} onPress={close}>
+                        <Text style={styles.secondaryText}>Funga</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
               </Animated.View>
             </Pressable>
           </View>
@@ -714,6 +815,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 3,
     marginBottom: 14,
+  },
+  cooldownLabel: {
+    color: COLORS.mutedText,
+    fontSize: 13,
+    textAlign: 'center',
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    marginBottom: 6,
+  },
+  cooldownTimer: {
+    color: COLORS.yellow,
+    fontSize: 40,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 3,
+    marginBottom: 18,
   },
   actionsBlockIntro: {
     width: '100%',

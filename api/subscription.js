@@ -358,12 +358,104 @@ function ensureTransferPrefix(raw) {
 }
 
 /**
+ * Best-effort extraction of cooldown metadata from a `/transfer/request`
+ * error response. Backends key this many ways — we accept all known
+ * variants and the HTTP `Retry-After` header.
+ *
+ * Returns `null` when the response is not a cooldown rejection.
+ * Otherwise returns `{ cooldownUntilMs, retryAfterSec, cooldownUntilIso }`.
+ *
+ * The `cooldownUntilMs` value is anchored to the local `Date.now()` at
+ * the instant of the response when only a duration is supplied (so the
+ * UI countdown stays in sync with whatever the backend told us, even
+ * across SSE/connection drops).
+ */
+export function extractTransferCooldown(body, statusCode, headers) {
+  const errStr = String(body?.error ?? body?.message ?? '').toLowerCase();
+  const matchesText = errStr.includes('cooldown') || errStr.includes('subiri');
+  const retryAfterSec = pickNumber(
+    body?.retry_after,
+    body?.retryAfter,
+    body?.retry_in,
+    body?.retryIn,
+    body?.cooldown_seconds,
+    body?.cooldownSeconds,
+    body?.cooldown_remaining,
+    body?.cooldownRemaining,
+    body?.seconds_remaining,
+    body?.secondsRemaining,
+    body?.cooldown?.seconds,
+    body?.cooldown?.remaining,
+  );
+  const cooldownUntilIso = (() => {
+    const v =
+      body?.cooldown_until ??
+      body?.cooldownUntil ??
+      body?.cooldown_expires_at ??
+      body?.cooldownExpiresAt ??
+      body?.retry_at ??
+      body?.retryAt ??
+      body?.cooldown?.until ??
+      body?.cooldown?.expires_at ??
+      null;
+    return v != null ? String(v) : null;
+  })();
+  let headerRetryAfterSec = null;
+  try {
+    if (headers && typeof headers.get === 'function') {
+      const ra = headers.get('Retry-After') ?? headers.get('retry-after');
+      if (ra) {
+        const n = Number(ra);
+        if (Number.isFinite(n)) {
+          headerRetryAfterSec = n;
+        } else {
+          // HTTP date format
+          const t = Date.parse(String(ra));
+          if (Number.isFinite(t)) {
+            headerRetryAfterSec = Math.max(0, Math.round((t - Date.now()) / 1000));
+          }
+        }
+      }
+    }
+  } catch {}
+  const looksLikeCooldown =
+    matchesText ||
+    statusCode === 429 ||
+    retryAfterSec != null ||
+    cooldownUntilIso != null ||
+    headerRetryAfterSec != null;
+  if (!looksLikeCooldown) return null;
+  let cooldownUntilMs = null;
+  if (cooldownUntilIso) {
+    const t = Date.parse(cooldownUntilIso);
+    if (Number.isFinite(t)) cooldownUntilMs = t;
+  }
+  if (cooldownUntilMs == null && retryAfterSec != null) {
+    cooldownUntilMs = Date.now() + Math.max(0, retryAfterSec) * 1000;
+  }
+  if (cooldownUntilMs == null && headerRetryAfterSec != null) {
+    cooldownUntilMs = Date.now() + Math.max(0, headerRetryAfterSec) * 1000;
+  }
+  return {
+    cooldownUntilMs,
+    retryAfterSec: retryAfterSec ?? headerRetryAfterSec ?? null,
+    cooldownUntilIso,
+  };
+}
+
+/**
  * Initiate a transfer FROM the calling device. Returns a one-time code
  * that the destination device confirms. The current device is treated
  * as the source; backend rebinds ownership to the actual `target_device_id`
  * passed at confirm time.
  *
  * Backend route: POST /api/transfer/request
+ *
+ * On a cooldown rejection (the backend enforces a per-device transfer
+ * cooldown — duration is admin-configurable and entirely backend-side)
+ * we throw a structured Error with `code === 'TRANSFER_COOLDOWN'` and
+ * `cooldownUntilMs` / `retryAfterSec` so the UI can render a live
+ * countdown anchored to the backend's authoritative expiry.
  */
 export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') {
   const url = `${API}/transfer/request`;
@@ -377,10 +469,29 @@ export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') 
     device_fingerprint: deviceFingerprint,
   };
   const normalizedPhone = String(phone || '').replace(/[^\d]/g, '');
-  if (normalizedPhone) payload.phone = normalizedPhone;
+  if (normalizedPhone) {
+    payload.phone = normalizedPhone;
+    payload.payment_phone = normalizedPhone;
+  }
   const { res, body } = await postJson(url, payload);
   if (!res.ok) {
     const reason = body?.error ?? body?.message ?? `HTTP ${res.status}`;
+    const cooldown = extractTransferCooldown(body, res.status, res.headers);
+    if (cooldown) {
+      console.log('[TRANSFER_REQUEST]', 'cooldown', {
+        cooldownUntilMs: cooldown.cooldownUntilMs,
+        retryAfterSec: cooldown.retryAfterSec,
+        cooldownUntilIso: cooldown.cooldownUntilIso,
+        backendMessage: reason,
+      });
+      const err = new Error(String(reason));
+      err.code = 'TRANSFER_COOLDOWN';
+      err.cooldownUntilMs = cooldown.cooldownUntilMs;
+      err.retryAfterSec = cooldown.retryAfterSec;
+      err.cooldownUntilIso = cooldown.cooldownUntilIso;
+      err.raw = body;
+      throw err;
+    }
     console.log('[TRANSFER_REQUEST]', 'failed', reason);
     throw new Error(String(reason));
   }
