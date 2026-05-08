@@ -511,14 +511,53 @@ export function extractTransferCooldown(body, statusCode, headers) {
   };
 }
 
+/**
+ * Detect transfer policy gates from a /api/transfer/request response.
+ *
+ * Recognizes (in priority order):
+ *   1. Maintenance / transfer-disabled — the entire feature is OFF
+ *      (admin toggle). Surfaces as `TRANSFER_DISABLED`. Detected via
+ *      any of:
+ *        - boolean `transfer_disabled` / `transferDisabled`
+ *        - boolean `maintenance` / `maintenance_mode` / `maintenanceMode`
+ *        - string `code` / `error_code` / `errorCode` / `reason` /
+ *          `status` containing "transfer_disabled" or "maintenance"
+ *   2. Daily limit reached — `TRANSFER_DAILY_LIMIT`
+ *   3. Weekly limit reached — `TRANSFER_WEEKLY_LIMIT`
+ *
+ * Maintenance always wins over limits/cooldown — when the feature is
+ * turned off, the app must show maintenance copy regardless of any
+ * stale per-device state.
+ */
 export function extractTransferPolicy(body) {
   const data = isPlainObject(body?.data) ? body.data : null;
+  const codeStr = String(
+    body?.code
+      ?? body?.error_code
+      ?? body?.errorCode
+      ?? body?.reason
+      ?? body?.status
+      ?? data?.code
+      ?? data?.error_code
+      ?? data?.errorCode
+      ?? data?.reason
+      ?? data?.status
+      ?? '',
+  ).toLowerCase();
   const flags = {
     transferDisabled: pickBool(
       body?.transfer_disabled,
       body?.transferDisabled,
       data?.transfer_disabled,
       data?.transferDisabled,
+    ) === true,
+    maintenance: pickBool(
+      body?.maintenance,
+      body?.maintenance_mode,
+      body?.maintenanceMode,
+      data?.maintenance,
+      data?.maintenance_mode,
+      data?.maintenanceMode,
     ) === true,
     dailyLimitReached: pickBool(
       body?.daily_limit_reached,
@@ -533,22 +572,44 @@ export function extractTransferPolicy(body) {
       data?.weeklyLimitReached,
     ) === true,
   };
+  const codeIsMaintenance =
+    codeStr === 'transfer_disabled'
+    || codeStr === 'maintenance'
+    || codeStr === 'maintenance_mode'
+    || codeStr === 'under_maintenance'
+    || codeStr === 'service_disabled';
+  const codeIsDailyLimit =
+    codeStr === 'daily_limit_reached'
+    || codeStr === 'daily_limit'
+    || codeStr === 'transfer_daily_limit'
+    || codeStr === 'transfer_daily_limit_reached';
+  const codeIsWeeklyLimit =
+    codeStr === 'weekly_limit_reached'
+    || codeStr === 'weekly_limit'
+    || codeStr === 'transfer_weekly_limit'
+    || codeStr === 'transfer_weekly_limit_reached';
   const msg = String(body?.message ?? body?.error ?? data?.message ?? data?.error ?? '');
-  if (flags.transferDisabled) {
+  console.log('[TRANSFER_POLICY_PARSE]', {
+    rawCode: codeStr || null,
+    flags,
+    backendMessage: msg || null,
+    rawBody: body,
+  });
+  if (flags.transferDisabled || flags.maintenance || codeIsMaintenance) {
     return {
       code: 'TRANSFER_DISABLED',
       message: msg || 'Huduma ya kuhamisha kifurushi imesitishwa kwa muda. Tafadhali jaribu tena baadaye.',
       raw: body,
     };
   }
-  if (flags.dailyLimitReached) {
+  if (flags.dailyLimitReached || codeIsDailyLimit) {
     return {
       code: 'TRANSFER_DAILY_LIMIT',
       message: msg || 'Umefikia kikomo cha kuomba code kwa leo. Tafadhali jaribu tena baadaye.',
       raw: body,
     };
   }
-  if (flags.weeklyLimitReached) {
+  if (flags.weeklyLimitReached || codeIsWeeklyLimit) {
     return {
       code: 'TRANSFER_WEEKLY_LIMIT',
       message: msg || 'Umefikia kikomo cha kuomba code kwa wiki hii. Tafadhali jaribu tena baadaye.',
@@ -589,6 +650,15 @@ export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') 
     payload.payment_phone = normalizedPhone;
   }
   const { res, body } = await postJson(url, payload);
+  console.log('[TRANSFER_REQUEST]', 'raw_response_payload', {
+    status: res.status,
+    ok: res.ok,
+    body,
+  });
+  // Maintenance / disabled / limit gates always win over cooldown and
+  // raw HTTP status — the admin toggle must surface immediately even
+  // if the backend returns a 200-shaped body or carries a stale
+  // per-device cooldown alongside the maintenance flag.
   const policy = extractTransferPolicy(body);
   if (policy) {
     console.log('[TRANSFER_REQUEST]', 'policy_block', {

@@ -339,11 +339,32 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
       });
       if (e?.code === 'TRANSFER_DISABLED') {
         console.log('[TRANSFER_DISABLED]', 'response_payload', e?.raw ?? null);
+        // Maintenance must override any prior per-device gate. Clear
+        // any stale cooldown snapshot/state so the modal can't pop
+        // back into a cooldown screen when the user reopens it.
+        if (cooldownTickIntervalRef.current) {
+          clearInterval(cooldownTickIntervalRef.current);
+          cooldownTickIntervalRef.current = null;
+        }
+        cooldownSnapshotRef.current = null;
+        setCooldownUntilMs(null);
+        setCooldownSecondsLeft(0);
+        setCooldownTotalMinutes(null);
         setError(e?.message || 'Huduma ya kuhamisha kifurushi imesitishwa kwa muda. Tafadhali jaribu tena baadaye.');
         setStep(STEPS.PHONE);
         return;
       }
       if (e?.code === 'TRANSFER_DAILY_LIMIT' || e?.code === 'TRANSFER_WEEKLY_LIMIT') {
+        // Limit gates also clear stale cooldown — the limit message
+        // is the source of truth for "why you can't transfer right now".
+        if (cooldownTickIntervalRef.current) {
+          clearInterval(cooldownTickIntervalRef.current);
+          cooldownTickIntervalRef.current = null;
+        }
+        cooldownSnapshotRef.current = null;
+        setCooldownUntilMs(null);
+        setCooldownSecondsLeft(0);
+        setCooldownTotalMinutes(null);
         setError(e?.message || 'Umefikia kikomo cha kuomba code. Tafadhali jaribu tena baadaye.');
         setStep(STEPS.PHONE);
         return;
