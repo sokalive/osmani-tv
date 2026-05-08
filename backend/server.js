@@ -1,5 +1,7 @@
 const { Pool } = require("pg");
 const express = require("express");
+const fs = require("fs");
+const path = require("path");
 const createPaymentsRouter = require("./routes/payments");
 const {
   handleStreamProxy,
@@ -53,6 +55,44 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
+
+// ======================
+// UPLOADED MEDIA
+// ======================
+// The database stores uploaded image URLs as `/uploads/<filename>`.
+// Serve that URL prefix directly from a stable upload directory so mobile,
+// web admin, and cached DB rows all resolve the same paths after deploys.
+//
+// IMPORTANT DEPLOYMENT NOTE:
+// - On Render, the default filesystem is ephemeral. Set UPLOAD_DIR to a
+//   mounted persistent disk path (or migrate uploads to object storage) and
+//   restore existing files there. This route preserves the public URL shape;
+//   it cannot recreate files that were already lost from ephemeral storage.
+const uploadsDir = path.resolve(
+  process.env.UPLOAD_DIR || path.join(process.cwd(), "uploads"),
+);
+
+try {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log("[MEDIA] serving /uploads from:", uploadsDir);
+} catch (err) {
+  console.error("[MEDIA] failed to prepare uploads dir:", uploadsDir, err);
+}
+
+app.use(
+  "/uploads",
+  express.static(uploadsDir, {
+    fallthrough: false,
+    maxAge: process.env.NODE_ENV === "production" ? "1h" : 0,
+    setHeaders: (res) => {
+      // Image tags do not require CORS, but admin/browser tooling and
+      // React Native image loaders behave best when media is cross-origin
+      // readable from the same API host/CDN.
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    },
+  }),
+);
 
 const PORT = process.env.PORT || 10000;
 
