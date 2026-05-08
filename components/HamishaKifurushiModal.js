@@ -73,17 +73,27 @@ function formatTimer(totalSeconds) {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+/**
+ * Convert any backend-supplied cooldown timestamp into an absolute epoch
+ * milliseconds value usable by `Date.now()`-based math.
+ *
+ * Strict — never invents a timer when the backend supplied nothing
+ * actionable. Ambiguously small numbers (< 1e9) are NOT interpreted as
+ * "duration ms" because in practice that produced an immediate-expiry
+ * value and froze the UI at 0:00.
+ *
+ * Accepted shapes:
+ *   - epoch ms (n > 1e12)            → returned as-is
+ *   - epoch seconds (1e9 < n ≤ 1e12) → multiplied by 1000
+ *   - retryAfterSec (positive int)   → Date.now() + sec * 1000
+ *
+ * Anything else returns null and the caller must NOT enter the COOLDOWN
+ * step.
+ */
 function normalizeCooldownUntilMs(rawUntilMs, retryAfterSec = null) {
   const n = Number(rawUntilMs);
-  if (Number.isFinite(n) && n > 0) {
-    if (n > 1000000000000) return n;
-    if (n > 1000000000) return n * 1000;
-    const retry = Number(retryAfterSec);
-    if (Number.isFinite(retry) && retry > 0) {
-      return Date.now() + retry * 1000;
-    }
-    return Date.now() + n;
-  }
+  if (Number.isFinite(n) && n > 1000000000000) return n;
+  if (Number.isFinite(n) && n > 1000000000) return n * 1000;
   const retry = Number(retryAfterSec);
   if (Number.isFinite(retry) && retry > 0) {
     return Date.now() + retry * 1000;
@@ -168,9 +178,15 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
   useEffect(() => {
     if (visible) {
       const savedCooldown = cooldownSnapshotRef.current;
+      const nowMs = Date.now();
       const restoredLeft = savedCooldown?.cooldownUntilMs
         ? secondsUntil(savedCooldown.cooldownUntilMs)
         : 0;
+      console.log('[TRANSFER_COOLDOWN]', 'modal_open_evaluate', {
+        nowMs,
+        savedCooldown,
+        restoredLeft,
+      });
       setPhone('');
       setCode('');
       setGeneratedCode('');
@@ -337,8 +353,49 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
       // Duration is NEVER hardcoded — `cooldownUntilMs` comes from the
       // backend response (admin-configurable on the server).
       if (e?.code === 'TRANSFER_COOLDOWN') {
+        const nowMs = Date.now();
         const untilMs = normalizeCooldownUntilMs(e?.cooldownUntilMs, e?.retryAfterSec);
+        const deltaMs = Number.isFinite(untilMs) ? untilMs - nowMs : null;
         const initialLeft = secondsUntil(untilMs);
+        console.log('[TRANSFER_COOLDOWN]', 'parse_runtime', {
+          rawCooldownUntilMs: e?.cooldownUntilMs ?? null,
+          rawRetryAfterSec: e?.retryAfterSec ?? null,
+          rawCooldownUntilIso: e?.cooldownUntilIso ?? null,
+          rawBackendPayload: e?.raw ?? null,
+          parsedUntilMs: untilMs,
+          nowMs,
+          deltaMs,
+          initialLeft,
+        });
+        // Refuse to render a frozen 0:00 cooldown screen. If the backend
+        // signalled cooldown but supplied no usable expiry (or one
+        // already in the past), surface the message inline on the PHONE
+        // step and let the user retry manually instead of trapping them
+        // on a non-counting timer.
+        if (!Number.isFinite(untilMs) || untilMs <= nowMs || initialLeft <= 0) {
+          const reason = !Number.isFinite(untilMs)
+            ? 'no_valid_until_ms'
+            : untilMs <= nowMs
+              ? 'until_ms_in_past'
+              : 'initial_left_zero';
+          console.log('[TRANSFER_COOLDOWN]', 'reject_invalid_runtime', {
+            reason,
+            untilMs,
+            nowMs,
+            deltaMs,
+            initialLeft,
+          });
+          cooldownSnapshotRef.current = null;
+          setCooldownUntilMs(null);
+          setCooldownSecondsLeft(0);
+          setCooldownTotalMinutes(null);
+          setError(
+            e?.message
+              || 'Subiri kidogo kabla ya kuhamisha tena kifurushi.',
+          );
+          setStep(STEPS.PHONE);
+          return;
+        }
         // Capture the original cooldown duration in minutes so the
         // descriptive Swahili line stays stable while the live timer
         // ticks down. Prefer `retryAfterSec` (the original duration
@@ -348,18 +405,13 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
           if (Number.isFinite(e?.retryAfterSec) && e.retryAfterSec > 0) {
             return Math.max(1, Math.ceil(e.retryAfterSec / 60));
           }
-          if (untilMs && untilMs > Date.now()) {
-            return Math.max(1, Math.ceil((untilMs - Date.now()) / 60000));
-          }
-          if (initialLeft > 0) {
-            return Math.max(1, Math.ceil(initialLeft / 60));
-          }
-          return null;
+          return Math.max(1, Math.ceil(deltaMs / 60000));
         })();
         console.log('[TRANSFER_COOLDOWN]', 'enter_cooldown_step', {
-          rawBackendPayload: e?.raw ?? null,
           cooldownUntilMs: untilMs,
           retryAfterSec: e?.retryAfterSec ?? null,
+          nowMs,
+          deltaMs,
           initialLeft,
           totalMinutes,
           backendMessage: e?.message ?? null,
@@ -398,14 +450,27 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
     }
     const tick = () => {
       const sourceUntilMs = cooldownSnapshotRef.current?.cooldownUntilMs ?? cooldownUntilMs;
+      const nowMs = Date.now();
+      const deltaMs = Number.isFinite(sourceUntilMs) ? sourceUntilMs - nowMs : null;
       const left = secondsUntil(sourceUntilMs);
       console.log('[TRANSFER_COOLDOWN]', 'tick', {
         cooldownUntilMs: sourceUntilMs ?? null,
+        nowMs,
+        deltaMs,
         remainingSeconds: left,
         retryEnabled: left <= 0 && !busy,
       });
       setCooldownSecondsLeft(left);
       if (left <= 0) {
+        const reason = !Number.isFinite(sourceUntilMs)
+          ? 'no_until_ms'
+          : 'expired';
+        console.log('[TRANSFER_COOLDOWN]', 'reached_zero', {
+          reason,
+          sourceUntilMs,
+          nowMs,
+          deltaMs,
+        });
         if (cooldownTickIntervalRef.current) {
           clearInterval(cooldownTickIntervalRef.current);
           cooldownTickIntervalRef.current = null;
