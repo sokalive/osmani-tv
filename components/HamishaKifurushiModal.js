@@ -40,11 +40,18 @@ const GRADIENT_CTA = [COLORS.yellow, COLORS.yellowDark];
 
 /**
  * Simple device-transfer flow:
- *   INTRO     → introduction copy + "ENDELEA KUHAMISHA"
- *   PHONE     → enter source phone, fetch one-time code
- *   GENERATED → display code + countdown for the receiving device
- *   REDEEM    → enter code on the receiving device
- *   REDEEMED  → activation success
+ *   INTRO                     → introduction copy + "ENDELEA KUHAMISHA"
+ *   PHONE                     → enter source phone, fetch one-time code
+ *   GENERATED                 → display code + countdown for the
+ *                               receiving device
+ *   REDEEM                    → enter code on the receiving device
+ *   REDEEMED                  → target-side activation success
+ *   COOLDOWN                  → backend per-device cooldown gate
+ *   TRANSFER_COMPLETED_SOURCE → source-side success: this device just
+ *                               handed off its subscription to the
+ *                               target (revealed by `transfer_completed`
+ *                               / `subscription_revoked` SSE while we
+ *                               were on the GENERATED step)
  *
  * No approve/reject popup, no waiting state, no SSE handshake — the
  * backend rebinds ownership directly on POST /api/transfer/confirm.
@@ -56,6 +63,7 @@ const STEPS = Object.freeze({
   REDEEM: 'redeem',
   REDEEMED: 'redeemed',
   COOLDOWN: 'cooldown',
+  TRANSFER_COMPLETED_SOURCE: 'transfer_completed_source',
 });
 
 function formatTimer(totalSeconds) {
@@ -69,10 +77,15 @@ function normalizePhone(raw) {
   return String(raw || '').replace(/[^\d]/g, '').slice(0, 10);
 }
 
-export default function HamishaKifurushiModal({ visible, onClose }) {
+export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans }) {
   const { height: windowHeight } = useWindowDimensions();
   const cardMaxHeight = windowHeight * 0.82;
-  const { reverifySubscription, revokedReason, isSubscribed } = useOsmaniApp();
+  const {
+    reverifySubscription,
+    revokedReason,
+    isSubscribed,
+    dismissRevoked,
+  } = useOsmaniApp();
 
   const [step, setStep] = useState(STEPS.INTRO);
   const [phone, setPhone] = useState('');
@@ -88,6 +101,14 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
    */
   const [cooldownUntilMs, setCooldownUntilMs] = useState(null);
   const [cooldownSecondsLeft, setCooldownSecondsLeft] = useState(0);
+  /**
+   * Total cooldown duration in minutes (rounded up), captured at the
+   * moment the backend rejected with `TRANSFER_COOLDOWN`. Used purely
+   * to render a stable Swahili line ("Subiri dakika N kabla ya kuomba
+   * code nyingine.") that does NOT change as the live countdown ticks
+   * down. Always derived from backend metadata — never hardcoded.
+   */
+  const [cooldownTotalMinutes, setCooldownTotalMinutes] = useState(null);
   /**
    * Manual countdown ref. The interval-based effect below already
    * clears itself on visibility/step change, but we keep this ref so
@@ -129,6 +150,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       setError('');
       setCooldownUntilMs(null);
       setCooldownSecondsLeft(0);
+      setCooldownTotalMinutes(null);
       runEnterAnim();
     }
   }, [visible, runEnterAnim]);
@@ -155,35 +177,41 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   /**
    * Revoke watcher (SOURCE-side only).
    *
-   * Tears down the local transfer flow ONLY when this device was
-   * actively acting as the SOURCE (had generated a code) and the
-   * backend just told us we lost access. In that case we:
+   * Drives the smooth source-side post-transfer transition. Triggered
+   * only when this device was actively acting as the SOURCE (had
+   * generated a code) and the backend just told us we lost access via
+   * `subscription_revoked` / `transfer_completed` SSE — or any verify
+   * tick that returns active=false. In that case we:
    *   - stop the countdown interval defensively
-   *   - clear all transfer-related state (code, generatedCode, phone,
-   *     step, error)
-   *   - close the modal so the global `TransferredAwayModal` ("Kifurushi
-   *     Kimehamishwa" + LIPIA TENA) becomes the sole foreground UI
+   *   - clear all in-flight transfer state (code, generatedCode, phone,
+   *     error, cooldown)
+   *   - swap the visible step to TRANSFER_COMPLETED_SOURCE so the
+   *     "Hongera!" success screen replaces the lingering code/timer UI
+   *   - dismiss the global `revokedReason` so the hard-block
+   *     `TransferredAwayModal` does NOT stack on top — the user already
+   *     gets a clear, contextual success screen here
    *
-   * Critically, we do NOT close the modal for target / unsubscribed
-   * devices: they open this modal precisely to redeem a transfer code
-   * and arrive with `isSubscribed === false` from the very start —
-   * which is the normal initial state, not a transition. Detecting
-   * "was acting as source" via `generatedCode` (or step=GENERATED) is
-   * the correct gate because that state is only reachable after a
-   * successful `/api/transfer/request`.
+   * Important non-triggers:
+   *   - target / unsubscribed devices opening the modal to redeem
+   *     arrive with `isSubscribed === false` as their normal initial
+   *     state — `wasActingAsSource` (gated on `generatedCode` /
+   *     GENERATED step, which is only reachable after a successful
+   *     `/api/transfer/request`) keeps the watcher silent for them
+   *   - REDEEMED is the target-side success state, untouched
+   *   - TRANSFER_COMPLETED_SOURCE is its own terminal state and must
+   *     not re-fire (prevents the watcher running again on every
+   *     subsequent verify tick)
    *
-   * Skipped on REDEEMED (target-side success outcome) and when the
-   * modal is not visible.
+   * If the modal is NOT visible when the revoke arrives, this watcher
+   * does nothing and the global `TransferredAwayModal` continues to
+   * handle the hard-block path.
    */
   useEffect(() => {
     if (!visible) return;
     if (step === STEPS.REDEEMED) return;
+    if (step === STEPS.TRANSFER_COMPLETED_SOURCE) return;
     const revokeSignal = Boolean(revokedReason) || isSubscribed === false;
     if (!revokeSignal) return;
-    // Only the SOURCE-side flow should auto-tear down. A target /
-    // unsubscribed device opening the modal to redeem MUST remain
-    // open. `generatedCode` is the unambiguous signal that this
-    // device is acting as the source for an in-flight transfer.
     const wasActingAsSource = step === STEPS.GENERATED || Boolean(generatedCode);
     if (!wasActingAsSource) return;
     console.log('[HAMISHA_MODAL]', 'revoke_detected', {
@@ -205,11 +233,16 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     setBusy(false);
     setCooldownUntilMs(null);
     setCooldownSecondsLeft(0);
-    setStep(STEPS.INTRO);
-    console.log('[HAMISHA_MODAL]', 'transfer_state_cleared');
-    onClose?.();
-    console.log('[HAMISHA_MODAL]', 'modal_closed_for_revoked_state');
-  }, [visible, revokedReason, isSubscribed, step, generatedCode, onClose]);
+    setCooldownTotalMinutes(null);
+    setStep(STEPS.TRANSFER_COMPLETED_SOURCE);
+    console.log('[HAMISHA_MODAL]', 'transfer_completed_source_entered');
+    // Suppress the global hard-block modal — this in-modal success
+    // screen is the contextual UI for the source-initiated transfer.
+    try {
+      dismissRevoked?.();
+      console.log('[HAMISHA_MODAL]', 'global_revoke_dismissed');
+    } catch {}
+  }, [visible, revokedReason, isSubscribed, step, generatedCode, dismissRevoked]);
 
   const isPhoneValid = useMemo(() => /^0[67]\d{8}$/.test(phone), [phone]);
   const redeemCode = code.trim();
@@ -238,14 +271,33 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
         const initialLeft = untilMs
           ? Math.max(0, Math.ceil((untilMs - Date.now()) / 1000))
           : (Number.isFinite(e?.retryAfterSec) ? Math.max(0, Math.floor(e.retryAfterSec)) : 0);
+        // Capture the original cooldown duration in minutes so the
+        // descriptive Swahili line stays stable while the live timer
+        // ticks down. Prefer `retryAfterSec` (the original duration
+        // the backend returned) and fall back to deriving from
+        // `cooldownUntilMs - now`. NEVER hardcoded.
+        const totalMinutes = (() => {
+          if (Number.isFinite(e?.retryAfterSec) && e.retryAfterSec > 0) {
+            return Math.max(1, Math.ceil(e.retryAfterSec / 60));
+          }
+          if (untilMs && untilMs > Date.now()) {
+            return Math.max(1, Math.ceil((untilMs - Date.now()) / 60000));
+          }
+          if (initialLeft > 0) {
+            return Math.max(1, Math.ceil(initialLeft / 60));
+          }
+          return null;
+        })();
         console.log('[TRANSFER_COOLDOWN]', 'enter_cooldown_step', {
           cooldownUntilMs: untilMs,
           retryAfterSec: e?.retryAfterSec ?? null,
           initialLeft,
+          totalMinutes,
           backendMessage: e?.message ?? null,
         });
         setCooldownUntilMs(untilMs);
         setCooldownSecondsLeft(initialLeft);
+        setCooldownTotalMinutes(totalMinutes);
         setError('');
         setStep(STEPS.COOLDOWN);
         return;
@@ -581,7 +633,9 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                     </View>
                     <Text style={styles.stepTitleCenter}>Hamisha Kifurushi</Text>
                     <Text style={styles.descCenter}>
-                      Subiri kidogo kabla ya kuhamisha tena kifurushi.
+                      {cooldownTotalMinutes
+                        ? `Subiri dakika ${cooldownTotalMinutes} kabla ya kuomba code nyingine.`
+                        : 'Subiri kidogo kabla ya kuhamisha tena kifurushi.'}
                     </Text>
                     <Text style={styles.cooldownLabel}>Jaribu tena baada ya:</Text>
                     <Text style={styles.cooldownTimer}>{formatTimer(cooldownSecondsLeft)}</Text>
@@ -595,6 +649,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                           setError('');
                           setCooldownUntilMs(null);
                           setCooldownSecondsLeft(0);
+                          setCooldownTotalMinutes(null);
                           setStep(STEPS.PHONE);
                         }}
                         disabled={cooldownSecondsLeft > 0 || busy}
@@ -608,6 +663,49 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                           style={styles.primaryGradient}
                         >
                           <Text style={styles.primaryText}>JARIBU TENA</Text>
+                        </LinearGradient>
+                      </Pressable>
+                      <Pressable style={styles.secondaryBtn} onPress={close}>
+                        <Text style={styles.secondaryText}>Funga</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+
+                {step === STEPS.TRANSFER_COMPLETED_SOURCE ? (
+                  <View style={styles.stepColumn}>
+                    <View style={styles.successCircle}>
+                      <Ionicons name="checkmark" size={30} color="#111827" />
+                    </View>
+                    <Text style={styles.stepTitleCenter}>Hongera!</Text>
+                    <Text style={styles.descCenter}>
+                      Umefanikiwa kuhamisha kifurushi chako kwenda kwenye simu nyingine.{'\n\n'}
+                      Kifaa hiki hakina tena huduma ya premium.
+                    </Text>
+                    <View style={styles.actionsBlock}>
+                      <Pressable
+                        style={styles.primaryWrap}
+                        onPress={() => {
+                          // Hand control to the parent: it closes this
+                          // modal and opens the plans/payment flow.
+                          // Falls back to a plain close when no
+                          // handler is wired (defensive).
+                          if (onOpenPlans) {
+                            onOpenPlans();
+                          } else {
+                            close();
+                          }
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Lipia tena"
+                      >
+                        <LinearGradient
+                          colors={GRADIENT_CTA}
+                          start={{ x: 0, y: 0.5 }}
+                          end={{ x: 1, y: 0.5 }}
+                          style={styles.primaryGradient}
+                        >
+                          <Text style={styles.primaryText}>LIPIA TENA</Text>
                         </LinearGradient>
                       </Pressable>
                       <Pressable style={styles.secondaryBtn} onPress={close}>

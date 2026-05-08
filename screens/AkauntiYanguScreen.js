@@ -326,6 +326,13 @@ export default function AkauntiYanguScreen() {
       <HamishaKifurushiModal
         visible={hamishaModalVisible}
         onClose={() => setHamishaModalVisible(false)}
+        onOpenPlans={() => {
+          // Source-side post-transfer success ("Hongera!") → LIPIA TENA:
+          // close the transfer modal and open the same plans/payment
+          // flow the user reaches from the regular "LIPIA SASA" CTA.
+          setHamishaModalVisible(false);
+          setPremiumModalVisible(true);
+        }}
       />
 
       <PremiumModal
