@@ -341,6 +341,10 @@ export function OsmaniAppProvider({ children }) {
         deviceId = identity?.deviceId ? String(identity.deviceId) : '';
       } catch {}
       const sourceDeviceId = pickSourceDeviceId(payload);
+      // Permissive matching: only DROP an event when we have a confirmed
+      // mismatch between two known device ids. Missing values are treated
+      // as a match — the source device is the only one in this state, so
+      // erring on the side of showing the approve/reject popup is safer.
       const sourceMatches = !sourceDeviceId || !deviceId || sourceDeviceId === deviceId;
       console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'event_received', {
         eventName,
@@ -357,11 +361,13 @@ export function OsmaniAppProvider({ children }) {
         return;
       }
       const code = pickTransferCode(payload);
+      console.log('[transfer-ui]', 'pending transfer detected', { eventName, code, source: 'sse' });
       if (payload && typeof payload === 'object') {
         setPendingTransfer({ ...payload, code });
       } else {
         setPendingTransfer({ code, raw: payload });
       }
+      console.log('[transfer-ui]', 'source approval state entered', { code, source: 'sse' });
     };
     const offRequested = subscribeRealtimeEvent(
       'transfer_requested',
@@ -449,6 +455,24 @@ export function OsmaniAppProvider({ children }) {
     setPendingTransfer(null);
   }, []);
 
+  /**
+   * Force-set the pending transfer payload from an external code path
+   * (polling fallback, optimistic local transition, etc). Logs the
+   * transition explicitly so the source-device approval state entry is
+   * always traceable in the device console.
+   */
+  const triggerPendingTransfer = useCallback((payload, reason = 'external') => {
+    if (!payload || typeof payload !== 'object') {
+      setPendingTransfer({ code: '', raw: payload, source: reason });
+      console.log('[transfer-ui]', 'source approval state entered', { reason, payloadType: typeof payload });
+      return;
+    }
+    const code = pickTransferCode(payload) || (typeof payload.code === 'string' ? payload.code : '');
+    console.log('[transfer-ui]', 'pending transfer detected', { reason, code });
+    setPendingTransfer({ ...payload, code });
+    console.log('[transfer-ui]', 'source approval state entered', { reason, code });
+  }, []);
+
   const value = useMemo(
     () => ({
       settings,
@@ -479,6 +503,7 @@ export function OsmaniAppProvider({ children }) {
       dismissRevoked,
       pendingTransfer,
       dismissPendingTransfer,
+      triggerPendingTransfer,
     }),
     [
       settings,
@@ -500,6 +525,7 @@ export function OsmaniAppProvider({ children }) {
       dismissRevoked,
       pendingTransfer,
       dismissPendingTransfer,
+      triggerPendingTransfer,
     ],
   );
 

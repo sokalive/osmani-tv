@@ -513,16 +513,63 @@ export async function respondToTransfer(code, decision) {
 
 /**
  * Optional polling for the source device while it shows "transfer in progress".
+ * The backend has been renamed multiple times across deploys; we probe a list
+ * of candidate URLs and gracefully fall back on 404 so this keeps working when
+ * the backend adds (or renames) the route. Failure modes never throw — the
+ * caller just waits for SSE.
  */
+const TRANSFER_STATUS_PATHS = Object.freeze([
+  '/transfer/status/{code}',
+  '/transfer/status?code={code}',
+  '/transfer/{code}',
+  '/transfer/poll/{code}',
+  '/transfer/info/{code}',
+  '/subscription/transfer/{code}',
+  '/subscription/transfer/status/{code}',
+]);
+
+/**
+ * Heuristic: does this body indicate the backend is awaiting source-device
+ * approval for an in-flight transfer?
+ */
+function isPendingPollBody(body) {
+  if (!isPlainObject(body)) return false;
+  if (isPendingConfirmation(body)) return true;
+  const sub =
+    (isPlainObject(body.transfer) && body.transfer) ||
+    (isPlainObject(body.data) && body.data) ||
+    null;
+  if (sub && isPendingConfirmation(sub)) return true;
+  if (typeof body.target_device_id === 'string' && body.target_device_id) return true;
+  if (sub && typeof sub.target_device_id === 'string' && sub.target_device_id) return true;
+  return false;
+}
+
 export async function getTransferStatus(code) {
-  const url = `${API}/subscription/transfer/${encodeURIComponent(String(code).trim())}`;
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  const body = await readJson(res);
-  if (!res.ok) {
-    if (res.status === 404) return { status: 'unknown', raw: body };
-    throw new Error(body?.error ?? body?.message ?? `HTTP ${res.status}`);
+  const trimmed = String(code ?? '').trim();
+  if (!trimmed) return { status: 'unknown' };
+  const codeWithPrefix = ensureTransferPrefix(trimmed);
+  const codeBare = stripTransferPrefix(trimmed);
+  const candidates = TRANSFER_STATUS_PATHS.flatMap((path) => {
+    return [codeWithPrefix, codeBare].map((c) =>
+      `${API}${path.replace('{code}', encodeURIComponent(c))}`,
+    );
+  });
+  for (const url of candidates) {
+    let res;
+    let body;
+    try {
+      res = await fetch(url, { headers: { Accept: 'application/json' } });
+      body = await readJson(res);
+    } catch {
+      continue;
+    }
+    if (!res || res.status === 404) continue;
+    if (!res.ok) continue;
+    const pending = isPendingPollBody(body);
+    return { status: pending ? 'pending_confirmation' : (body?.status ?? 'ok'), pending, raw: body, url };
   }
-  return body ?? {};
+  return { status: 'unknown', pending: false };
 }
 
 /* -----------------------------------------------------------------

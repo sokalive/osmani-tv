@@ -19,7 +19,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
-import { initiateTransfer, redeemTransfer } from '../api/subscription';
+import { getTransferStatus, initiateTransfer, redeemTransfer } from '../api/subscription';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 
 const COLORS = {
@@ -107,7 +107,7 @@ function pickSourceDeviceId(payload) {
 export default function HamishaKifurushiModal({ visible, onClose }) {
   const { height: windowHeight } = useWindowDimensions();
   const cardMaxHeight = windowHeight * 0.82;
-  const { reverifySubscription } = useOsmaniApp();
+  const { reverifySubscription, pendingTransfer, triggerPendingTransfer } = useOsmaniApp();
 
   const [step, setStep] = useState(STEPS.INTRO);
   const [phone, setPhone] = useState('');
@@ -178,22 +178,25 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   const isRedeemCodeValid = /^\d{6}$/.test(redeemCode);
 
   /**
-   * SOURCE-device bridge. The global context owns TransferConfirmModal,
-   * but this local native Modal can visually cover it. Keep this listener
-   * mounted while Hamisha is open and close the code modal immediately
-   * once the backend asks the source device to approve/reject.
+   * SOURCE-device bridge.
+   *
+   * The global context owns `TransferConfirmModal`, but this native
+   * `<Modal>` can visually cover it on Android. While the GENERATED step
+   * is showing the 6-digit code we MUST close this modal as soon as we
+   * have ANY signal that the target device has confirmed — we let the
+   * global approval modal take over. We also force-set the global
+   * `pendingTransfer` context so the approve/reject popup absolutely
+   * shows even if the SSE event was missed by the consumer entirely.
+   *
+   * Permissive matching: while we are in GENERATED with our own code, any
+   * source-targeted transfer event is treated as belonging to us — this
+   * device is the only one in this state.
    */
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
-    const currentModalState = () => ({
-      visible,
-      step,
-      generatedCode,
-      waitingCode,
-      redeemCode,
-    });
     const onConfirmationRequired = (eventName) => async (payload) => {
+      if (cancelled) return;
       let currentDeviceId = '';
       try {
         const identity = await getDeviceIdentity();
@@ -204,7 +207,16 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       const eventCode = pickEventCode(payload);
       const codeMatches = Boolean(generatedCode) && bareCode(generatedCode) === bareCode(eventCode);
       const sourceMatches = Boolean(sourceDeviceId && currentDeviceId && sourceDeviceId === currentDeviceId);
-      const shouldClose = codeMatches || sourceMatches;
+      // While we are showing the GENERATED step, this device is the
+      // ONLY device in source-of-transfer state — accept the event as
+      // ours unless it is *explicitly* tagged for another device.
+      const inSourceFlow = step === STEPS.GENERATED && Boolean(generatedCode);
+      const explicitlyOtherDevice =
+        Boolean(sourceDeviceId && currentDeviceId && sourceDeviceId !== currentDeviceId);
+      const shouldClose =
+        codeMatches ||
+        sourceMatches ||
+        (inSourceFlow && !explicitlyOtherDevice);
       console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'hamisha_modal_event', {
         eventName,
         payload,
@@ -213,14 +225,31 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
         eventCode,
         codeMatches,
         sourceMatches,
+        inSourceFlow,
+        explicitlyOtherDevice,
         shouldClose,
-        modalState: currentModalState(),
+        modalStep: step,
       });
       if (shouldClose) {
-        console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'closing_source_code_modal', {
+        console.log('[transfer-ui]', 'closing code modal', {
+          source: 'sse',
           eventName,
-          currentDeviceId,
           generatedCode,
+          eventCode,
+        });
+        // Force the global context to render the approve/reject modal
+        // even if the upstream context listener somehow dropped this
+        // payload — defensive double-set is idempotent.
+        const merged = (payload && typeof payload === 'object')
+          ? { ...payload, code: eventCode || generatedCode }
+          : { code: eventCode || generatedCode };
+        try {
+          triggerPendingTransfer?.(merged, `sse:${eventName}`);
+        } catch {}
+        console.log('[transfer-ui]', 'opening confirm modal', {
+          source: 'sse',
+          eventName,
+          code: merged.code,
         });
         close();
       }
@@ -233,12 +262,87 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       'transfer_requested',
       onConfirmationRequired('transfer_requested'),
     );
+    const offPending = subscribeRealtimeEvent(
+      'transfer_pending',
+      onConfirmationRequired('transfer_pending'),
+    );
     return () => {
       cancelled = true;
       offConfirmationRequired();
       offRequested();
+      offPending();
     };
-  }, [visible, step, generatedCode, waitingCode, redeemCode, close]);
+  }, [visible, step, generatedCode, waitingCode, redeemCode, close, triggerPendingTransfer]);
+
+  /**
+   * Auto-close fail-safe. If the global context decides a pending
+   * transfer popup should appear (from SSE OR from the polling fallback
+   * below) we MUST close this native modal — otherwise it visually
+   * stacks on top of `TransferConfirmModal` on Android and blocks the
+   * approve/reject buttons.
+   *
+   * Skip close on terminal target-side states (REDEEMED/REJECTED) which
+   * already replaced the GENERATED UI.
+   */
+  useEffect(() => {
+    if (!visible) return;
+    if (!pendingTransfer) return;
+    if (step === STEPS.REDEEMED || step === STEPS.REJECTED) return;
+    console.log('[transfer-ui]', 'closing code modal', {
+      source: 'context.pendingTransfer',
+      modalStep: step,
+      pendingCode: pendingTransfer?.code ?? null,
+    });
+    close();
+  }, [visible, pendingTransfer, step, close]);
+
+  /**
+   * Polling fallback. SSE may fail silently (network, proxy, sleep).
+   * While the GENERATED step is showing the code, poll the backend every
+   * 2 seconds for a `pending_confirmation` state. The polling helper
+   * gracefully tolerates missing endpoints (multi-URL probe with 404
+   * fallback), so this becomes a no-op until the backend exposes a
+   * status route — but the moment one exists, the source device flips
+   * into the approval state without waiting for SSE.
+   */
+  useEffect(() => {
+    if (!visible) return undefined;
+    if (step !== STEPS.GENERATED) return undefined;
+    if (!generatedCode) return undefined;
+    let cancelled = false;
+    let timer = null;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const r = await getTransferStatus(generatedCode);
+        if (cancelled) return;
+        if (r?.pending === true || r?.status === 'pending_confirmation') {
+          console.log('[transfer-ui]', 'pending transfer detected', {
+            source: 'poll',
+            url: r?.url ?? null,
+            generatedCode,
+          });
+          const payload = (r?.raw && typeof r.raw === 'object') ? r.raw : { code: generatedCode };
+          try {
+            triggerPendingTransfer?.({ ...payload, code: payload.code || generatedCode }, 'poll');
+          } catch {}
+          console.log('[transfer-ui]', 'closing code modal', { source: 'poll' });
+          console.log('[transfer-ui]', 'opening confirm modal', { source: 'poll' });
+          close();
+          return;
+        }
+      } catch (e) {
+        console.log('[transfer-ui]', 'poll_error', e?.message ?? e);
+      }
+      if (cancelled) return;
+      timer = setTimeout(tick, 2000);
+    };
+    timer = setTimeout(tick, 1500);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [visible, step, generatedCode, close, triggerPendingTransfer]);
 
   const handleGenerate = useCallback(async () => {
     if (!isPhoneValid) {
