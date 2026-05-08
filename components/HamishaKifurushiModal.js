@@ -329,18 +329,29 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                   <View style={styles.stepColumn}>
                     <View style={styles.iconHalo}>
                       <View style={styles.iconCircle}>
-                        <Ionicons name="swap-horizontal" size={28} color="#111827" />
+                        <Ionicons name="swap-horizontal" size={26} color="#111827" />
                       </View>
                     </View>
                     <Text style={styles.stepTitleCenter}>HAMISHA KIFURUSHI</Text>
                     <Text style={styles.introLead}>
-                      Unaweza kuhamisha kifurushi chako kwenda simu nyingine.
+                      Unaweza kuhamisha kifurushi chako kwenda kwenye simu nyingine.
                     </Text>
-                    <Text style={styles.bulletLine}>• Simu ya zamani itapoteza ufikiaji mara moja.</Text>
-                    <Text style={styles.bulletLine}>• Simu mpya itaanza kutumia kifurushi mara moja.</Text>
-                    <Text style={styles.bulletLine}>
-                      • Muda uliobaki wa kifurushi utaendelea kwenye simu mpya.
-                    </Text>
+                    <View style={styles.bulletList}>
+                      <View style={styles.bulletRow}>
+                        <Text style={styles.bulletDot}>•</Text>
+                        <Text style={styles.bulletText}>Simu ya zamani itapoteza ufikiaji mara moja.</Text>
+                      </View>
+                      <View style={styles.bulletRow}>
+                        <Text style={styles.bulletDot}>•</Text>
+                        <Text style={styles.bulletText}>Simu mpya itaanza kutumia kifurushi mara moja.</Text>
+                      </View>
+                      <View style={styles.bulletRow}>
+                        <Text style={styles.bulletDot}>•</Text>
+                        <Text style={styles.bulletText}>
+                          Muda uliobaki wa kifurushi utaendelea kwenye simu mpya.
+                        </Text>
+                      </View>
+                    </View>
                     {error ? <Text style={styles.errorText}>{error}</Text> : null}
                     <View style={styles.actionsBlockIntro}>
                       <Pressable
@@ -629,12 +640,12 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     backgroundColor: COLORS.card,
-    borderRadius: 24,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: 'rgba(255,203,61,0.18)',
     paddingHorizontal: 22,
-    paddingTop: 24,
-    paddingBottom: 22,
+    paddingTop: 20,
+    paddingBottom: 18,
     elevation: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
@@ -650,31 +661,31 @@ const styles = StyleSheet.create({
   },
   stepColumn: {
     width: '100%',
-    paddingTop: 18,
+    paddingTop: 12,
     alignItems: 'stretch',
   },
   iconHalo: {
     alignSelf: 'center',
-    width: 78,
-    height: 78,
-    borderRadius: 39,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
     backgroundColor: 'rgba(255,203,61,0.12)',
   },
   iconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.yellow,
     shadowColor: COLORS.yellow,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.65,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOpacity: 0.55,
+    shadowRadius: 10,
+    elevation: 6,
   },
   iconHaloSmall: {
     alignSelf: 'center',
@@ -696,28 +707,43 @@ const styles = StyleSheet.create({
   },
   stepTitleCenter: {
     color: COLORS.white,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 12,
-    letterSpacing: 0.5,
+    marginBottom: 10,
+    letterSpacing: 0.6,
     width: '100%',
   },
   introLead: {
     color: '#E5E7EB',
-    fontSize: 15,
-    lineHeight: 23,
+    fontSize: 14,
+    lineHeight: 21,
     textAlign: 'center',
-    marginBottom: 22,
+    marginBottom: 16,
     paddingHorizontal: 4,
   },
-  bulletLine: {
-    color: '#F3F4F6',
-    fontSize: 14,
-    lineHeight: 23,
-    marginBottom: 14,
-    textAlign: 'left',
+  bulletList: {
     width: '100%',
+    marginBottom: 6,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 2,
+    marginBottom: 8,
+  },
+  bulletDot: {
+    color: COLORS.yellow,
+    fontSize: 16,
+    lineHeight: 21,
+    width: 16,
+    fontWeight: '900',
+  },
+  bulletText: {
+    flex: 1,
+    color: '#F3F4F6',
+    fontSize: 13.5,
+    lineHeight: 21,
   },
   descCenter: {
     color: '#D1D5DB',
@@ -836,19 +862,19 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'stretch',
     alignItems: 'stretch',
-    marginTop: 12,
+    marginTop: 14,
   },
   actionsBlock: {
     width: '100%',
     alignSelf: 'stretch',
     alignItems: 'stretch',
-    marginTop: 18,
+    marginTop: 16,
   },
   actionsBlockStep: {
     width: '100%',
     alignSelf: 'stretch',
     alignItems: 'stretch',
-    marginTop: 6,
+    marginTop: 4,
   },
   primaryWrap: {
     alignSelf: 'stretch',
@@ -863,7 +889,7 @@ const styles = StyleSheet.create({
   },
   primaryGradient: {
     width: '100%',
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },

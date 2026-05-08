@@ -19,7 +19,16 @@ function normalizeSettings(payload) {
   };
 }
 
-export default function WhatsAppFloatingButton() {
+/**
+ * Floating WhatsApp button.
+ *
+ * @prop {boolean} [visible=true] — when explicitly set to false, the
+ *   button is hidden regardless of the backend `enabled` flag. The
+ *   parent (App.js) uses this to scope visibility to the Home tab only;
+ *   the SSE settings sync stays mounted so when the button is shown
+ *   again it already has the latest URL.
+ */
+export default function WhatsAppFloatingButton({ visible = true }) {
   const insets = useSafeAreaInsets();
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
 
@@ -61,6 +70,7 @@ export default function WhatsAppFloatingButton() {
     });
   }, [settings.url]);
 
+  if (visible !== true) return null;
   if (settings.enabled !== true) return null;
 
   return (

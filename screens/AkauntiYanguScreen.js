@@ -53,11 +53,13 @@ function scrollBottomPad(insets) {
 function StatCard({ icon, value, label }) {
   return (
     <View style={styles.statCard}>
-      <Ionicons name={icon} size={22} color={COLORS.yellow} style={styles.statIcon} />
-      <Text style={styles.statValue} numberOfLines={1}>
+      <View style={styles.statIconWrap}>
+        <Ionicons name={icon} size={20} color={COLORS.yellow} />
+      </View>
+      <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
         {value}
       </Text>
-      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
     </View>
   );
 }
@@ -275,13 +277,19 @@ export default function AkauntiYanguScreen() {
         </View>
 
         <Pressable
-          style={styles.infoCard}
+          style={[styles.infoCard, styles.transferActionCard]}
           onPress={() => setHamishaModalVisible(true)}
           accessibilityRole="button"
           accessibilityLabel="Hamisha Kifurushi"
         >
-          <Text style={styles.infoCardTitle}>Hamisha Kifurushi</Text>
-          <Text style={styles.infoCardBody}>HAMISHA KIFURUSHI CHAKO</Text>
+          <View style={styles.transferActionIcon}>
+            <Ionicons name="swap-horizontal" size={20} color={COLORS.yellow} />
+          </View>
+          <View style={styles.transferActionTextCol}>
+            <Text style={styles.infoCardTitle}>Hamisha Kifurushi</Text>
+            <Text style={styles.infoCardBody}>HAMISHA KIFURUSHI CHAKO</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={COLORS.mutedText} />
         </Pressable>
 
         <Pressable style={styles.primaryWrap} onPress={() => setPremiumModalVisible(true)}>
@@ -398,7 +406,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   statsGrid: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   statsRow: {
     flexDirection: 'row',
@@ -408,34 +416,49 @@ const styles = StyleSheet.create({
   statCard: {
     width: STAT_CARD_W,
     backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 14,
-    minHeight: 108,
+    borderRadius: 16,
+    padding: 16,
+    minHeight: 116,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.04)',
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    shadowOpacity: 0.22,
+    shadowRadius: 5,
   },
-  statIcon: {
+  statIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,203,61,0.10)',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 10,
   },
   statValue: {
     color: COLORS.white,
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 6,
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    marginBottom: 4,
   },
   statLabel: {
     color: COLORS.mutedText,
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 11,
+    lineHeight: 15,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    fontWeight: '700',
   },
   infoCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.04)',
     elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -444,14 +467,17 @@ const styles = StyleSheet.create({
   },
   infoCardTitle: {
     color: COLORS.mutedText,
-    fontSize: 13,
+    fontSize: 11,
     marginBottom: 8,
-    fontWeight: '600',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   statusBad: {
     color: '#EF4444',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800',
+    letterSpacing: 1.2,
   },
   statusGood: {
     color: '#4ADE80',
@@ -459,26 +485,28 @@ const styles = StyleSheet.create({
   infoCardBody: {
     color: COLORS.white,
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     lineHeight: 22,
+    letterSpacing: 0.4,
   },
   usageHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   usagePercentText: {
     color: COLORS.yellow,
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   usageBarTrack: {
     height: 8,
     borderRadius: 6,
     backgroundColor: '#2A2E37',
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   usageBarFill: {
     height: '100%',
@@ -488,11 +516,27 @@ const styles = StyleSheet.create({
   usageMetaText: {
     color: COLORS.mutedText,
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 17,
+  },
+  transferActionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  transferActionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,203,61,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  transferActionTextCol: {
+    flex: 1,
   },
   primaryWrap: {
-    marginTop: 20,
-    marginBottom: 24,
+    marginTop: 18,
+    marginBottom: 22,
     borderRadius: 16,
     overflow: 'hidden',
     elevation: 6,

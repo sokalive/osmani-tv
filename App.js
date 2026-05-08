@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Image as ExpoImage } from 'expo-image';
@@ -613,6 +613,24 @@ function AppTabs() {
 }
 
 export default function App() {
+  const navRef = useNavigationContainerRef();
+  /**
+   * Tracks the leaf route name from the navigation tree so global
+   * overlays (currently the WhatsApp floating button) can scope their
+   * visibility to a specific tab. Defaults to 'Home' so first paint
+   * matches the initial tab the navigator lands on.
+   */
+  const [currentRouteName, setCurrentRouteName] = useState('Home');
+
+  const updateRouteName = useCallback(() => {
+    try {
+      const next = navRef.getCurrentRoute()?.name;
+      if (typeof next === 'string' && next.length > 0) {
+        setCurrentRouteName(next);
+      }
+    } catch {}
+  }, [navRef]);
+
   useEffect(() => {
     void trackInstallOnce();
     void startPresence();
@@ -629,6 +647,9 @@ export default function App() {
     <SafeAreaProvider>
       <OsmaniAppProvider>
         <NavigationContainer
+          ref={navRef}
+          onReady={updateRouteName}
+          onStateChange={updateRouteName}
           theme={{
             ...DarkTheme,
             colors: { ...DarkTheme.colors, background: COLORS.background, card: COLORS.nav },
@@ -637,7 +658,7 @@ export default function App() {
           <RootNavigator />
         </NavigationContainer>
         <PopupSettingsModal />
-        <WhatsAppFloatingButton />
+        <WhatsAppFloatingButton visible={currentRouteName === 'Home'} />
         <UpdateOverlay />
         <OtaDebugOverlay />
         <SubscriptionLifecycleGates />
