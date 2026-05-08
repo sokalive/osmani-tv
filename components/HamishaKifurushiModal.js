@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { initiateTransfer, redeemTransfer } from '../api/subscription';
+import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 
 const COLORS = {
   background: '#111215',
@@ -43,7 +44,9 @@ const STEPS = Object.freeze({
   PHONE: 'phone',
   GENERATED: 'generated',
   REDEEM: 'redeem',
+  WAITING: 'waiting',
   REDEEMED: 'redeemed',
+  REJECTED: 'rejected',
 });
 
 function formatTimer(totalSeconds) {
@@ -55,6 +58,29 @@ function formatTimer(totalSeconds) {
 
 function normalizePhone(raw) {
   return String(raw || '').replace(/[^\d]/g, '').slice(0, 10);
+}
+
+/**
+ * Strip "TR-" prefix and non-alphanumerics so we can compare codes from
+ * different sources (raw user entry, prefixed backend payload, etc.).
+ */
+function bareCode(raw) {
+  return String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^TR/, '');
+}
+
+/**
+ * Best-effort code extraction from an SSE payload object — different
+ * backend versions key this differently.
+ */
+function pickEventCode(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  return String(
+    payload.code ??
+      payload.transfer_code ??
+      payload.transferCode ??
+      payload.transfer?.code ??
+      '',
+  );
 }
 
 export default function HamishaKifurushiModal({ visible, onClose }) {
@@ -69,6 +95,13 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   const [remainingSeconds, setRemainingSeconds] = useState(TRANSFER_CODE_SECONDS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  /**
+   * Code currently being awaited by the TARGET device, matched against
+   * `transfer_approved` / `transfer_rejected` / `transfer_completed` SSE
+   * payloads. Empty unless the WAITING step is active.
+   */
+  const [waitingCode, setWaitingCode] = useState('');
+  const [rejectionReason, setRejectionReason] = useState('');
 
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.92)).current;
@@ -100,6 +133,8 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       setRemainingSeconds(TRANSFER_CODE_SECONDS);
       setBusy(false);
       setError('');
+      setWaitingCode('');
+      setRejectionReason('');
       runEnterAnim();
     }
   }, [visible, runEnterAnim]);
@@ -149,15 +184,23 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     }
     setBusy(true);
     setError('');
+    setRejectionReason('');
     try {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
       const r = await redeemTransfer(redeemCode, deviceId, deviceFingerprint);
+      // Pending mode: backend is waiting for SOURCE device to approve.
+      // Switch to the WAITING step and listen for SSE outcome events.
+      if (r?.status === 'pending') {
+        setWaitingCode(String(r.code ?? redeemCode));
+        setStep(STEPS.WAITING);
+        return;
+      }
       if (r?.active === true) {
         setStep(STEPS.REDEEMED);
         await reverifySubscription?.('transfer-redeem');
-      } else {
-        setError('Code haijafanikiwa. Hakikisha umeingiza code sahihi.');
+        return;
       }
+      setError('Code haijafanikiwa. Hakikisha umeingiza code sahihi.');
     } catch (e) {
       const msg = e?.message ?? String(e ?? 'unknown_error');
       setError(msg);
@@ -165,6 +208,60 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       setBusy(false);
     }
   }, [isRedeemCodeValid, redeemCode, reverifySubscription]);
+
+  /**
+   * TARGET-device SSE bridge. Active only while the modal is on the
+   * WAITING step. Resolves to REDEEMED on `transfer_approved` /
+   * `transfer_completed` (matching code), or REJECTED on
+   * `transfer_rejected`. Verify is ALWAYS re-issued before unlocking
+   * so backend remains the source of truth.
+   */
+  useEffect(() => {
+    if (!visible || step !== STEPS.WAITING || !waitingCode) return undefined;
+    const targetBare = bareCode(waitingCode);
+    const matches = (payload) => {
+      const incoming = bareCode(pickEventCode(payload));
+      // Empty payload is treated as a match — backend may broadcast
+      // without a code, and this device is the only one in WAITING.
+      return !incoming || !targetBare || incoming === targetBare;
+    };
+    const offApproved = subscribeRealtimeEvent('transfer_approved', async (payload) => {
+      if (!matches(payload)) return;
+      console.log('[TRANSFER_APPROVED]', 'target_redeem', payload);
+      try {
+        await reverifySubscription?.('transfer_approved');
+      } catch {}
+      setStep(STEPS.REDEEMED);
+    });
+    const offCompleted = subscribeRealtimeEvent('transfer_completed', async (payload) => {
+      if (!matches(payload)) return;
+      console.log('[TRANSFER_COMPLETED]', 'target_redeem', payload);
+      try {
+        await reverifySubscription?.('transfer_completed');
+      } catch {}
+      setStep(STEPS.REDEEMED);
+    });
+    const offRejected = subscribeRealtimeEvent('transfer_rejected', (payload) => {
+      if (!matches(payload)) return;
+      console.log('[TRANSFER_REJECTED]', 'target_redeem', payload);
+      const reason =
+        (payload && typeof payload === 'object' && typeof payload.reason === 'string')
+          ? payload.reason
+          : '';
+      setRejectionReason(reason);
+      setStep(STEPS.REJECTED);
+    });
+    const offPending = subscribeRealtimeEvent('transfer_pending', (payload) => {
+      if (!matches(payload)) return;
+      console.log('[TRANSFER_PENDING]', 'target_redeem', payload);
+    });
+    return () => {
+      offApproved();
+      offCompleted();
+      offRejected();
+      offPending();
+    };
+  }, [visible, step, waitingCode, reverifySubscription]);
 
   const copyGeneratedCode = useCallback(async () => {
     if (!generatedCode) return;
@@ -391,6 +488,31 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                   </View>
                 ) : null}
 
+                {step === STEPS.WAITING ? (
+                  <View style={styles.stepColumn}>
+                    <View style={styles.iconHaloSmall}>
+                      <View style={styles.iconCircleSmall}>
+                        <Ionicons name="hourglass" size={22} color="#111827" />
+                      </View>
+                    </View>
+                    <Text style={styles.stepTitleCenter}>Subiri Uthibitisho</Text>
+                    <Text style={styles.descCenter}>
+                      Tunasubiri uthibitisho kutoka kwenye simu yenye kifurushi...
+                    </Text>
+                    <View style={styles.waitingSpinnerWrap}>
+                      <ActivityIndicator size="large" color={COLORS.yellow} />
+                    </View>
+                    <Text style={styles.waitingHint}>
+                      Mwombe mtumiaji wa simu ya zamani akubali ombi la uhamisho.
+                    </Text>
+                    <View style={styles.actionsBlockStep}>
+                      <Pressable style={styles.secondaryBtn} onPress={close}>
+                        <Text style={styles.secondaryText}>Funga</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+
                 {step === STEPS.REDEEMED ? (
                   <View style={styles.stepColumn}>
                     <View style={styles.successCircle}>
@@ -411,6 +533,44 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                         >
                           <Text style={styles.primaryText}>SAWA</Text>
                         </LinearGradient>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+
+                {step === STEPS.REJECTED ? (
+                  <View style={styles.stepColumn}>
+                    <View style={styles.rejectCircle}>
+                      <Ionicons name="close" size={28} color="#FFFFFF" />
+                    </View>
+                    <Text style={styles.stepTitleCenter}>Uhamisho Umekataliwa</Text>
+                    <Text style={styles.descCenter}>
+                      {rejectionReason
+                        ? rejectionReason
+                        : 'Mtumiaji wa simu ya zamani amekataa ombi la uhamisho.'}
+                    </Text>
+                    <View style={styles.actionsBlockStep}>
+                      <Pressable
+                        style={styles.primaryWrap}
+                        onPress={() => {
+                          setError('');
+                          setRejectionReason('');
+                          setWaitingCode('');
+                          setCode('');
+                          setStep(STEPS.REDEEM);
+                        }}
+                      >
+                        <LinearGradient
+                          colors={GRADIENT_CTA}
+                          start={{ x: 0, y: 0.5 }}
+                          end={{ x: 1, y: 0.5 }}
+                          style={styles.primaryGradient}
+                        >
+                          <Text style={styles.primaryText}>JARIBU TENA</Text>
+                        </LinearGradient>
+                      </Pressable>
+                      <Pressable style={styles.secondaryBtn} onPress={close}>
+                        <Text style={styles.secondaryText}>Funga</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -706,5 +866,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#4ADE80',
     marginBottom: 16,
+  },
+  rejectCircle: {
+    alignSelf: 'center',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EF4444',
+    marginBottom: 16,
+  },
+  waitingSpinnerWrap: {
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  waitingHint: {
+    color: COLORS.mutedText,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginBottom: 18,
   },
 });

@@ -291,14 +291,35 @@ export function OsmaniAppProvider({ children }) {
         }
       });
     });
-    const offRequested = subscribeRealtimeEvent('transfer_requested', (payload) => {
-      console.log('[TRANSFER_REQUESTED]', 'sse', payload);
+    // `transfer_approved` fires on the TARGET device once the source
+    // approves the pending transfer. Treat it the same as
+    // `transfer_completed` for context purposes — the destination
+    // refreshes and gains access.
+    const offApproved = subscribeRealtimeEvent('transfer_approved', (payload) => {
+      console.log('[TRANSFER_APPROVED]', 'sse', payload);
+      setPendingTransfer(null);
+      void reverifySubscription('sse:transfer_approved');
+    });
+    // Source-device approve/reject popup fires on EITHER event name —
+    // the new backend uses `transfer_confirmation_required`; the older
+    // alias `transfer_requested` is kept as a fallback for backward
+    // compatibility.
+    const handleSourceTransferRequest = (eventName) => (payload) => {
+      console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'sse', eventName, payload);
       if (payload && typeof payload === 'object' && typeof payload.code === 'string') {
         setPendingTransfer(payload);
       } else {
         setPendingTransfer({ code: '', raw: payload });
       }
-    });
+    };
+    const offRequested = subscribeRealtimeEvent(
+      'transfer_requested',
+      handleSourceTransferRequest('transfer_requested'),
+    );
+    const offConfirmationRequired = subscribeRealtimeEvent(
+      'transfer_confirmation_required',
+      handleSourceTransferRequest('transfer_confirmation_required'),
+    );
     const offSettings = subscribeRealtimeEvent('app_settings_changed', (payload) => {
       console.log('[APP_SETTINGS_CHANGED]', 'sse', payload);
       void refresh({ showGlobalLoading: false, preserveDataOnError: true });
@@ -307,7 +328,9 @@ export function OsmaniAppProvider({ children }) {
     return () => {
       offRevoked();
       offCompleted();
+      offApproved();
       offRequested();
+      offConfirmationRequired();
       offSettings();
     };
   }, [refresh, reverifySubscription]);

@@ -396,10 +396,36 @@ export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') 
 }
 
 /**
- * Confirm / redeem a transfer code on the destination device. After the
- * backend accepts the confirm, we immediately call the canonical verify
- * endpoint so the returned `active` flag is sourced from the same
- * place the rest of the app trusts — never the confirm response alone.
+ * Detect whether the confirm response indicates the backend is waiting for
+ * the SOURCE device to approve/reject the transfer before activating.
+ * Multiple flag names accepted to stay forward-compatible with backend
+ * naming changes.
+ */
+function isPendingConfirmation(body) {
+  if (!isPlainObject(body)) return false;
+  const status = String(body.status ?? body.state ?? '').toLowerCase();
+  if (status === 'pending' || status === 'awaiting_confirmation' || status === 'awaiting_approval') return true;
+  if (body.pending === true) return true;
+  if (body.awaiting_confirmation === true) return true;
+  if (body.requires_confirmation === true) return true;
+  if (body.needs_confirmation === true) return true;
+  if (body.transfer_mode === 'confirmation' && body.active !== true && body.is_active !== true) return true;
+  return false;
+}
+
+/**
+ * Confirm / redeem a transfer code on the destination device.
+ *
+ * The backend supports a "pending confirmation" mode where the SOURCE
+ * device must approve the transfer before activation. In that case the
+ * confirm endpoint returns success but does NOT yet activate the
+ * subscription on this device — we surface a `{ status: 'pending' }`
+ * response and the caller waits for the realtime `transfer_approved`
+ * or `transfer_rejected` SSE event.
+ *
+ * Legacy / direct-activation responses still flow through the canonical
+ * `/api/subscription/verify` endpoint for the authoritative `active`
+ * answer; we never trust the confirm response alone.
  *
  * Backend route: POST /api/transfer/confirm
  */
@@ -418,6 +444,20 @@ export async function redeemTransfer(code, deviceId, deviceFingerprint) {
     console.log('[TRANSFER_CONFIRM]', 'failed', reason);
     throw new Error(String(reason));
   }
+  if (isPendingConfirmation(body)) {
+    console.log('[TRANSFER_CONFIRM]', 'pending', {
+      code: codeWithPrefix,
+      transferMode: body?.transfer_mode ?? null,
+    });
+    return {
+      status: 'pending',
+      active: false,
+      code: codeWithPrefix,
+      expiresAt: pickExpiresAt(body) ?? body?.expires_at ?? null,
+      raw: body,
+    };
+  }
+  // Legacy direct-activation path (no SOURCE confirmation step).
   const confirmedActiveSignal =
     body?.ok === true ||
     body?.success === true ||
@@ -433,20 +473,22 @@ export async function redeemTransfer(code, deviceId, deviceFingerprint) {
     console.log('[TRANSFER_CONFIRM]', 'response', {
       active: true,
       expiresAt: verified.expiresAt,
+      status: 'approved',
     });
-    return verified;
+    return { ...verified, status: 'approved' };
   }
   if (confirmedActiveSignal) {
     const out = normalizeVerifyResponse(body);
     console.log('[TRANSFER_CONFIRM]', 'response', {
       active: true,
       expiresAt: out.expiresAt,
+      status: 'approved',
       source: 'confirm-body',
     });
-    return { ...out, active: true };
+    return { ...out, active: true, status: 'approved' };
   }
-  console.log('[TRANSFER_CONFIRM]', 'response', { active: false });
-  return { ...normalizeVerifyResponse(body), active: false };
+  console.log('[TRANSFER_CONFIRM]', 'response', { active: false, status: 'unknown' });
+  return { ...normalizeVerifyResponse(body), active: false, status: 'unknown' };
 }
 
 /**
