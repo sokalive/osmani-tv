@@ -73,6 +73,30 @@ function formatTimer(totalSeconds) {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+function normalizeCooldownUntilMs(rawUntilMs, retryAfterSec = null) {
+  const n = Number(rawUntilMs);
+  if (Number.isFinite(n) && n > 0) {
+    if (n > 1000000000000) return n;
+    if (n > 1000000000) return n * 1000;
+    const retry = Number(retryAfterSec);
+    if (Number.isFinite(retry) && retry > 0) {
+      return Date.now() + retry * 1000;
+    }
+    return Date.now() + n;
+  }
+  const retry = Number(retryAfterSec);
+  if (Number.isFinite(retry) && retry > 0) {
+    return Date.now() + retry * 1000;
+  }
+  return null;
+}
+
+function secondsUntil(untilMs) {
+  const n = Number(untilMs);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.max(0, Math.ceil((n - Date.now()) / 1000));
+}
+
 function normalizePhone(raw) {
   return String(raw || '').replace(/[^\d]/g, '').slice(0, 10);
 }
@@ -117,6 +141,8 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
    * us into a negative state if the effect cleanup is delayed.
    */
   const countdownIntervalRef = useRef(null);
+  const cooldownTickIntervalRef = useRef(null);
+  const cooldownSnapshotRef = useRef(null);
 
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.92)).current;
@@ -141,16 +167,39 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
 
   useEffect(() => {
     if (visible) {
-      setStep(STEPS.INTRO);
+      const savedCooldown = cooldownSnapshotRef.current;
+      const restoredLeft = savedCooldown?.cooldownUntilMs
+        ? secondsUntil(savedCooldown.cooldownUntilMs)
+        : 0;
       setPhone('');
       setCode('');
       setGeneratedCode('');
       setRemainingSeconds(TRANSFER_CODE_SECONDS);
       setBusy(false);
       setError('');
-      setCooldownUntilMs(null);
-      setCooldownSecondsLeft(0);
-      setCooldownTotalMinutes(null);
+      if (restoredLeft > 0) {
+        console.log('[TRANSFER_COOLDOWN]', 'restore_on_modal_open', {
+          cooldownUntilMs: savedCooldown.cooldownUntilMs,
+          restoredLeft,
+          totalMinutes: savedCooldown.totalMinutes ?? null,
+        });
+        setCooldownUntilMs(savedCooldown.cooldownUntilMs);
+        setCooldownSecondsLeft(restoredLeft);
+        setCooldownTotalMinutes(savedCooldown.totalMinutes ?? null);
+        setStep(STEPS.COOLDOWN);
+      } else {
+        if (savedCooldown) {
+          console.log('[TRANSFER_COOLDOWN]', 'clear_stale_on_modal_open', {
+            cooldownUntilMs: savedCooldown.cooldownUntilMs ?? null,
+            restoredLeft,
+          });
+        }
+        cooldownSnapshotRef.current = null;
+        setCooldownUntilMs(null);
+        setCooldownSecondsLeft(0);
+        setCooldownTotalMinutes(null);
+        setStep(STEPS.INTRO);
+      }
       runEnterAnim();
     }
   }, [visible, runEnterAnim]);
@@ -234,6 +283,7 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
     setCooldownUntilMs(null);
     setCooldownSecondsLeft(0);
     setCooldownTotalMinutes(null);
+    cooldownSnapshotRef.current = null;
     setStep(STEPS.TRANSFER_COMPLETED_SOURCE);
     console.log('[HAMISHA_MODAL]', 'transfer_completed_source_entered');
     // Suppress the global hard-block modal — this in-modal success
@@ -258,19 +308,37 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
     try {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
       const r = await initiateTransfer(deviceId, deviceFingerprint, phone);
+      cooldownSnapshotRef.current = null;
+      setCooldownUntilMs(null);
+      setCooldownSecondsLeft(0);
+      setCooldownTotalMinutes(null);
       setGeneratedCode(r.code);
       setRemainingSeconds(TRANSFER_CODE_SECONDS);
       setStep(STEPS.GENERATED);
     } catch (e) {
+      console.log('[TRANSFER_REQUEST_RUNTIME]', 'handle_generate_error', {
+        code: e?.code ?? null,
+        message: e?.message ?? null,
+        rawPayload: e?.raw ?? null,
+      });
+      if (e?.code === 'TRANSFER_DISABLED') {
+        console.log('[TRANSFER_DISABLED]', 'response_payload', e?.raw ?? null);
+        setError(e?.message || 'Huduma ya kuhamisha kifurushi imesitishwa kwa muda. Tafadhali jaribu tena baadaye.');
+        setStep(STEPS.PHONE);
+        return;
+      }
+      if (e?.code === 'TRANSFER_DAILY_LIMIT' || e?.code === 'TRANSFER_WEEKLY_LIMIT') {
+        setError(e?.message || 'Umefikia kikomo cha kuomba code. Tafadhali jaribu tena baadaye.');
+        setStep(STEPS.PHONE);
+        return;
+      }
       // Backend-enforced cooldown: surface a dedicated screen with a
       // live countdown anchored to the backend's expiry timestamp.
       // Duration is NEVER hardcoded — `cooldownUntilMs` comes from the
       // backend response (admin-configurable on the server).
       if (e?.code === 'TRANSFER_COOLDOWN') {
-        const untilMs = Number.isFinite(e?.cooldownUntilMs) ? Number(e.cooldownUntilMs) : null;
-        const initialLeft = untilMs
-          ? Math.max(0, Math.ceil((untilMs - Date.now()) / 1000))
-          : (Number.isFinite(e?.retryAfterSec) ? Math.max(0, Math.floor(e.retryAfterSec)) : 0);
+        const untilMs = normalizeCooldownUntilMs(e?.cooldownUntilMs, e?.retryAfterSec);
+        const initialLeft = secondsUntil(untilMs);
         // Capture the original cooldown duration in minutes so the
         // descriptive Swahili line stays stable while the live timer
         // ticks down. Prefer `retryAfterSec` (the original duration
@@ -289,12 +357,17 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
           return null;
         })();
         console.log('[TRANSFER_COOLDOWN]', 'enter_cooldown_step', {
+          rawBackendPayload: e?.raw ?? null,
           cooldownUntilMs: untilMs,
           retryAfterSec: e?.retryAfterSec ?? null,
           initialLeft,
           totalMinutes,
           backendMessage: e?.message ?? null,
         });
+        cooldownSnapshotRef.current = {
+          cooldownUntilMs: untilMs,
+          totalMinutes,
+        };
         setCooldownUntilMs(untilMs);
         setCooldownSecondsLeft(initialLeft);
         setCooldownTotalMinutes(totalMinutes);
@@ -319,18 +392,53 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
   useEffect(() => {
     if (!visible) return undefined;
     if (step !== STEPS.COOLDOWN) return undefined;
+    if (cooldownTickIntervalRef.current) {
+      clearInterval(cooldownTickIntervalRef.current);
+      cooldownTickIntervalRef.current = null;
+    }
     const tick = () => {
-      if (Number.isFinite(cooldownUntilMs) && cooldownUntilMs > 0) {
-        const left = Math.max(0, Math.ceil((cooldownUntilMs - Date.now()) / 1000));
-        setCooldownSecondsLeft(left);
-      } else {
-        setCooldownSecondsLeft((prev) => Math.max(0, prev - 1));
+      const sourceUntilMs = cooldownSnapshotRef.current?.cooldownUntilMs ?? cooldownUntilMs;
+      const left = secondsUntil(sourceUntilMs);
+      console.log('[TRANSFER_COOLDOWN]', 'tick', {
+        cooldownUntilMs: sourceUntilMs ?? null,
+        remainingSeconds: left,
+        retryEnabled: left <= 0 && !busy,
+      });
+      setCooldownSecondsLeft(left);
+      if (left <= 0) {
+        if (cooldownTickIntervalRef.current) {
+          clearInterval(cooldownTickIntervalRef.current);
+          cooldownTickIntervalRef.current = null;
+        }
+        cooldownSnapshotRef.current = null;
+        setCooldownUntilMs(null);
+        setCooldownTotalMinutes(null);
+        console.log('[TRANSFER_COOLDOWN]', 'expired_and_cleared', {
+          retryEnabled: !busy,
+        });
       }
     };
     tick();
     const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [visible, step, cooldownUntilMs]);
+    cooldownTickIntervalRef.current = t;
+    return () => {
+      clearInterval(t);
+      if (cooldownTickIntervalRef.current === t) {
+        cooldownTickIntervalRef.current = null;
+      }
+    };
+  }, [visible, step, cooldownUntilMs, busy]);
+
+  const cooldownRetryEnabled = step === STEPS.COOLDOWN && cooldownSecondsLeft <= 0 && !busy;
+
+  useEffect(() => {
+    if (step !== STEPS.COOLDOWN) return;
+    console.log('[TRANSFER_COOLDOWN]', 'retry_button_state', {
+      cooldownSecondsLeft,
+      busy,
+      enabled: cooldownRetryEnabled,
+    });
+  }, [step, cooldownSecondsLeft, busy, cooldownRetryEnabled]);
 
   /**
    * Direct activation. The backend rebinds ownership on a successful
@@ -643,16 +751,17 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
                       <Pressable
                         style={[
                           styles.primaryWrap,
-                          (cooldownSecondsLeft > 0 || busy) && styles.btnDisabled,
+                          !cooldownRetryEnabled && styles.btnDisabled,
                         ]}
                         onPress={() => {
                           setError('');
+                          cooldownSnapshotRef.current = null;
                           setCooldownUntilMs(null);
                           setCooldownSecondsLeft(0);
                           setCooldownTotalMinutes(null);
                           setStep(STEPS.PHONE);
                         }}
-                        disabled={cooldownSecondsLeft > 0 || busy}
+                        disabled={!cooldownRetryEnabled}
                         accessibilityRole="button"
                         accessibilityLabel="Jaribu tena"
                       >

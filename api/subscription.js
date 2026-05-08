@@ -150,6 +150,14 @@ function pickNumber(...candidates) {
   return null;
 }
 
+function pickBool(...candidates) {
+  for (const c of candidates) {
+    if (c === true || c === 1 || c === '1' || c === 'true') return true;
+    if (c === false || c === 0 || c === '0' || c === 'false') return false;
+  }
+  return null;
+}
+
 function pickAmount(body) {
   if (!isPlainObject(body)) return null;
   const data = isPlainObject(body.data) ? body.data : null;
@@ -371,21 +379,51 @@ function ensureTransferPrefix(raw) {
  * across SSE/connection drops).
  */
 export function extractTransferCooldown(body, statusCode, headers) {
+  const data = isPlainObject(body?.data) ? body.data : null;
+  const cooldownObj = isPlainObject(body?.cooldown) ? body.cooldown : null;
   const errStr = String(body?.error ?? body?.message ?? '').toLowerCase();
   const matchesText = errStr.includes('cooldown') || errStr.includes('subiri');
   const retryAfterSec = pickNumber(
     body?.retry_after,
     body?.retryAfter,
+    data?.retry_after,
+    data?.retryAfter,
     body?.retry_in,
     body?.retryIn,
+    data?.retry_in,
+    data?.retryIn,
     body?.cooldown_seconds,
     body?.cooldownSeconds,
+    data?.cooldown_seconds,
+    data?.cooldownSeconds,
     body?.cooldown_remaining,
     body?.cooldownRemaining,
+    data?.cooldown_remaining,
+    data?.cooldownRemaining,
     body?.seconds_remaining,
     body?.secondsRemaining,
-    body?.cooldown?.seconds,
-    body?.cooldown?.remaining,
+    data?.seconds_remaining,
+    data?.secondsRemaining,
+    cooldownObj?.seconds,
+    cooldownObj?.remaining,
+  );
+  const rawCooldownUntilMs = pickNumber(
+    body?.cooldownUntilMs,
+    body?.cooldown_until_ms,
+    body?.cooldownExpiresAtMs,
+    body?.cooldown_expires_at_ms,
+    body?.retryAtMs,
+    body?.retry_at_ms,
+    data?.cooldownUntilMs,
+    data?.cooldown_until_ms,
+    data?.cooldownExpiresAtMs,
+    data?.cooldown_expires_at_ms,
+    data?.retryAtMs,
+    data?.retry_at_ms,
+    cooldownObj?.untilMs,
+    cooldownObj?.until_ms,
+    cooldownObj?.expiresAtMs,
+    cooldownObj?.expires_at_ms,
   );
   const cooldownUntilIso = (() => {
     const v =
@@ -395,8 +433,14 @@ export function extractTransferCooldown(body, statusCode, headers) {
       body?.cooldownExpiresAt ??
       body?.retry_at ??
       body?.retryAt ??
-      body?.cooldown?.until ??
-      body?.cooldown?.expires_at ??
+      data?.cooldown_until ??
+      data?.cooldownUntil ??
+      data?.cooldown_expires_at ??
+      data?.cooldownExpiresAt ??
+      data?.retry_at ??
+      data?.retryAt ??
+      cooldownObj?.until ??
+      cooldownObj?.expires_at ??
       null;
     return v != null ? String(v) : null;
   })();
@@ -422,10 +466,27 @@ export function extractTransferCooldown(body, statusCode, headers) {
     matchesText ||
     statusCode === 429 ||
     retryAfterSec != null ||
+    rawCooldownUntilMs != null ||
     cooldownUntilIso != null ||
     headerRetryAfterSec != null;
   if (!looksLikeCooldown) return null;
   let cooldownUntilMs = null;
+  if (rawCooldownUntilMs != null) {
+    // Backend field name is `cooldownUntilMs`, but runtime payloads have
+    // historically mixed units. Interpret:
+    //   > 1e12 as epoch milliseconds,
+    //   > 1e9  as epoch seconds,
+    //   smaller values as duration milliseconds (or prefer retryAfterSec).
+    if (rawCooldownUntilMs > 1000000000000) {
+      cooldownUntilMs = rawCooldownUntilMs;
+    } else if (rawCooldownUntilMs > 1000000000) {
+      cooldownUntilMs = rawCooldownUntilMs * 1000;
+    } else if (retryAfterSec != null) {
+      cooldownUntilMs = Date.now() + Math.max(0, retryAfterSec) * 1000;
+    } else if (rawCooldownUntilMs > 0) {
+      cooldownUntilMs = Date.now() + rawCooldownUntilMs;
+    }
+  }
   if (cooldownUntilIso) {
     const t = Date.parse(cooldownUntilIso);
     if (Number.isFinite(t)) cooldownUntilMs = t;
@@ -436,11 +497,65 @@ export function extractTransferCooldown(body, statusCode, headers) {
   if (cooldownUntilMs == null && headerRetryAfterSec != null) {
     cooldownUntilMs = Date.now() + Math.max(0, headerRetryAfterSec) * 1000;
   }
+  console.log('[TRANSFER_COOLDOWN_PARSE]', {
+    rawPayload: body,
+    rawCooldownUntilMs,
+    parsedCooldownUntilMs: cooldownUntilMs,
+    retryAfterSec: retryAfterSec ?? headerRetryAfterSec ?? null,
+    cooldownUntilIso,
+  });
   return {
     cooldownUntilMs,
     retryAfterSec: retryAfterSec ?? headerRetryAfterSec ?? null,
     cooldownUntilIso,
   };
+}
+
+export function extractTransferPolicy(body) {
+  const data = isPlainObject(body?.data) ? body.data : null;
+  const flags = {
+    transferDisabled: pickBool(
+      body?.transfer_disabled,
+      body?.transferDisabled,
+      data?.transfer_disabled,
+      data?.transferDisabled,
+    ) === true,
+    dailyLimitReached: pickBool(
+      body?.daily_limit_reached,
+      body?.dailyLimitReached,
+      data?.daily_limit_reached,
+      data?.dailyLimitReached,
+    ) === true,
+    weeklyLimitReached: pickBool(
+      body?.weekly_limit_reached,
+      body?.weeklyLimitReached,
+      data?.weekly_limit_reached,
+      data?.weeklyLimitReached,
+    ) === true,
+  };
+  const msg = String(body?.message ?? body?.error ?? data?.message ?? data?.error ?? '');
+  if (flags.transferDisabled) {
+    return {
+      code: 'TRANSFER_DISABLED',
+      message: msg || 'Huduma ya kuhamisha kifurushi imesitishwa kwa muda. Tafadhali jaribu tena baadaye.',
+      raw: body,
+    };
+  }
+  if (flags.dailyLimitReached) {
+    return {
+      code: 'TRANSFER_DAILY_LIMIT',
+      message: msg || 'Umefikia kikomo cha kuomba code kwa leo. Tafadhali jaribu tena baadaye.',
+      raw: body,
+    };
+  }
+  if (flags.weeklyLimitReached) {
+    return {
+      code: 'TRANSFER_WEEKLY_LIMIT',
+      message: msg || 'Umefikia kikomo cha kuomba code kwa wiki hii. Tafadhali jaribu tena baadaye.',
+      raw: body,
+    };
+  }
+  return null;
 }
 
 /**
@@ -474,8 +589,24 @@ export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') 
     payload.payment_phone = normalizedPhone;
   }
   const { res, body } = await postJson(url, payload);
+  const policy = extractTransferPolicy(body);
+  if (policy) {
+    console.log('[TRANSFER_REQUEST]', 'policy_block', {
+      status: res.status,
+      code: policy.code,
+      payload: policy.raw,
+    });
+    const err = new Error(policy.message);
+    err.code = policy.code;
+    err.raw = policy.raw;
+    throw err;
+  }
   if (!res.ok) {
     const reason = body?.error ?? body?.message ?? `HTTP ${res.status}`;
+    console.log('[TRANSFER_REQUEST]', 'raw_error_payload', {
+      status: res.status,
+      body,
+    });
     const cooldown = extractTransferCooldown(body, res.status, res.headers);
     if (cooldown) {
       console.log('[TRANSFER_REQUEST]', 'cooldown', {
