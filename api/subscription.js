@@ -512,22 +512,21 @@ export function extractTransferCooldown(body, statusCode, headers) {
 }
 
 /**
- * Detect transfer policy gates from a /api/transfer/request response.
+ * Detect per-device transfer-limit gates from a /api/transfer/request
+ * response. The transfer flow now depends ONLY on backend-enforced
+ * limits — there is no `transfer_disabled` / maintenance toggle in the
+ * mobile runtime any more. Cooldown is parsed separately by
+ * `extractTransferCooldown`.
  *
- * Recognizes (in priority order):
- *   1. Maintenance / transfer-disabled — the entire feature is OFF
- *      (admin toggle). Surfaces as `TRANSFER_DISABLED`. Detected via
- *      any of:
- *        - boolean `transfer_disabled` / `transferDisabled`
- *        - boolean `maintenance` / `maintenance_mode` / `maintenanceMode`
- *        - string `code` / `error_code` / `errorCode` / `reason` /
- *          `status` containing "transfer_disabled" or "maintenance"
- *   2. Daily limit reached — `TRANSFER_DAILY_LIMIT`
- *   3. Weekly limit reached — `TRANSFER_WEEKLY_LIMIT`
+ * Recognized shapes (priority: daily then weekly):
+ *   - boolean `daily_limit_reached` / `dailyLimitReached`
+ *   - boolean `weekly_limit_reached` / `weeklyLimitReached`
+ *   - string `code` / `error_code` / `errorCode` / `reason` / `status`
+ *     equal to a known limit token
  *
- * Maintenance always wins over limits/cooldown — when the feature is
- * turned off, the app must show maintenance copy regardless of any
- * stale per-device state.
+ * Returns `{ code, message, raw }` when a limit gate fires, else null.
+ * `message` is taken straight from the backend body when present so
+ * the UI can keep its localised copy authoritative.
  */
 export function extractTransferPolicy(body) {
   const data = isPlainObject(body?.data) ? body.data : null;
@@ -545,20 +544,6 @@ export function extractTransferPolicy(body) {
       ?? '',
   ).toLowerCase();
   const flags = {
-    transferDisabled: pickBool(
-      body?.transfer_disabled,
-      body?.transferDisabled,
-      data?.transfer_disabled,
-      data?.transferDisabled,
-    ) === true,
-    maintenance: pickBool(
-      body?.maintenance,
-      body?.maintenance_mode,
-      body?.maintenanceMode,
-      data?.maintenance,
-      data?.maintenance_mode,
-      data?.maintenanceMode,
-    ) === true,
     dailyLimitReached: pickBool(
       body?.daily_limit_reached,
       body?.dailyLimitReached,
@@ -572,12 +557,6 @@ export function extractTransferPolicy(body) {
       data?.weeklyLimitReached,
     ) === true,
   };
-  const codeIsMaintenance =
-    codeStr === 'transfer_disabled'
-    || codeStr === 'maintenance'
-    || codeStr === 'maintenance_mode'
-    || codeStr === 'under_maintenance'
-    || codeStr === 'service_disabled';
   const codeIsDailyLimit =
     codeStr === 'daily_limit_reached'
     || codeStr === 'daily_limit'
@@ -595,24 +574,17 @@ export function extractTransferPolicy(body) {
     backendMessage: msg || null,
     rawBody: body,
   });
-  if (flags.transferDisabled || flags.maintenance || codeIsMaintenance) {
-    return {
-      code: 'TRANSFER_DISABLED',
-      message: msg || 'Huduma ya kuhamisha kifurushi imesitishwa kwa muda. Tafadhali jaribu tena baadaye.',
-      raw: body,
-    };
-  }
   if (flags.dailyLimitReached || codeIsDailyLimit) {
     return {
       code: 'TRANSFER_DAILY_LIMIT',
-      message: msg || 'Umefikia kikomo cha kuomba code kwa leo. Tafadhali jaribu tena baadaye.',
+      message: msg || null,
       raw: body,
     };
   }
   if (flags.weeklyLimitReached || codeIsWeeklyLimit) {
     return {
       code: 'TRANSFER_WEEKLY_LIMIT',
-      message: msg || 'Umefikia kikomo cha kuomba code kwa wiki hii. Tafadhali jaribu tena baadaye.',
+      message: msg || null,
       raw: body,
     };
   }
@@ -655,10 +627,10 @@ export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') 
     ok: res.ok,
     body,
   });
-  // Maintenance / disabled / limit gates always win over cooldown and
-  // raw HTTP status — the admin toggle must surface immediately even
-  // if the backend returns a 200-shaped body or carries a stale
-  // per-device cooldown alongside the maintenance flag.
+  // Per-device limit gates win over cooldown / HTTP status. The
+  // backend is the single source of truth for daily / weekly limits
+  // and any limit response — even one alongside a 200 body — must
+  // surface immediately.
   const policy = extractTransferPolicy(body);
   if (policy) {
     console.log('[TRANSFER_REQUEST]', 'policy_block', {

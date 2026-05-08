@@ -36,6 +36,16 @@ const MODAL_W = '88%';
 const MODAL_MAX_W = 392;
 const TRANSFER_CODE_SECONDS = 120;
 
+/**
+ * Single source of truth for the daily / weekly limit copy. Shown both
+ * as an Alert popup (for prominence) and inline on the PHONE step (so
+ * the reason persists after the user dismisses the popup). The exact
+ * wording is product-mandated and must NOT be replaced by backend
+ * `message` text.
+ */
+const TRANSFER_LIMIT_REACHED_MESSAGE =
+  'Umefikia kiwango cha mwisho cha kuamisha kifurushi. Tafadhali wasiliana na muhudumu kama unahitaji kuamisha kifurushi tena.';
+
 const GRADIENT_CTA = [COLORS.yellow, COLORS.yellowDark];
 
 /**
@@ -337,26 +347,15 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
         message: e?.message ?? null,
         rawPayload: e?.raw ?? null,
       });
-      if (e?.code === 'TRANSFER_DISABLED') {
-        console.log('[TRANSFER_DISABLED]', 'response_payload', e?.raw ?? null);
-        // Maintenance must override any prior per-device gate. Clear
-        // any stale cooldown snapshot/state so the modal can't pop
-        // back into a cooldown screen when the user reopens it.
-        if (cooldownTickIntervalRef.current) {
-          clearInterval(cooldownTickIntervalRef.current);
-          cooldownTickIntervalRef.current = null;
-        }
-        cooldownSnapshotRef.current = null;
-        setCooldownUntilMs(null);
-        setCooldownSecondsLeft(0);
-        setCooldownTotalMinutes(null);
-        setError(e?.message || 'Huduma ya kuhamisha kifurushi imesitishwa kwa muda. Tafadhali jaribu tena baadaye.');
-        setStep(STEPS.PHONE);
-        return;
-      }
       if (e?.code === 'TRANSFER_DAILY_LIMIT' || e?.code === 'TRANSFER_WEEKLY_LIMIT') {
-        // Limit gates also clear stale cooldown — the limit message
-        // is the source of truth for "why you can't transfer right now".
+        console.log('[TRANSFER_LIMIT]', 'response_payload', {
+          code: e.code,
+          rawPayload: e?.raw ?? null,
+        });
+        // Limit gates clear any stale cooldown — the limit message is
+        // the sole source of truth for "why you can't transfer right
+        // now". The backend's own `message` field is intentionally
+        // ignored; the product-mandated Swahili copy is shown verbatim.
         if (cooldownTickIntervalRef.current) {
           clearInterval(cooldownTickIntervalRef.current);
           cooldownTickIntervalRef.current = null;
@@ -365,8 +364,9 @@ export default function HamishaKifurushiModal({ visible, onClose, onOpenPlans })
         setCooldownUntilMs(null);
         setCooldownSecondsLeft(0);
         setCooldownTotalMinutes(null);
-        setError(e?.message || 'Umefikia kikomo cha kuomba code. Tafadhali jaribu tena baadaye.');
+        setError(TRANSFER_LIMIT_REACHED_MESSAGE);
         setStep(STEPS.PHONE);
+        Alert.alert('', TRANSFER_LIMIT_REACHED_MESSAGE);
         return;
       }
       // Backend-enforced cooldown: surface a dedicated screen with a
