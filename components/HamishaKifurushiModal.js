@@ -83,6 +83,27 @@ function pickEventCode(payload) {
   );
 }
 
+function pickPayloadString(payload, keys) {
+  if (!payload || typeof payload !== 'object') return '';
+  for (const key of keys) {
+    const value = key.split('.').reduce((acc, part) => (acc && typeof acc === 'object' ? acc[part] : undefined), payload);
+    if (value != null && String(value).trim() !== '') return String(value).trim();
+  }
+  return '';
+}
+
+function pickSourceDeviceId(payload) {
+  return pickPayloadString(payload, [
+    'source_device_id',
+    'sourceDeviceId',
+    'source_device.device_id',
+    'source_device.id',
+    'sourceDevice.deviceId',
+    'sourceDevice.id',
+    'source.id',
+  ]);
+}
+
 export default function HamishaKifurushiModal({ visible, onClose }) {
   const { height: windowHeight } = useWindowDimensions();
   const cardMaxHeight = windowHeight * 0.82;
@@ -155,6 +176,69 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   const isPhoneValid = useMemo(() => /^0[67]\d{8}$/.test(phone), [phone]);
   const redeemCode = code.trim();
   const isRedeemCodeValid = /^\d{6}$/.test(redeemCode);
+
+  /**
+   * SOURCE-device bridge. The global context owns TransferConfirmModal,
+   * but this local native Modal can visually cover it. Keep this listener
+   * mounted while Hamisha is open and close the code modal immediately
+   * once the backend asks the source device to approve/reject.
+   */
+  useEffect(() => {
+    if (!visible) return undefined;
+    let cancelled = false;
+    const currentModalState = () => ({
+      visible,
+      step,
+      generatedCode,
+      waitingCode,
+      redeemCode,
+    });
+    const onConfirmationRequired = (eventName) => async (payload) => {
+      let currentDeviceId = '';
+      try {
+        const identity = await getDeviceIdentity();
+        currentDeviceId = identity?.deviceId ? String(identity.deviceId) : '';
+      } catch {}
+      if (cancelled) return;
+      const sourceDeviceId = pickSourceDeviceId(payload);
+      const eventCode = pickEventCode(payload);
+      const codeMatches = Boolean(generatedCode) && bareCode(generatedCode) === bareCode(eventCode);
+      const sourceMatches = Boolean(sourceDeviceId && currentDeviceId && sourceDeviceId === currentDeviceId);
+      const shouldClose = codeMatches || sourceMatches;
+      console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'hamisha_modal_event', {
+        eventName,
+        payload,
+        currentDeviceId,
+        sourceDeviceId,
+        eventCode,
+        codeMatches,
+        sourceMatches,
+        shouldClose,
+        modalState: currentModalState(),
+      });
+      if (shouldClose) {
+        console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'closing_source_code_modal', {
+          eventName,
+          currentDeviceId,
+          generatedCode,
+        });
+        close();
+      }
+    };
+    const offConfirmationRequired = subscribeRealtimeEvent(
+      'transfer_confirmation_required',
+      onConfirmationRequired('transfer_confirmation_required'),
+    );
+    const offRequested = subscribeRealtimeEvent(
+      'transfer_requested',
+      onConfirmationRequired('transfer_requested'),
+    );
+    return () => {
+      cancelled = true;
+      offConfirmationRequired();
+      offRequested();
+    };
+  }, [visible, step, generatedCode, waitingCode, redeemCode, close]);
 
   const handleGenerate = useCallback(async () => {
     if (!isPhoneValid) {

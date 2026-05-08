@@ -23,6 +23,36 @@ const LIVE_SYNC_MAX_MS = 120000;
 
 const OsmaniAppContext = createContext(null);
 
+function pickPayloadString(payload, keys) {
+  if (!payload || typeof payload !== 'object') return '';
+  for (const key of keys) {
+    const value = key.split('.').reduce((acc, part) => (acc && typeof acc === 'object' ? acc[part] : undefined), payload);
+    if (value != null && String(value).trim() !== '') return String(value).trim();
+  }
+  return '';
+}
+
+function pickSourceDeviceId(payload) {
+  return pickPayloadString(payload, [
+    'source_device_id',
+    'sourceDeviceId',
+    'source_device.device_id',
+    'source_device.id',
+    'sourceDevice.deviceId',
+    'sourceDevice.id',
+    'source.id',
+  ]);
+}
+
+function pickTransferCode(payload) {
+  return pickPayloadString(payload, [
+    'code',
+    'transfer_code',
+    'transferCode',
+    'transfer.code',
+  ]);
+}
+
 export function OsmaniAppProvider({ children }) {
   const [settings, setSettings] = useState(defaultSettings);
   const [rawChannels, setRawChannels] = useState([]);
@@ -304,12 +334,33 @@ export function OsmaniAppProvider({ children }) {
     // the new backend uses `transfer_confirmation_required`; the older
     // alias `transfer_requested` is kept as a fallback for backward
     // compatibility.
-    const handleSourceTransferRequest = (eventName) => (payload) => {
-      console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'sse', eventName, payload);
-      if (payload && typeof payload === 'object' && typeof payload.code === 'string') {
-        setPendingTransfer(payload);
+    const handleSourceTransferRequest = (eventName) => async (payload) => {
+      let deviceId = '';
+      try {
+        const identity = await getDeviceIdentity();
+        deviceId = identity?.deviceId ? String(identity.deviceId) : '';
+      } catch {}
+      const sourceDeviceId = pickSourceDeviceId(payload);
+      const sourceMatches = !sourceDeviceId || !deviceId || sourceDeviceId === deviceId;
+      console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'event_received', {
+        eventName,
+        payload,
+        currentDeviceId: deviceId,
+        sourceDeviceId,
+        sourceMatches,
+      });
+      if (!sourceMatches) {
+        console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'ignored_non_source_device', {
+          currentDeviceId: deviceId,
+          sourceDeviceId,
+        });
+        return;
+      }
+      const code = pickTransferCode(payload);
+      if (payload && typeof payload === 'object') {
+        setPendingTransfer({ ...payload, code });
       } else {
-        setPendingTransfer({ code: '', raw: payload });
+        setPendingTransfer({ code, raw: payload });
       }
     };
     const offRequested = subscribeRealtimeEvent(
