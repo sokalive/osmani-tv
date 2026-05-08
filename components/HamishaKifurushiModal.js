@@ -71,7 +71,7 @@ function normalizePhone(raw) {
 export default function HamishaKifurushiModal({ visible, onClose }) {
   const { height: windowHeight } = useWindowDimensions();
   const cardMaxHeight = windowHeight * 0.82;
-  const { reverifySubscription } = useOsmaniApp();
+  const { reverifySubscription, revokedReason, isSubscribed } = useOsmaniApp();
 
   const [step, setStep] = useState(STEPS.INTRO);
   const [phone, setPhone] = useState('');
@@ -80,6 +80,14 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   const [remainingSeconds, setRemainingSeconds] = useState(TRANSFER_CODE_SECONDS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  /**
+   * Manual countdown ref. The interval-based effect below already
+   * clears itself on visibility/step change, but we keep this ref so
+   * the revoke watcher can `clearInterval` defensively the instant the
+   * backend tells us this device lost access — no leaked tick can drag
+   * us into a negative state if the effect cleanup is delayed.
+   */
+  const countdownIntervalRef = useRef(null);
 
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.92)).current;
@@ -125,8 +133,58 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     const timer = setInterval(() => {
       setRemainingSeconds((prev) => Math.max(0, prev - 1));
     }, 1000);
-    return () => clearInterval(timer);
+    countdownIntervalRef.current = timer;
+    return () => {
+      clearInterval(timer);
+      if (countdownIntervalRef.current === timer) {
+        countdownIntervalRef.current = null;
+      }
+    };
   }, [visible, step, generatedCode]);
+
+  /**
+   * Revoke watcher.
+   *
+   * The moment the backend reports this device lost access (via
+   * `subscription_revoked` or `transfer_completed` SSE, or any verify
+   * tick that returns active=false), tear down the local transfer flow:
+   *   - stop the countdown interval defensively
+   *   - clear all transfer-related state (code, generatedCode, phone,
+   *     step, error)
+   *   - close the modal so the global `TransferredAwayModal` ("Kifurushi
+   *     Kimehamishwa" + LIPIA TENA) becomes the sole foreground UI
+   *
+   * Skip when the modal is not visible (no UI to dismiss) or already on
+   * the success screen (REDEEMED is a target-side outcome and does NOT
+   * imply the source revoke path).
+   */
+  useEffect(() => {
+    if (!visible) return;
+    const revoked = Boolean(revokedReason) || isSubscribed === false;
+    if (!revoked) return;
+    if (step === STEPS.REDEEMED) return;
+    console.log('[HAMISHA_MODAL]', 'revoke_detected', {
+      revokedReason,
+      isSubscribed,
+      step,
+      hadGeneratedCode: Boolean(generatedCode),
+    });
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+      console.log('[HAMISHA_MODAL]', 'countdown_timer_cleared');
+    }
+    setRemainingSeconds(0);
+    setGeneratedCode('');
+    setCode('');
+    setPhone('');
+    setError('');
+    setBusy(false);
+    setStep(STEPS.INTRO);
+    console.log('[HAMISHA_MODAL]', 'transfer_state_cleared');
+    onClose?.();
+    console.log('[HAMISHA_MODAL]', 'modal_closed_for_revoked_state');
+  }, [visible, revokedReason, isSubscribed, step, generatedCode, onClose]);
 
   const isPhoneValid = useMemo(() => /^0[67]\d{8}$/.test(phone), [phone]);
   const redeemCode = code.trim();

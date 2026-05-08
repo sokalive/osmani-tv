@@ -28,14 +28,14 @@ export default function TransferredAwayModal({
 }) {
   const title =
     reason === 'transferred'
-      ? 'Kifurushi kimehamishwa'
+      ? 'Kifurushi Kimehamishwa'
       : reason === 'revoked'
         ? 'Kifurushi kimezuiwa'
         : 'Kifurushi kimekwisha';
 
   const body =
     reason === 'transferred'
-      ? 'Kifurushi chako kimehamishwa kwenda kifaa kingine. Hauwezi tena kutazama channel za kulipia kwenye simu hii hadi ulipie tena au urudishe kifurushi.'
+      ? 'Kifurushi chako kimehamishwa kwenye kifaa kingine.\n\nKifaa hiki hakina tena huduma ya premium.\nTafadhali lipia tena ili kuendelea kutazama channel zote.'
       : reason === 'revoked'
         ? 'Admin amesimamisha ufikiaji wa kifurushi chako. Tafadhali wasiliana na admin au lipia tena ili kuendelea.'
         : 'Kifurushi chako kimekwisha. Lipia tena au rudisha kifurushi ili kuendelea kutazama.';
