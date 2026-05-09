@@ -305,7 +305,6 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
   );
 
   const renderCard = ({ item }) => {
-    const locked = !freeMode && item.isPremium && !isSubscribed;
     return (
       <Pressable
         style={styles.card}
@@ -361,11 +360,6 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
               </Text>
             </View>
           </View>
-          {locked ? (
-            <View style={styles.lockOverlay} pointerEvents="none">
-              <Ionicons name="lock-closed" size={28} color={COLORS.white} />
-            </View>
-          ) : null}
         </View>
       </Pressable>
     );
@@ -932,13 +926,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
-  },
-  lockOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.42)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
   },
   tabLabel: {
     fontSize: 11,

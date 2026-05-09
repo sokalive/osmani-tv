@@ -67,8 +67,12 @@ function StatCard({ icon, value, label }) {
  * they purely render values that the verify endpoint already returned.
  */
 function formatPrice(amount, currency) {
-  if (amount == null || !Number.isFinite(Number(amount))) return null;
-  const n = Number(amount);
+  if (amount == null || amount === '') return null;
+  const n =
+    typeof amount === 'number' && Number.isFinite(amount)
+      ? amount
+      : Number(String(amount).replace(/,/g, ''));
+  if (!Number.isFinite(n)) return null;
   const code = String(currency || '').toUpperCase();
   const prefix = code === 'TZS' || code === '' ? 'TSh' : code;
   let formatted;
@@ -78,6 +82,27 @@ function formatPrice(amount, currency) {
     formatted = String(n);
   }
   return `${prefix} ${formatted}`;
+}
+
+function resolveSubscriptionPaymentLabel(details) {
+  if (!details) return null;
+  const direct = formatPrice(details.amount, details.currency);
+  if (direct) return direct;
+  const want = String(details.planName ?? '').trim().toLowerCase();
+  const plans = Array.isArray(details.plans) ? details.plans : [];
+  const pickFromPlan = (p) =>
+    formatPrice(
+      p?.price ?? p?.amount ?? p?.Price ?? p?.Amount,
+      p?.currency ?? p?.currency_code ?? p?.currencyCode ?? details.currency,
+    );
+  if (want) {
+    for (const p of plans) {
+      const label = String(p?.name ?? p?.title ?? '').trim().toLowerCase();
+      if (label && label === want) return pickFromPlan(p);
+    }
+  }
+  if (plans.length === 1) return pickFromPlan(plans[0]);
+  return null;
 }
 
 function isPremiumChannel(raw, freeMode) {
@@ -145,7 +170,7 @@ export default function AkauntiYanguScreen() {
   // Card 1: Malipo / Kifurushi
   const paymentValue = useMemo(() => {
     if (!isSubscribed) return 'Hapana';
-    return formatPrice(subscriptionDetails?.amount, subscriptionDetails?.currency) ?? 'Hai';
+    return resolveSubscriptionPaymentLabel(subscriptionDetails) ?? '—';
   }, [isSubscribed, subscriptionDetails]);
 
   // Card 2: Hali ya Ufikiaji  ->  "Channel Zilizofunguka" + "X / Y"
@@ -153,13 +178,14 @@ export default function AkauntiYanguScreen() {
     ? `${unlockedChannels} / ${totalChannels}`
     : (isSubscribed ? 'Hai' : 'Hakuna');
 
-  // Card 3: Muda wa Kifurushi  -> "{N} siku" from backend-anchored remaining.
+  // Card 3: Muda wa Kifurushi — package length in days from verify/plan (numeric only).
   const durationValue = useMemo(() => {
     if (!isSubscribed) return '—';
-    if (progress.ok && progress.remainingDays > 0) return `${progress.remainingDays} siku`;
-    if (progress.ok && progress.remainingDays === 0) return 'Leo';
-    return 'Hai';
-  }, [isSubscribed, progress]);
+    const raw = subscriptionDetails?.planDurationDays;
+    const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim());
+    if (Number.isFinite(n) && n > 0) return String(Math.trunc(n));
+    return '—';
+  }, [isSubscribed, subscriptionDetails]);
 
   // Card 5 (status)
   const statusLabel = isSubscribed ? 'ACTIVE' : 'HUNA USAJILI';

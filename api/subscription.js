@@ -143,10 +143,19 @@ function pickNumber(...candidates) {
   return null;
 }
 
+/** `data.subscription` wrapper shape some verify payloads use */
+function pickDataSubscription(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  return isPlainObject(data?.subscription) ? data.subscription : null;
+}
+
 function pickAmount(body) {
   if (!isPlainObject(body)) return null;
   const data = isPlainObject(body.data) ? body.data : null;
   const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  const dataSub = pickDataSubscription(body);
+  const dataSubPlan = isPlainObject(dataSub?.plan) ? dataSub.plan : null;
   const plan = isPlainObject(body.plan) ? body.plan : null;
   const subPlan = isPlainObject(sub?.plan) ? sub.plan : null;
   const pay = isPlainObject(body.payment) ? body.payment : null;
@@ -157,6 +166,10 @@ function pickAmount(body) {
     data?.price,
     sub?.amount,
     sub?.price,
+    dataSub?.amount,
+    dataSub?.price,
+    dataSubPlan?.price,
+    dataSubPlan?.amount,
     plan?.price,
     plan?.amount,
     subPlan?.price,
@@ -170,10 +183,12 @@ function pickPlan(body) {
   if (!isPlainObject(body)) return null;
   const data = isPlainObject(body.data) ? body.data : null;
   const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  const dataSub = pickDataSubscription(body);
   return (
     (isPlainObject(body.plan) && body.plan) ||
     (isPlainObject(sub?.plan) && sub.plan) ||
     (isPlainObject(data?.plan) && data.plan) ||
+    (isPlainObject(dataSub?.plan) && dataSub.plan) ||
     null
   );
 }
@@ -181,7 +196,14 @@ function pickPlan(body) {
 function pickPlans(body) {
   if (!isPlainObject(body)) return [];
   const data = isPlainObject(body.data) ? body.data : null;
-  const candidates = [body.plans, body.available_plans, body.availablePlans, data?.plans];
+  const dataSub = pickDataSubscription(body);
+  const candidates = [
+    body.plans,
+    body.available_plans,
+    body.availablePlans,
+    data?.plans,
+    dataSub?.plans,
+  ];
   for (const c of candidates) {
     if (Array.isArray(c) && c.length > 0) return c;
   }
@@ -192,6 +214,8 @@ function pickCurrency(body) {
   if (!isPlainObject(body)) return null;
   const data = isPlainObject(body.data) ? body.data : null;
   const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  const dataSub = pickDataSubscription(body);
+  const dataSubPlan = isPlainObject(dataSub?.plan) ? dataSub.plan : null;
   const plan = isPlainObject(body.plan) ? body.plan : null;
   const v =
     body.currency ??
@@ -199,6 +223,8 @@ function pickCurrency(body) {
     body.currencyCode ??
     data?.currency ??
     sub?.currency ??
+    dataSub?.currency ??
+    dataSubPlan?.currency ??
     plan?.currency ??
     null;
   return v != null ? String(v) : null;
@@ -237,12 +263,29 @@ function normalizeVerifyResponse(body, fallback = {}) {
       ...fallback,
     };
   }
+  const nestedSub = pickDataSubscription(body);
+  const subRoot = isPlainObject(body.subscription) ? body.subscription : null;
   const plan = pickPlan(body);
-  const planName = plan?.name ?? plan?.title ?? body.plan_name ?? body.planName ?? null;
+  const planName =
+    plan?.name ??
+    plan?.title ??
+    nestedSub?.plan_name ??
+    nestedSub?.planName ??
+    subRoot?.plan_name ??
+    subRoot?.planName ??
+    body.plan_name ??
+    body.planName ??
+    null;
   const planDurationDays = pickNumber(
     plan?.duration_days,
     plan?.durationDays,
     plan?.days,
+    nestedSub?.plan_duration_days,
+    nestedSub?.planDurationDays,
+    nestedSub?.duration_days,
+    subRoot?.plan_duration_days,
+    subRoot?.planDurationDays,
+    subRoot?.duration_days,
     body.duration_days,
     body.durationDays,
   );
