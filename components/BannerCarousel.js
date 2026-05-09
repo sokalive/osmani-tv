@@ -10,7 +10,10 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
+  TRANSITION_MS,
+  computeBannerState,
   formatCountdownClock,
+  getAutoBadge,
   getCountdownState,
 } from '../lib/normalizeBanner';
 import {
@@ -55,20 +58,55 @@ function useBadgePulse(enabled) {
   return opacity;
 }
 
-const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, showCountdown, nowMs }) {
+/**
+ * Brief crossfade triggered when a slide's engine state changes (e.g.
+ * COMING_SOON → LIVE). Reuses native-driver opacity so it stays cheap on
+ * low-end Android. Visual styling is unchanged — this only adds a soft
+ * transition flash when the badge / countdown content swaps.
+ *
+ * @param {string} stateKey
+ */
+function useTransitionFade(stateKey) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  const lastKey = useRef(stateKey);
+  useEffect(() => {
+    if (lastKey.current === stateKey) return;
+    lastKey.current = stateKey;
+    Animated.sequence([
+      Animated.timing(opacity, {
+        toValue: 0.4,
+        duration: Math.floor(TRANSITION_MS / 2),
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: Math.floor(TRANSITION_MS / 2),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [stateKey, opacity]);
+  return opacity;
+}
+
+const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const badgeOpacity = useBadgePulse(
-    slide.badgeBlink && slide.badgeEnabled && slide.badgeText.length > 0,
+
+  // Single tick-driven derivation: state, badge, countdown all flow from
+  // the same `nowMs`. Recomputed every second when the carousel is
+  // mounted so badges flip the instant a window crosses a boundary.
+  const computed = useMemo(() => computeBannerState(slide, nowMs), [slide, nowMs]);
+  const badge = useMemo(() => getAutoBadge(slide, computed), [slide, computed]);
+  const countdown = useMemo(
+    () => getCountdownState(slide, nowMs, computed),
+    [slide, nowMs, computed],
   );
+
+  const badgeOpacity = useBadgePulse(badge.enabled && badge.blink);
+  const overlayOpacity = useTransitionFade(`${computed.state}|${badge.text}`);
 
   useEffect(() => {
     setImageFailed(false);
   }, [slide.imageUrl, slide.id]);
-
-  const countdown = useMemo(() => {
-    if (!showCountdown) return null;
-    return getCountdownState(slide, nowMs);
-  }, [slide, showCountdown, nowMs]);
 
   const countdownLabel = countdown
     ? `${countdown.prefix} ${formatCountdownClock(countdown.remainingSec)}`
@@ -98,24 +136,24 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, showCou
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      <View style={styles.overlay}>
+      <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]}>
         {countdownLabel ? (
           <Text style={styles.countdown} numberOfLines={1}>
             {countdownLabel}
           </Text>
         ) : null}
-        {slide.badgeEnabled && slide.badgeText.length > 0 ? (
+        {badge.enabled && badge.text.length > 0 ? (
           <Animated.View
             style={[
               styles.badge,
               {
-                backgroundColor: slide.badgeColor,
-                opacity: slide.badgeBlink ? badgeOpacity : 1,
+                backgroundColor: badge.color,
+                opacity: badge.blink ? badgeOpacity : 1,
               },
             ]}
           >
             <Text style={styles.badgeText} numberOfLines={1}>
-              {slide.badgeText}
+              {badge.text}
             </Text>
           </Animated.View>
         ) : null}
@@ -127,7 +165,7 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, showCou
             {slide.description}
           </Text>
         ) : null}
-      </View>
+      </Animated.View>
     </View>
   );
 });
@@ -175,19 +213,21 @@ function BannerCarousel({
   const userDraggingRef = useRef(false);
   const [activeSlide, setActiveSlide] = useState(0);
 
-  const needsGlobalTick = useMemo(
-    () => slides.some((s) => s.enableCountdown),
-    [slides],
-  );
+  const n = slides.length;
+
+  // Single 1Hz tick for the whole carousel. Drives the engine
+  // (computeBannerState / getAutoBadge / countdown) for every mounted
+  // slide so LIVE NOW / COMING SOON / COMING NEXT / ENDED transitions
+  // happen instantly without polling and without per-slide intervals.
+  // Cheap: one setInterval, one state setter per second, all derivations
+  // are pure and gated by useMemo.
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
-    if (!needsGlobalTick) return undefined;
+    if (n === 0) return undefined;
     setNowMs(Date.now());
     const id = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [needsGlobalTick]);
-
-  const n = slides.length;
+  }, [n]);
 
   useEffect(() => {
     indexRef.current = 0;
@@ -314,7 +354,6 @@ function BannerCarousel({
             <BannerSlide
               slide={slide}
               slideWidth={slideWidth}
-              showCountdown={needsGlobalTick}
               nowMs={nowMs}
             />
           );
