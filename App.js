@@ -70,6 +70,28 @@ const COLORS = {
 
 const filters = ['Zote', 'Trending', 'Sports', 'Movies'];
 
+/**
+ * Single source of truth for category-to-`display_section` mapping.
+ * Channels are filtered exclusively by the backend `display_section`
+ * field — no more legacy `category` / `bottomTab` heuristics.
+ *
+ * The keys are the UI labels (bottom tab names AND in-page pill names)
+ * the app may render; the values are the canonical lower-case
+ * `display_section` strings the backend emits per row.
+ *
+ * To add a new category in the future: just append a row here and
+ * either expose a new bottom tab or extend the pill list. The filter
+ * engine below requires no further changes.
+ */
+const CATEGORY_TO_DISPLAY_SECTION = Object.freeze({
+  Sports: 'sports',
+  Tamthilia: 'movies',
+  Movies: 'movies',
+  Kids: 'kids',
+  News: 'news',
+  Music: 'music',
+});
+
 const TAB_BAR_HEIGHT = 76;
 /** Small gap between safe-area bottom and the tab bar (comfortable, not touching system nav). */
 const TAB_BAR_FLOAT_GAP = 4;
@@ -122,21 +144,27 @@ function channelVisibleInApp(raw) {
   return showInApp && isActive;
 }
 
-function matchesBottomTabRow(r, filter) {
-  if (filter == null || String(filter).trim() === '') return true;
-  const v = String(r.bottomTab ?? r.bottomTabsDisplay ?? r.category ?? '').trim();
-  return v.toLowerCase() === String(filter).trim().toLowerCase();
+/**
+ * Backend-driven section filter. Returns true when `section` is null/empty
+ * (no filter) or when the row's `display_section` (snake_case canonical;
+ * camelCase tolerated) matches the requested section case-insensitively.
+ *
+ * Rows missing `display_section` only appear on Home / "Zote" / "Trending"
+ * — they are deliberately filtered out of category tabs/pills until
+ * admin assigns a section.
+ */
+function matchesDisplaySection(raw, section) {
+  if (section == null || String(section).trim() === '') return true;
+  const target = String(section).trim().toLowerCase();
+  const v = String(raw?.display_section ?? raw?.displaySection ?? '')
+    .trim()
+    .toLowerCase();
+  return v === target;
 }
 
-function matchesPillFilter(r, pill) {
-  if (pill === 'Zote' || pill === 'Trending') return true;
-  if (pill === 'Sports' || pill === 'Movies') {
-    const want = pill.toLowerCase();
-    const cat = String(r.category ?? '').trim().toLowerCase();
-    const bt = String(r.bottomTab ?? r.bottomTabsDisplay ?? '').trim().toLowerCase();
-    return cat === want || bt === want;
-  }
-  return true;
+/** Resolve a UI label (bottom tab or pill) to its display_section. */
+function sectionForLabel(label) {
+  return CATEGORY_TO_DISPLAY_SECTION[label] ?? null;
 }
 
 function findServerHealthForChannel(serverHealth, name) {
@@ -216,13 +244,23 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
 
   const displayChannels = useMemo(() => {
     let rows = rawChannels.filter(channelVisibleInApp);
+    // Bottom-tab filter: `bottomTabFilter` is a canonical
+    // `display_section` value (e.g. 'sports', 'movies') or null for Home.
     if (bottomTabFilter) {
-      rows = rows.filter((r) => matchesBottomTabRow(r, bottomTabFilter));
+      rows = rows.filter((r) => matchesDisplaySection(r, bottomTabFilter));
     }
+    // In-page pills:
+    //  - 'Zote'      -> all (no extra filter)
+    //  - 'Trending'  -> rows currently live
+    //  - any label mapped in CATEGORY_TO_DISPLAY_SECTION
+    //    (Sports / Movies / Kids / News / Music / ...) -> filter by section
     if (selectedFilter === 'Trending') {
       rows = rows.filter((r) => Boolean(r.isLive ?? r.live));
-    } else if (selectedFilter === 'Sports' || selectedFilter === 'Movies') {
-      rows = rows.filter((r) => matchesPillFilter(r, selectedFilter));
+    } else if (selectedFilter && selectedFilter !== 'Zote') {
+      const section = sectionForLabel(selectedFilter);
+      if (section) {
+        rows = rows.filter((r) => matchesDisplaySection(r, section));
+      }
     }
     return rows.map((raw, i) => mapApiChannelToCard(raw, i, freeMode, serverHealth));
   }, [rawChannels, bottomTabFilter, selectedFilter, freeMode, serverHealth]);
@@ -602,12 +640,24 @@ function AppTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home">{(props) => <ChannelCatalogScreen {...props} bottomTabFilter={null} />}</Tab.Screen>
+      <Tab.Screen name="Home">
+        {(props) => <ChannelCatalogScreen {...props} bottomTabFilter={null} />}
+      </Tab.Screen>
       <Tab.Screen name="Sports">
-        {(props) => <ChannelCatalogScreen {...props} bottomTabFilter="Sports" />}
+        {(props) => (
+          <ChannelCatalogScreen
+            {...props}
+            bottomTabFilter={CATEGORY_TO_DISPLAY_SECTION.Sports}
+          />
+        )}
       </Tab.Screen>
       <Tab.Screen name="Tamthilia">
-        {(props) => <ChannelCatalogScreen {...props} bottomTabFilter="Movies" />}
+        {(props) => (
+          <ChannelCatalogScreen
+            {...props}
+            bottomTabFilter={CATEGORY_TO_DISPLAY_SECTION.Tamthilia}
+          />
+        )}
       </Tab.Screen>
       <Tab.Screen name="Akaunti Yangu" component={AkauntiYanguScreen} />
     </Tab.Navigator>
