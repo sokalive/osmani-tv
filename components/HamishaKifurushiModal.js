@@ -40,17 +40,6 @@ const TRANSFER_CODE_SECONDS = 120;
 
 const GRADIENT_CTA = [COLORS.yellow, COLORS.yellowDark];
 
-const INTRO_TRANSFER_STEPS = [
-  '1. Tap CONTINUE TRANSFER below',
-  '2. Enter the phone number used for payment',
-  '3. You will receive transfer codes',
-  '4. Copy the codes',
-  '5. Open the phone that should receive the subscription',
-  '6. Tap TRANSFER SUBSCRIPTION again',
-  '7. Choose "I ALREADY HAVE A CODE"',
-  '8. Paste the transfer codes to complete transfer ✅',
-];
-
 const STEPS = Object.freeze({
   INTRO: 'intro',
   PHONE: 'phone',
@@ -135,12 +124,8 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   const [waitingCode, setWaitingCode] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
 
-  const cardMaxHeight = useMemo(() => {
-    if (step === STEPS.INTRO) return Math.min(windowHeight * 0.62, 520);
-    return windowHeight * 0.82;
-  }, [step, windowHeight]);
-
-  const introScrollMaxHeight = Math.min(windowHeight * 0.44, 400);
+  const cardMaxHeight = windowHeight * 0.82;
+  const introScrollMidMaxHeight = Math.min(windowHeight * 0.5, 440);
 
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.92)).current;
@@ -497,33 +482,40 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                 </Pressable>
 
                 {step === STEPS.INTRO ? (
-                  <ScrollView
-                    style={[styles.introScroll, { maxHeight: introScrollMaxHeight }]}
-                    contentContainerStyle={styles.introScrollContent}
-                    showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                    bounces={false}
-                  >
-                    <View style={styles.iconHaloCompact}>
+                  <View style={styles.stepColumn}>
+                    <View style={styles.iconHalo}>
                       <View style={styles.iconCircle}>
-                        <Ionicons name="swap-horizontal" size={26} color="#111827" />
+                        <Ionicons name="swap-horizontal" size={28} color="#111827" />
                       </View>
                     </View>
-                    <Text style={styles.introMainTitle}>TRANSFER YOUR SUBSCRIPTION</Text>
-                    <Text style={styles.introBodyPara}>
-                      Hello, you can transfer your subscription to another phone.
-                    </Text>
-                    <Text style={[styles.introBodyPara, styles.introBodyParaLast]}>
-                      Your current phone will no longer keep the subscription after transfer.
-                    </Text>
-                    <Text style={styles.introHowHeading}>HOW TO TRANSFER</Text>
-                    {INTRO_TRANSFER_STEPS.map((line, idx) => (
-                      <Text key={idx} style={styles.introStepLine}>
-                        {line}
+                    <Text style={styles.stepTitleCenter}>HAMISHA KIFURUSHI</Text>
+                    <ScrollView
+                      style={[styles.introMidScroll, { maxHeight: introScrollMidMaxHeight }]}
+                      contentContainerStyle={styles.introMidScrollContent}
+                      showsVerticalScrollIndicator={false}
+                      keyboardShouldPersistTaps="handled"
+                      bounces={false}
+                    >
+                      <Text style={styles.introBodySw}>
+                        Habari, unaweza kuhamisha kifurushi chako kwenda kwenye simu nyingine na simu yako
+                        itabaki haina kifurushi.
                       </Text>
-                    ))}
-                    {error ? <Text style={styles.errorText}>{error}</Text> : null}
-                    <View style={styles.actionsBlockIntroCompact}>
+                      <Text style={styles.introSectionHeading}>JINSI YA KUHAMISHA</Text>
+                      <Text style={styles.introBullet}>
+                        • Bonyeza batani ya [ ENDELEA KUHAMISHA ]
+                      </Text>
+                      <Text style={styles.introBullet}>• Weka namba uliyolipia nayo</Text>
+                      <Text style={styles.introBullet}>• Utapokea code za kuhamisha</Text>
+                      <Text style={styles.introBullet}>• Zi-copy code hizo</Text>
+                      <Text style={styles.introBullet}>• Fungua simu unayotaka ipokee kifurushi</Text>
+                      <Text style={styles.introBullet}>• Bonyeza tena batani ya HAMISHA KIFURUSHI</Text>
+                      <Text style={styles.introBullet}>• Chagua: “Nina Code Tayari”</Text>
+                      <Text style={styles.introBullet}>
+                        • Jaza code zako ulizopata kwenye simu yenye kifurushi ✅
+                      </Text>
+                      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                    </ScrollView>
+                    <View style={styles.actionsBlockIntro}>
                       <Pressable
                         style={styles.primaryWrap}
                         onPress={() => {
@@ -537,11 +529,11 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                           end={{ x: 1, y: 0.5 }}
                           style={styles.primaryGradient}
                         >
-                          <Text style={styles.primaryText}>CONTINUE TRANSFER</Text>
+                          <Text style={styles.primaryText}>ENDELEA KUHAMISHA</Text>
                         </LinearGradient>
                       </Pressable>
                     </View>
-                  </ScrollView>
+                  </View>
                 ) : null}
 
                 {step === STEPS.PHONE ? (
@@ -825,79 +817,55 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     alignItems: 'stretch',
   },
-  introScroll: {
+  introMidScroll: {
     width: '100%',
     alignSelf: 'stretch',
   },
-  introScrollContent: {
-    paddingTop: 8,
-    paddingBottom: 8,
+  introMidScrollContent: {
+    paddingBottom: 4,
     alignItems: 'stretch',
   },
-  iconHaloCompact: {
-    alignSelf: 'center',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-    backgroundColor: 'rgba(255,203,61,0.12)',
-  },
-  introMainTitle: {
-    color: COLORS.white,
-    fontSize: 17,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginBottom: 12,
-    letterSpacing: 0.5,
-    width: '100%',
-  },
-  introBodyPara: {
+  introBodySw: {
     color: '#E5E7EB',
-    fontSize: 14,
-    lineHeight: 21,
-    textAlign: 'center',
-    marginBottom: 10,
-    paddingHorizontal: 2,
+    fontSize: 15,
+    lineHeight: 23,
+    textAlign: 'left',
+    marginBottom: 16,
     width: '100%',
   },
-  introBodyParaLast: {
-    marginBottom: 14,
-  },
-  introHowHeading: {
+  introSectionHeading: {
     color: COLORS.mutedText,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
-    letterSpacing: 1.2,
-    textAlign: 'center',
+    letterSpacing: 0.8,
+    textAlign: 'left',
     marginBottom: 10,
-    marginTop: 2,
+    marginTop: 4,
     width: '100%',
   },
-  introStepLine: {
+  introBullet: {
     color: '#F3F4F6',
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 7,
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 10,
     textAlign: 'left',
     width: '100%',
   },
-  actionsBlockIntroCompact: {
+  actionsBlockIntro: {
     width: '100%',
     alignSelf: 'stretch',
     alignItems: 'stretch',
-    marginTop: 12,
+    marginTop: 18,
   },
   card: {
     width: '100%',
     backgroundColor: COLORS.card,
-    borderRadius: 22,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(250,204,21,0.18)',
-    paddingHorizontal: 20,
-    paddingTop: 22,
-    paddingBottom: 18,
+    borderColor: 'rgba(255,203,61,0.18)',
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
     elevation: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
