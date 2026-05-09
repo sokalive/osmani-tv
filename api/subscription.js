@@ -258,6 +258,7 @@ function normalizeVerifyResponse(body, fallback = {}) {
       currency: null,
       planName: null,
       planDurationDays: null,
+      plan_duration_days: null,
       plans: [],
       raw: body,
       ...fallback,
@@ -265,6 +266,7 @@ function normalizeVerifyResponse(body, fallback = {}) {
   }
   const nestedSub = pickDataSubscription(body);
   const subRoot = isPlainObject(body.subscription) ? body.subscription : null;
+  const data = isPlainObject(body.data) ? body.data : null;
   const plan = pickPlan(body);
   const planName =
     plan?.name ??
@@ -280,12 +282,20 @@ function normalizeVerifyResponse(body, fallback = {}) {
     plan?.duration_days,
     plan?.durationDays,
     plan?.days,
+    plan?.plan_duration_days,
+    plan?.planDurationDays,
     nestedSub?.plan_duration_days,
     nestedSub?.planDurationDays,
     nestedSub?.duration_days,
     subRoot?.plan_duration_days,
     subRoot?.planDurationDays,
     subRoot?.duration_days,
+    body.plan_duration_days,
+    body.planDurationDays,
+    data?.plan_duration_days,
+    data?.planDurationDays,
+    data?.duration_days,
+    data?.durationDays,
     body.duration_days,
     body.durationDays,
   );
@@ -298,6 +308,7 @@ function normalizeVerifyResponse(body, fallback = {}) {
     currency: pickCurrency(body),
     planName: planName != null ? String(planName) : null,
     planDurationDays,
+    plan_duration_days: planDurationDays,
     plans: pickPlans(body),
     deviceId: pickStringList(body.device_id, body.deviceId),
     raw: body,
@@ -345,6 +356,15 @@ export async function verifySubscription(deviceId, deviceFingerprint) {
     }
     const out = normalizeVerifyResponse(body);
     console.log('[SUBSCRIPTION_VERIFY]', 'response', { active: out.active, expiresAt: out.expiresAt });
+    if (__DEV__) {
+      console.log('[ACCOUNT_DURATION]', 'verify_raw_shape', {
+        root_plan_duration_days: body?.plan_duration_days,
+        root_planDurationDays: body?.planDurationDays,
+        data_plan_duration_days: body?.data?.plan_duration_days,
+        data_planDurationDays: body?.data?.planDurationDays,
+      });
+      console.log('[ACCOUNT_DURATION]', 'verify_normalized', { planDurationDays: out.planDurationDays });
+    }
     return out;
   } catch (e) {
     console.log('[SUBSCRIPTION_VERIFY]', 'error', e?.message ?? e);
@@ -371,6 +391,9 @@ export async function recoverSubscription(deviceId, deviceFingerprint) {
     }
     const out = normalizeVerifyResponse(body);
     console.log('[SUBSCRIPTION_RECOVER]', 'response', { active: out.active, expiresAt: out.expiresAt });
+    if (__DEV__) {
+      console.log('[ACCOUNT_DURATION]', 'recover_normalized', { planDurationDays: out.planDurationDays });
+    }
     return out;
   } catch (e) {
     console.log('[SUBSCRIPTION_RECOVER]', 'error', e?.message ?? e);

@@ -181,10 +181,21 @@ export default function AkauntiYanguScreen() {
   // Card 3: Muda wa Kifurushi — package length in days from verify/plan (numeric only).
   const durationValue = useMemo(() => {
     if (!isSubscribed) return '—';
-    const raw = subscriptionDetails?.planDurationDays;
+    const raw =
+      subscriptionDetails?.planDurationDays ??
+      subscriptionDetails?.plan_duration_days ??
+      subscriptionDetails?.planDuration ??
+      subscriptionDetails?.duration_days;
     const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim());
-    if (Number.isFinite(n) && n > 0) return String(Math.trunc(n));
-    return '—';
+    const rendered = Number.isFinite(n) && n > 0 ? String(Math.trunc(n)) : '—';
+    if (__DEV__) {
+      console.log('[ACCOUNT_DURATION]', 'screen_render', {
+        subscriptionDetailsPlanDurationDays: subscriptionDetails?.planDurationDays,
+        subscriptionDetails_plan_duration_days: subscriptionDetails?.plan_duration_days,
+        rendered,
+      });
+    }
+    return rendered;
   }, [isSubscribed, subscriptionDetails]);
 
   // Card 5 (status)

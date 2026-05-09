@@ -108,20 +108,28 @@ export function OsmaniAppProvider({ children }) {
       if (Array.isArray(r.plans) && r.plans.length > 0) {
         setAvailablePlans(r.plans);
       }
-      setSubscriptionDetails(active
+      const detailsPayload = active
         ? {
             amount: r.amount ?? null,
             currency: r.currency ?? null,
             planName: r.planName ?? null,
-            planDurationDays: r.planDurationDays ?? null,
+            planDurationDays: r.planDurationDays ?? r.plan_duration_days ?? null,
+            plan_duration_days: r.plan_duration_days ?? r.planDurationDays ?? null,
             startedAt: r.startedAt ?? null,
             expiresAt,
             serverTime: r.serverTime ?? null,
             serverTimeFetchedAt,
             plans: Array.isArray(r.plans) ? r.plans : [],
           }
-        : null,
-      );
+        : null;
+      setSubscriptionDetails(detailsPayload);
+      if (__DEV__) {
+        console.log('[ACCOUNT_DURATION]', 'context_after_verify', {
+          planDurationDays: detailsPayload?.planDurationDays ?? null,
+          raw_verify_planDurationDays: r?.planDurationDays,
+          raw_verify_plan_duration_days: r?.plan_duration_days,
+        });
+      }
       setSubscriptionVersion((v) => v + 1);
       if (active) {
         setRevokedReason(null);
