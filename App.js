@@ -131,6 +131,7 @@ function matchesBottomTabRow(r, filter) {
   if (filter == null || String(filter).trim() === '') return true;
   const f = String(filter).trim().toLowerCase();
   if (f === 'sports') return displaySectionSlug(r) === 'sports';
+  if (f === 'movies') return displaySectionSlug(r) === 'movies';
   const v = String(r.bottomTab ?? r.bottomTabsDisplay ?? r.category ?? '').trim().toLowerCase();
   return v === f;
 }
@@ -138,12 +139,7 @@ function matchesBottomTabRow(r, filter) {
 function matchesPillFilter(r, pill) {
   if (pill === 'Zote' || pill === 'Trending') return true;
   if (pill === 'Sports') return displaySectionSlug(r) === 'sports';
-  if (pill === 'Movies') {
-    const want = pill.toLowerCase();
-    const cat = String(r.category ?? '').trim().toLowerCase();
-    const bt = String(r.bottomTab ?? r.bottomTabsDisplay ?? '').trim().toLowerCase();
-    return cat === want || bt === want;
-  }
+  if (pill === 'Movies') return displaySectionSlug(r) === 'movies';
   return true;
 }
 
