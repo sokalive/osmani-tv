@@ -242,6 +242,81 @@ function pickStringList(...keys) {
   return keys.find((k) => typeof k === 'string' && k.trim() !== '') ?? '';
 }
 
+function pickTruthyString(...vals) {
+  for (const v of vals) {
+    if (v == null || v === '') continue;
+    const s = String(v).trim();
+    if (s !== '') return s;
+  }
+  return null;
+}
+
+/**
+ * Stable key for admin-applied manual subscription gifts. Must change when the
+ * backend issues a NEW gift so the app can show the one-time congratulations again.
+ */
+function pickManualGiftAckKey(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  const nestedSub = pickDataSubscription(body);
+  const pay = isPlainObject(body.payment) ? body.payment : null;
+
+  const explicitId = pickTruthyString(
+    body.manual_gift_id,
+    body.manualGiftId,
+    body.admin_manual_gift_id,
+    body.adminManualGiftId,
+    body.subscription_gift_id,
+    body.subscriptionGiftId,
+    data?.manual_gift_id,
+    data?.manualGiftId,
+    sub?.manual_gift_id,
+    sub?.manualGiftId,
+    nestedSub?.manual_gift_id,
+    nestedSub?.manualGiftId,
+    pay?.manual_gift_id,
+    pay?.manualGiftId,
+  );
+
+  const version = pickNumber(
+    body.manual_gift_version,
+    body.manualGiftVersion,
+    body.gift_version,
+    body.giftVersion,
+    data?.manual_gift_version,
+    data?.manualGiftVersion,
+    sub?.manual_gift_version,
+    nestedSub?.manual_gift_version,
+    pay?.manual_gift_version,
+  );
+
+  const flag =
+    body.manual_subscription_gift === true ||
+    body.manualSubscriptionGift === true ||
+    body.is_manual_subscription_gift === true ||
+    body.isManualSubscriptionGift === true ||
+    data?.manual_subscription_gift === true ||
+    sub?.manual_subscription_gift === true ||
+    nestedSub?.manual_subscription_gift === true;
+
+  if (!explicitId && version == null && !flag) return null;
+
+  if (explicitId) {
+    return version != null ? `${explicitId}:${version}` : explicitId;
+  }
+  if (version != null) {
+    return `manual_gift:${version}`;
+  }
+  if (flag) {
+    const started = pickStartedAt(body);
+    if (started) return `manual_gift_started:${started}`;
+    const exp = pickExpiresAt(body);
+    if (exp) return `manual_gift_exp:${exp}`;
+  }
+  return null;
+}
+
 /**
  * Normalize a verify/recover response to the shape the app uses.
  * Note: `active` here is the backend's verdict — the app does NOT
@@ -260,6 +335,7 @@ function normalizeVerifyResponse(body, fallback = {}) {
       planDurationDays: null,
       plan_duration_days: null,
       plans: [],
+      manualGiftAckKey: null,
       raw: body,
       ...fallback,
     };
@@ -311,6 +387,7 @@ function normalizeVerifyResponse(body, fallback = {}) {
     plan_duration_days: planDurationDays,
     plans: pickPlans(body),
     deviceId: pickStringList(body.device_id, body.deviceId),
+    manualGiftAckKey: pickManualGiftAckKey(body),
     raw: body,
   };
 }

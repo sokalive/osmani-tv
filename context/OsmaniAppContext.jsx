@@ -120,6 +120,8 @@ export function OsmaniAppProvider({ children }) {
             serverTime: r.serverTime ?? null,
             serverTimeFetchedAt,
             plans: Array.isArray(r.plans) ? r.plans : [],
+            /** When set, Home may show a one-time admin gift popup until acknowledged. */
+            manualGiftAckKey: r.manualGiftAckKey ?? null,
           }
         : null;
       setSubscriptionDetails(detailsPayload);

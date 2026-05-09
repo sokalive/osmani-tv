@@ -29,6 +29,7 @@ import EmergencyModal from './components/EmergencyModal';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import PremiumModal from './components/PremiumModal';
 import SubscriptionExpiryReminderModal from './components/SubscriptionExpiryReminderModal';
+import ManualSubscriptionGiftModal from './components/ManualSubscriptionGiftModal';
 import PopupSettingsModal from './components/PopupSettingsModal';
 import TransferConfirmModal from './components/TransferConfirmModal';
 import TransferredAwayModal from './components/TransferredAwayModal';
@@ -56,6 +57,7 @@ import {
   consumeHomeExpiryReminder,
   isHomeExpiryReminderConsumed,
 } from './lib/subscriptionReminderSession';
+import { readManualGiftAck, writeManualGiftAck } from './lib/manualGiftAck';
 import BannerCarousel, { BannerCarouselSkeleton } from './components/BannerCarousel';
 
 const Tab = createBottomTabNavigator();
@@ -237,6 +239,8 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [expiryReminderVisible, setExpiryReminderVisible] = useState(false);
   const [expiryReminderDisplayDays, setExpiryReminderDisplayDays] = useState(2);
+  const [manualGiftVisible, setManualGiftVisible] = useState(false);
+  const [manualGiftAckLoaded, setManualGiftAckLoaded] = useState(false);
   const [emergencyModalVisible, setEmergencyModalVisible] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -246,7 +250,11 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   const subscriptionDetailsRef = useRef(subscriptionDetails);
   const subscriptionExpiresAtRef = useRef(subscriptionExpiresAt);
   const deferredReminderRef = useRef(false);
+  const deferredManualGiftRef = useRef(false);
   const tryShowExpiryReminderRef = useRef(() => false);
+  const tryShowManualGiftRef = useRef(async () => false);
+  const manualGiftVisibleRef = useRef(false);
+  const expiryReminderVisibleRef = useRef(false);
   isSubscribedRef.current = isSubscribed;
   subscriptionDetailsRef.current = subscriptionDetails;
   subscriptionExpiresAtRef.current = subscriptionExpiresAt;
@@ -267,11 +275,77 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
 
   useRegisterBlockingSheet(`catalog-premium-${catalogBlockingSuffix}`, premiumModalVisible);
   useRegisterBlockingSheet(`catalog-emergency-${catalogBlockingSuffix}`, emergencyModalVisible);
+  useRegisterBlockingSheet(`catalog-manual-gift-${catalogBlockingSuffix}`, manualGiftVisible);
+
+  useEffect(() => {
+    manualGiftVisibleRef.current = manualGiftVisible;
+  }, [manualGiftVisible]);
+
+  useEffect(() => {
+    expiryReminderVisibleRef.current = expiryReminderVisible;
+  }, [expiryReminderVisible]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!enableHomeExpiryReminder) {
+      setManualGiftAckLoaded(false);
+      return undefined;
+    }
+    readManualGiftAck().then(() => {
+      if (!cancelled) setManualGiftAckLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [enableHomeExpiryReminder]);
+
+  const tryShowManualGift = useCallback(
+    async (source) => {
+      if (!enableHomeExpiryReminder) return false;
+      if (!manualGiftAckLoaded) return false;
+      const key = subscriptionDetailsRef.current?.manualGiftAckKey;
+      if (!key || !isSubscribedRef.current) return false;
+      const ack = await readManualGiftAck();
+      if (ack === key) return false;
+      if (expiryReminderVisibleRef.current) {
+        deferredManualGiftRef.current = true;
+        reminderCoordLog('manual_gift_defer', source, 'reason=expiry_visible');
+        return false;
+      }
+      if (isBlockingSheetActive) {
+        deferredManualGiftRef.current = true;
+        reminderCoordLog('manual_gift_defer', source, 'reason=blocking_sheets');
+        return false;
+      }
+      if (premiumModalVisible) {
+        deferredManualGiftRef.current = true;
+        reminderCoordLog('manual_gift_defer', source, 'reason=premium_open');
+        return false;
+      }
+      deferredManualGiftRef.current = false;
+      setManualGiftVisible(true);
+      reminderCoordLog('manual_gift_open', source, { key });
+      return true;
+    },
+    [
+      enableHomeExpiryReminder,
+      manualGiftAckLoaded,
+      isBlockingSheetActive,
+      premiumModalVisible,
+    ],
+  );
+
+  tryShowManualGiftRef.current = tryShowManualGift;
 
   const tryShowExpiryReminder = useCallback(
     (source) => {
       if (!enableHomeExpiryReminder) {
         reminderCoordLog('skip', source, 'reason=not_home_catalog');
+        return false;
+      }
+      if (manualGiftVisibleRef.current) {
+        deferredReminderRef.current = true;
+        reminderCoordLog('defer', source, 'reason=manual_gift_visible');
         return false;
       }
       if (isHomeExpiryReminderConsumed()) {
@@ -347,6 +421,21 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
     }, [enableHomeExpiryReminder]),
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!enableHomeExpiryReminder) return undefined;
+      const tid = setTimeout(() => {
+        void tryShowManualGiftRef.current('focus');
+      }, 500);
+      return () => clearTimeout(tid);
+    }, [enableHomeExpiryReminder]),
+  );
+
+  useEffect(() => {
+    if (!enableHomeExpiryReminder || !manualGiftAckLoaded) return;
+    void tryShowManualGiftRef.current('subscription_update');
+  }, [enableHomeExpiryReminder, manualGiftAckLoaded, subscriptionVersion]);
+
   useEffect(() => {
     if (!enableHomeExpiryReminder) return;
     if (isBlockingSheetActive) return;
@@ -359,14 +448,50 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
     tryShowExpiryReminderRef.current('after_unblock');
   }, [isBlockingSheetActive, enableHomeExpiryReminder, blockingSheetIds, blockingSheetCount]);
 
+  useEffect(() => {
+    if (!enableHomeExpiryReminder) return;
+    if (isBlockingSheetActive) return;
+    if (!deferredManualGiftRef.current) return;
+    deferredManualGiftRef.current = false;
+    void tryShowManualGiftRef.current('after_unblock');
+  }, [isBlockingSheetActive, enableHomeExpiryReminder, blockingSheetIds, blockingSheetCount]);
+
+  useEffect(() => {
+    if (!enableHomeExpiryReminder) return;
+    if (premiumModalVisible) return;
+    if (!deferredManualGiftRef.current) return;
+    deferredManualGiftRef.current = false;
+    void tryShowManualGiftRef.current('after_premium_close');
+  }, [premiumModalVisible, enableHomeExpiryReminder]);
+
+  useEffect(() => {
+    if (!enableHomeExpiryReminder) return;
+    if (expiryReminderVisible) return;
+    if (!deferredManualGiftRef.current) return;
+    deferredManualGiftRef.current = false;
+    void tryShowManualGiftRef.current('after_expiry_close');
+  }, [expiryReminderVisible, enableHomeExpiryReminder]);
+
   const dismissExpiryReminder = useCallback(() => {
     setExpiryReminderVisible(false);
+  }, []);
+
+  const dismissManualGift = useCallback(async () => {
+    const key = subscriptionDetailsRef.current?.manualGiftAckKey;
+    if (key) await writeManualGiftAck(key);
+    manualGiftVisibleRef.current = false;
+    setManualGiftVisible(false);
+    setTimeout(() => {
+      tryShowExpiryReminderRef.current('after_manual_gift_close');
+    }, 0);
   }, []);
 
   const onRenewFromExpiryReminder = useCallback(() => {
     setExpiryReminderVisible(false);
     setPremiumModalVisible(true);
   }, []);
+
+  const mountManualGiftModal = enableHomeExpiryReminder && manualGiftVisible;
 
   const mountReminderModal =
     enableHomeExpiryReminder && expiryReminderVisible && !isBlockingSheetActive;
@@ -674,6 +799,9 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
           navigation.navigate('Home');
         }}
       />
+      {mountManualGiftModal ? (
+        <ManualSubscriptionGiftModal visible onDismiss={dismissManualGift} />
+      ) : null}
       {mountReminderModal ? (
         <SubscriptionExpiryReminderModal
           visible
