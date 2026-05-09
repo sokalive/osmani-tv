@@ -482,13 +482,8 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                 </Pressable>
 
                 {step === STEPS.INTRO ? (
-                  <View style={styles.stepColumn}>
-                    <View style={styles.iconHalo}>
-                      <View style={styles.iconCircle}>
-                        <Ionicons name="swap-horizontal" size={28} color="#111827" />
-                      </View>
-                    </View>
-                    <Text style={styles.stepTitleCenter}>HAMISHA KIFURUSHI</Text>
+                  <View style={[styles.stepColumn, styles.stepColumnIntro]}>
+                    <Text style={[styles.stepTitleCenter, styles.introStepTitle]}>HAMISHA KIFURUSHI</Text>
                     <ScrollView
                       style={[styles.introMidScroll, { maxHeight: introScrollMidMaxHeight }]}
                       contentContainerStyle={styles.introMidScrollContent}
@@ -816,15 +811,21 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   introMidScrollContent: {
-    paddingBottom: 4,
+    paddingBottom: 2,
     alignItems: 'stretch',
+  },
+  stepColumnIntro: {
+    paddingTop: 8,
+  },
+  introStepTitle: {
+    marginBottom: 8,
   },
   introBodySw: {
     color: '#E5E7EB',
     fontSize: 15,
     lineHeight: 23,
     textAlign: 'left',
-    marginBottom: 16,
+    marginBottom: 12,
     width: '100%',
   },
   introSectionHeading: {
@@ -833,15 +834,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.8,
     textAlign: 'left',
-    marginBottom: 10,
-    marginTop: 4,
+    marginBottom: 8,
+    marginTop: 2,
     width: '100%',
   },
   introBullet: {
     color: '#F3F4F6',
     fontSize: 14,
     lineHeight: 22,
-    marginBottom: 10,
+    marginBottom: 8,
     textAlign: 'left',
     width: '100%',
   },
@@ -849,7 +850,7 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'stretch',
     alignItems: 'stretch',
-    marginTop: 18,
+    marginTop: 12,
   },
   card: {
     width: '100%',
@@ -858,8 +859,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,203,61,0.18)',
     paddingHorizontal: 22,
-    paddingTop: 24,
-    paddingBottom: 22,
+    paddingTop: 18,
+    paddingBottom: 16,
     elevation: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
@@ -868,38 +869,15 @@ const styles = StyleSheet.create({
   },
   closeBtn: {
     position: 'absolute',
-    top: 14,
-    right: 14,
+    top: 12,
+    right: 12,
     zIndex: 10,
     padding: 4,
   },
   stepColumn: {
     width: '100%',
-    paddingTop: 18,
+    paddingTop: 14,
     alignItems: 'stretch',
-  },
-  iconHalo: {
-    alignSelf: 'center',
-    width: 78,
-    height: 78,
-    borderRadius: 39,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    backgroundColor: 'rgba(255,203,61,0.12)',
-  },
-  iconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.yellow,
-    shadowColor: COLORS.yellow,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.65,
-    shadowRadius: 12,
-    elevation: 8,
   },
   iconHaloSmall: {
     alignSelf: 'center',
