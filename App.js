@@ -29,7 +29,7 @@ import TransferConfirmModal from './components/TransferConfirmModal';
 import TransferredAwayModal from './components/TransferredAwayModal';
 import UpdateOverlay from './components/UpdateOverlay';
 import OtaDebugOverlay, { OtaDebugTitleTap } from './components/OtaDebugOverlay';
-import WhatsAppFloatingButton from './components/WhatsAppFloatingButton';
+import WhatsAppFloatingButtonGate from './components/WhatsAppFloatingButtonGate';
 import AkauntiYanguScreen from './screens/AkauntiYanguScreen';
 import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
@@ -797,9 +797,9 @@ export default function App() {
             }}
           >
             <RootNavigator />
+            <WhatsAppFloatingButtonGate />
           </NavigationContainer>
           <PopupSettingsModal />
-          <WhatsAppFloatingButton />
           <UpdateOverlay />
           <OtaDebugOverlay />
           <SubscriptionLifecycleGates />

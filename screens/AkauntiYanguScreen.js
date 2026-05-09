@@ -312,13 +312,20 @@ export default function AkauntiYanguScreen() {
         </View>
 
         <Pressable
-          style={styles.infoCard}
+          style={styles.hamishaTransferCardOuter}
           onPress={() => setHamishaModalVisible(true)}
           accessibilityRole="button"
           accessibilityLabel="Hamisha Kifurushi"
         >
-          <Text style={styles.infoCardTitle}>Hamisha Kifurushi</Text>
-          <Text style={styles.infoCardBody}>HAMISHA KIFURUSHI CHAKO</Text>
+          <LinearGradient
+            colors={['#DC2626', '#16A34A']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={styles.hamishaTransferCardGradient}
+          >
+            <Text style={styles.hamishaTransferCardTitle}>Hamisha Kifurushi</Text>
+            <Text style={styles.infoCardBody}>HAMISHA KIFURUSHI CHAKO</Text>
+          </LinearGradient>
         </Pressable>
 
         <Pressable style={styles.primaryWrap} onPress={() => setPremiumModalVisible(true)}>
@@ -478,6 +485,25 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.18,
     shadowRadius: 3,
+  },
+  hamishaTransferCardOuter: {
+    borderRadius: 14,
+    marginBottom: 12,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+  },
+  hamishaTransferCardGradient: {
+    padding: 16,
+  },
+  hamishaTransferCardTitle: {
+    color: COLORS.mutedText,
+    fontSize: 13,
+    marginBottom: 8,
+    fontWeight: '600',
   },
   infoCardTitle: {
     color: COLORS.mutedText,
