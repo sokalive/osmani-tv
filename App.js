@@ -1,7 +1,12 @@
 import 'react-native-gesture-handler';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer, DarkTheme, useFocusEffect } from '@react-navigation/native';
+import {
+  createNavigationContainerRef,
+  DarkTheme,
+  NavigationContainer,
+  useFocusEffect,
+} from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Image as ExpoImage } from 'expo-image';
@@ -55,6 +60,9 @@ import BannerCarousel, { BannerCarouselSkeleton } from './components/BannerCarou
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+
+/** Single ref for WhatsApp FAB visibility (must not use hooks outside a navigator). */
+const navigationRef = createNavigationContainerRef();
 
 /** Used only when channel API omits stream URLs (playback fallback). */
 const DEFAULT_STREAM_URI =
@@ -774,6 +782,8 @@ function AppTabs() {
 }
 
 export default function App() {
+  const [navigationRevision, setNavigationRevision] = useState(0);
+
   useEffect(() => {
     void trackInstallOnce();
     void startPresence();
@@ -791,14 +801,20 @@ export default function App() {
       <OsmaniAppProvider>
         <ModalSheetCoordinatorProvider>
           <NavigationContainer
+            ref={navigationRef}
             theme={{
               ...DarkTheme,
               colors: { ...DarkTheme.colors, background: COLORS.background, card: COLORS.nav },
             }}
+            onReady={() => setNavigationRevision((n) => n + 1)}
+            onStateChange={() => setNavigationRevision((n) => n + 1)}
           >
             <RootNavigator />
-            <WhatsAppFloatingButtonGate />
           </NavigationContainer>
+          <WhatsAppFloatingButtonGate
+            navigationRef={navigationRef}
+            navigationRevision={navigationRevision}
+          />
           <PopupSettingsModal />
           <UpdateOverlay />
           <OtaDebugOverlay />
