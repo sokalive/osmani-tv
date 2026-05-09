@@ -17,8 +17,7 @@
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true
-        },
-        "NSLocationWhenInUseUsageDescription": "Mahali husaidia kutambua eneo kwa dashibodi ya watazamaji wa hai (analytics); bila ruhusa nchi hutajwa tu kiwango cha kifupi kwa lugha ya simu."
+        }
       }
     },
     "android": {
@@ -40,12 +39,6 @@
     },
     "plugins": [
       "expo-video",
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "Mahali husaidia kutambua eneo kwa dashibodi ya watazamaji wa hai; bila ruhusa analytics zitatumia tu nchi kutoka mipangilio ya simu."
-        }
-      ],
       "./plugins/withOsmaniUpdate.js"
     ]
   }
