@@ -466,24 +466,32 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     letterSpacing: 0.5,
   },
+  /**
+   * Broadcast-TV badge: bigger pill, stronger drop shadow, white bold
+   * uppercase text. Theme color is supplied per-state by the engine
+   * (slate / amber / green / red / grey) so nothing about the carousel
+   * layout, dimensions, or app theme is changed here.
+   */
   badge: {
     alignSelf: 'flex-start',
     maxWidth: '92%',
-    paddingHorizontal: 16,
-    paddingVertical: 7,
+    paddingHorizontal: 22,
+    paddingVertical: 11,
     borderRadius: 999,
-    marginBottom: 7,
-    elevation: 4,
+    marginBottom: 10,
+    elevation: 6,
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.35,
-    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.45,
+    shadowRadius: 5,
   },
   badgeText: {
     color: COLORS.white,
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.25,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textAlign: 'center',
+    textTransform: 'uppercase',
   },
   title: {
     color: COLORS.white,

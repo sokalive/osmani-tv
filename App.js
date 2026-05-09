@@ -38,7 +38,6 @@ import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
 import { resolveStream } from './lib/channelStream';
 import { normalizeBanner } from './lib/normalizeBanner';
-import { computeBannerView } from './lib/bannerEngine';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import BannerCarousel, { BannerCarouselSkeleton } from './components/BannerCarousel';
 
@@ -208,17 +207,10 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
   const [emergencyModalVisible, setEmergencyModalVisible] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [bannerVisibilityClock, setBannerVisibilityClock] = useState(() => Date.now());
 
   useEffect(() => {
     if (!emergencyMode) setEmergencyModalVisible(false);
   }, [emergencyMode]);
-
-  useEffect(() => {
-    if (!Array.isArray(rawBanners) || rawBanners.length === 0) return undefined;
-    const id = setInterval(() => setBannerVisibilityClock(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [rawBanners]);
 
   const listBottomPadding = getScrollContentBottomPadding(insets);
 
@@ -235,16 +227,18 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
     return rows.map((raw, i) => mapApiChannelToCard(raw, i, freeMode, serverHealth));
   }, [rawChannels, bottomTabFilter, selectedFilter, freeMode, serverHealth]);
 
+  /**
+   * Banners are ALWAYS visible in the carousel. The Lovable engine
+   * never hides a banner because of schedule state — it only swaps
+   * badge text / countdown / colors / blink / transitions. The single
+   * gate is the admin master toggle (`is_active = false`).
+   */
   const bannerSlides = useMemo(() => {
     if (!Array.isArray(rawBanners)) return [];
     return rawBanners
       .map((b, i) => normalizeBanner(b, i))
-      .filter((s) => {
-        if (s.isActive === false) return false;
-        const view = computeBannerView(s, bannerVisibilityClock, bannerEngineConfig);
-        return view.visible;
-      });
-  }, [rawBanners, bannerVisibilityClock, bannerEngineConfig]);
+      .filter((s) => s.isActive !== false);
+  }, [rawBanners]);
 
   const onPullRefresh = useCallback(async () => {
     setPullRefreshing(true);
