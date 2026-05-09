@@ -251,6 +251,67 @@ function pickTruthyString(...vals) {
   return null;
 }
 
+function collectManualGiftObjects(body) {
+  if (!isPlainObject(body)) return [];
+  const data = isPlainObject(body.data) ? body.data : null;
+  const subRoot = isPlainObject(body.subscription) ? body.subscription : null;
+  const nestedSub = pickDataSubscription(body);
+  const pay = isPlainObject(body.payment) ? body.payment : null;
+  const list = [];
+  const push = (x) => {
+    if (isPlainObject(x)) list.push(x);
+  };
+  push(body.manualGift);
+  push(body.manual_gift);
+  push(data?.manualGift);
+  push(data?.manual_gift);
+  push(subRoot?.manualGift);
+  push(subRoot?.manual_gift);
+  push(nestedSub?.manualGift);
+  push(nestedSub?.manual_gift);
+  push(pay?.manualGift);
+  push(pay?.manual_gift);
+  return list;
+}
+
+/**
+ * Build ack key from backend `manualGift` object (admin grant payload).
+ */
+function ackKeyFromManualGiftObject(mg) {
+  if (!isPlainObject(mg)) return null;
+  const id = pickTruthyString(
+    mg.id,
+    mg._id,
+    mg.grant_id,
+    mg.grantId,
+    mg.gift_id,
+    mg.giftId,
+    mg.subscription_gift_id,
+    mg.subscriptionGiftId,
+    mg.manual_gift_id,
+    mg.manualGiftId,
+  );
+  const version = pickNumber(
+    mg.version,
+    mg.grant_version,
+    mg.grantVersion,
+    mg.manual_gift_version,
+    mg.manualGiftVersion,
+  );
+  if (id) {
+    return version != null ? `${id}:${version}` : String(id);
+  }
+  if (version != null) {
+    return `manual_gift:${version}`;
+  }
+  const created = pickTruthyString(mg.created_at, mg.createdAt, mg.granted_at, mg.grantedAt);
+  const exp = pickTruthyString(mg.expires_at, mg.expiresAt);
+  if (created || exp) {
+    return `manual_gift_meta:${created ?? ''}:${exp ?? ''}`;
+  }
+  return null;
+}
+
 /**
  * Stable key for admin-applied manual subscription gifts. Must change when the
  * backend issues a NEW gift so the app can show the one-time congratulations again.
@@ -261,6 +322,26 @@ function pickManualGiftAckKey(body) {
   const sub = isPlainObject(body.subscription) ? body.subscription : null;
   const nestedSub = pickDataSubscription(body);
   const pay = isPlainObject(body.payment) ? body.payment : null;
+
+  const giftObjs = collectManualGiftObjects(body);
+  for (const mg of giftObjs) {
+    const k = ackKeyFromManualGiftObject(mg);
+    if (k) {
+      if (__DEV__) console.log('[MANUAL_GIFT]', 'pick_ack_key_from_manualGift_object', { key: k });
+      return k;
+    }
+  }
+
+  const stringGiftId = pickTruthyString(
+    typeof body.manualGift === 'string' ? body.manualGift : '',
+    typeof body.manual_gift === 'string' ? body.manual_gift : '',
+    typeof data?.manualGift === 'string' ? data.manualGift : '',
+    typeof data?.manual_gift === 'string' ? data.manual_gift : '',
+  );
+  if (stringGiftId) {
+    if (__DEV__) console.log('[MANUAL_GIFT]', 'pick_ack_key_from_string_manualGift', { key: stringGiftId });
+    return stringGiftId;
+  }
 
   const explicitId = pickTruthyString(
     body.manual_gift_id,
@@ -292,6 +373,8 @@ function pickManualGiftAckKey(body) {
   );
 
   const flag =
+    body.manualGift === true ||
+    data?.manualGift === true ||
     body.manual_subscription_gift === true ||
     body.manualSubscriptionGift === true ||
     body.is_manual_subscription_gift === true ||
@@ -300,19 +383,37 @@ function pickManualGiftAckKey(body) {
     sub?.manual_subscription_gift === true ||
     nestedSub?.manual_subscription_gift === true;
 
-  if (!explicitId && version == null && !flag) return null;
+  if (!explicitId && version == null && !flag && giftObjs.length === 0) return null;
 
   if (explicitId) {
-    return version != null ? `${explicitId}:${version}` : explicitId;
+    const k = version != null ? `${explicitId}:${version}` : explicitId;
+    if (__DEV__) console.log('[MANUAL_GIFT]', 'pick_ack_key_flat_id', { key: k });
+    return k;
   }
   if (version != null) {
-    return `manual_gift:${version}`;
+    const k = `manual_gift:${version}`;
+    if (__DEV__) console.log('[MANUAL_GIFT]', 'pick_ack_key_version_only', { key: k });
+    return k;
   }
-  if (flag) {
+  if (flag || giftObjs.length > 0) {
     const started = pickStartedAt(body);
-    if (started) return `manual_gift_started:${started}`;
+    if (started) {
+      const k = `manual_gift_started:${started}`;
+      if (__DEV__) console.log('[MANUAL_GIFT]', 'pick_ack_key_flag_started', { key: k });
+      return k;
+    }
     const exp = pickExpiresAt(body);
-    if (exp) return `manual_gift_exp:${exp}`;
+    if (exp) {
+      const k = `manual_gift_exp:${exp}`;
+      if (__DEV__) console.log('[MANUAL_GIFT]', 'pick_ack_key_flag_exp', { key: k });
+      return k;
+    }
+  }
+  if (__DEV__ && (giftObjs.length > 0 || flag)) {
+    console.log('[MANUAL_GIFT]', 'pick_ack_key_miss', {
+      hasManualGiftObjects: giftObjs.length > 0,
+      flag,
+    });
   }
   return null;
 }
@@ -433,6 +534,16 @@ export async function verifySubscription(deviceId, deviceFingerprint) {
     }
     const out = normalizeVerifyResponse(body);
     console.log('[SUBSCRIPTION_VERIFY]', 'response', { active: out.active, expiresAt: out.expiresAt });
+    console.log('[MANUAL_GIFT]', 'verify_subscription_payload', {
+      manualGiftAckKey: out.manualGiftAckKey ?? null,
+      active: out.active,
+      rawManualGift:
+        body?.manualGift ??
+        body?.manual_gift ??
+        body?.data?.manualGift ??
+        body?.data?.manual_gift ??
+        null,
+    });
     if (__DEV__) {
       console.log('[ACCOUNT_DURATION]', 'verify_raw_shape', {
         root_plan_duration_days: body?.plan_duration_days,
@@ -468,6 +579,16 @@ export async function recoverSubscription(deviceId, deviceFingerprint) {
     }
     const out = normalizeVerifyResponse(body);
     console.log('[SUBSCRIPTION_RECOVER]', 'response', { active: out.active, expiresAt: out.expiresAt });
+    console.log('[MANUAL_GIFT]', 'recover_payload', {
+      manualGiftAckKey: out.manualGiftAckKey ?? null,
+      active: out.active,
+      rawManualGift:
+        body?.manualGift ??
+        body?.manual_gift ??
+        body?.data?.manualGift ??
+        body?.data?.manual_gift ??
+        null,
+    });
     if (__DEV__) {
       console.log('[ACCOUNT_DURATION]', 'recover_normalized', { planDurationDays: out.planDurationDays });
     }

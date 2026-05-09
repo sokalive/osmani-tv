@@ -125,6 +125,12 @@ export function OsmaniAppProvider({ children }) {
           }
         : null;
       setSubscriptionDetails(detailsPayload);
+      console.log('[MANUAL_GIFT]', 'context_after_verify', {
+        reason,
+        active,
+        manualGiftAckKey: detailsPayload?.manualGiftAckKey ?? null,
+        rawVerifyManualGiftAckKey: r?.manualGiftAckKey ?? null,
+      });
       if (__DEV__) {
         console.log('[ACCOUNT_DURATION]', 'context_after_verify', {
           planDurationDays: detailsPayload?.planDurationDays ?? null,

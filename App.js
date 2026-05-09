@@ -301,36 +301,68 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
 
   const tryShowManualGift = useCallback(
     async (source) => {
-      if (!enableHomeExpiryReminder) return false;
-      if (!manualGiftAckLoaded) return false;
       const key = subscriptionDetailsRef.current?.manualGiftAckKey;
-      if (!key || !isSubscribedRef.current) return false;
+      const subscribed = isSubscribedRef.current;
+      console.log('[MANUAL_GIFT]', 'popup_try', source, {
+        enableHomeExpiryReminder,
+        manualGiftAckLoaded,
+        manualGiftAckKey: key ?? null,
+        isSubscribed: subscribed,
+        blockingSheetActive: isBlockingSheetActive,
+        blockingSheetIds,
+        premiumModalVisible,
+        expiryReminderVisible: expiryReminderVisibleRef.current,
+      });
+      if (!enableHomeExpiryReminder) {
+        console.log('[MANUAL_GIFT]', 'popup_skip', source, 'not_home_tab');
+        return false;
+      }
+      if (!manualGiftAckLoaded) {
+        console.log('[MANUAL_GIFT]', 'popup_skip', source, 'ack_storage_not_loaded');
+        return false;
+      }
+      if (!key || !subscribed) {
+        console.log('[MANUAL_GIFT]', 'popup_skip', source, 'no_ack_key_or_not_subscribed', {
+          manualGiftAckKey: key ?? null,
+          isSubscribed: subscribed,
+        });
+        return false;
+      }
       const ack = await readManualGiftAck();
-      if (ack === key) return false;
+      console.log('[MANUAL_GIFT]', 'popup_ack_compare', source, { storedAck: ack || '(empty)', expectedKey: key });
+      if (ack === key) {
+        console.log('[MANUAL_GIFT]', 'popup_skip', source, 'already_acked');
+        return false;
+      }
       if (expiryReminderVisibleRef.current) {
         deferredManualGiftRef.current = true;
         reminderCoordLog('manual_gift_defer', source, 'reason=expiry_visible');
+        console.log('[MANUAL_GIFT]', 'popup_defer', source, 'expiry_reminder_visible');
         return false;
       }
       if (isBlockingSheetActive) {
         deferredManualGiftRef.current = true;
         reminderCoordLog('manual_gift_defer', source, 'reason=blocking_sheets');
+        console.log('[MANUAL_GIFT]', 'popup_defer', source, 'blocking_sheets', blockingSheetIds);
         return false;
       }
       if (premiumModalVisible) {
         deferredManualGiftRef.current = true;
         reminderCoordLog('manual_gift_defer', source, 'reason=premium_open');
+        console.log('[MANUAL_GIFT]', 'popup_defer', source, 'premium_open');
         return false;
       }
       deferredManualGiftRef.current = false;
       setManualGiftVisible(true);
       reminderCoordLog('manual_gift_open', source, { key });
+      console.log('[MANUAL_GIFT]', 'popup_open', source, { key });
       return true;
     },
     [
       enableHomeExpiryReminder,
       manualGiftAckLoaded,
       isBlockingSheetActive,
+      blockingSheetIds,
       premiumModalVisible,
     ],
   );
@@ -434,7 +466,12 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   useEffect(() => {
     if (!enableHomeExpiryReminder || !manualGiftAckLoaded) return;
     void tryShowManualGiftRef.current('subscription_update');
-  }, [enableHomeExpiryReminder, manualGiftAckLoaded, subscriptionVersion]);
+  }, [
+    enableHomeExpiryReminder,
+    manualGiftAckLoaded,
+    subscriptionVersion,
+    subscriptionDetails?.manualGiftAckKey,
+  ]);
 
   useEffect(() => {
     if (!enableHomeExpiryReminder) return;
@@ -479,6 +516,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   const dismissManualGift = useCallback(async () => {
     const key = subscriptionDetailsRef.current?.manualGiftAckKey;
     if (key) await writeManualGiftAck(key);
+    console.log('[MANUAL_GIFT]', 'popup_dismiss_asante', { wroteAck: Boolean(key), key: key ?? null });
     manualGiftVisibleRef.current = false;
     setManualGiftVisible(false);
     setTimeout(() => {
