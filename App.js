@@ -33,6 +33,11 @@ import WhatsAppFloatingButton from './components/WhatsAppFloatingButton';
 import AkauntiYanguScreen from './screens/AkauntiYanguScreen';
 import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
+import {
+  ModalSheetCoordinatorProvider,
+  useModalSheetCoordinator,
+  useRegisterBlockingSheet,
+} from './context/ModalSheetCoordinatorContext';
 import { BASE_URL } from './api';
 import { trackInstallOnce } from './api/analytics';
 import { startPresence, stopPresence } from './lib/presenceTracker';
@@ -197,6 +202,11 @@ function mapApiChannelToCard(raw, index, freeMode = false, serverHealth = null) 
 
 const HOME_EXPIRY_REMINDER_MS = 10 * 60 * 1000;
 
+const REMINDER_DEBUG_PREFIX = '[REMINDER_COORD]';
+function reminderCoordLog(...args) {
+  if (__DEV__) console.log(REMINDER_DEBUG_PREFIX, ...args);
+}
+
 function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeExpiryReminder = false }) {
   const insets = useSafeAreaInsets();
   const {
@@ -225,13 +235,93 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   const [bannerVisibilityClock, setBannerVisibilityClock] = useState(() => Date.now());
 
   const isSubscribedRef = useRef(isSubscribed);
-  const premiumModalVisibleRef = useRef(premiumModalVisible);
   const subscriptionDetailsRef = useRef(subscriptionDetails);
   const subscriptionExpiresAtRef = useRef(subscriptionExpiresAt);
+  const deferredReminderRef = useRef(false);
+  const tryShowExpiryReminderRef = useRef(() => false);
   isSubscribedRef.current = isSubscribed;
-  premiumModalVisibleRef.current = premiumModalVisible;
   subscriptionDetailsRef.current = subscriptionDetails;
   subscriptionExpiresAtRef.current = subscriptionExpiresAt;
+
+  const {
+    isBlockingSheetActive,
+    blockingSheetCount,
+    blockingSheetIds,
+  } = useModalSheetCoordinator();
+
+  const catalogBlockingSuffix = enableHomeExpiryReminder
+    ? 'home'
+    : bottomTabFilter === 'Sports'
+      ? 'sports'
+      : bottomTabFilter === 'Movies'
+        ? 'tamthilia'
+        : 'other';
+
+  useRegisterBlockingSheet(`catalog-premium-${catalogBlockingSuffix}`, premiumModalVisible);
+  useRegisterBlockingSheet(`catalog-emergency-${catalogBlockingSuffix}`, emergencyModalVisible);
+
+  const tryShowExpiryReminder = useCallback(
+    (source) => {
+      if (!enableHomeExpiryReminder) {
+        reminderCoordLog('skip', source, 'reason=not_home_catalog');
+        return false;
+      }
+      if (isHomeExpiryReminderConsumed()) {
+        reminderCoordLog('skip', source, 'reason=session_already_consumed');
+        return false;
+      }
+      if (isBlockingSheetActive) {
+        deferredReminderRef.current = true;
+        reminderCoordLog('defer', source, 'reason=blocking_sheets', {
+          blockingSheetCount,
+          blockingSheetIds,
+          premiumModalVisible,
+        });
+        return false;
+      }
+      if (!isSubscribedRef.current) {
+        reminderCoordLog('skip', source, 'reason=not_subscribed');
+        return false;
+      }
+      const details = subscriptionDetailsRef.current;
+      const expiresAt = subscriptionExpiresAtRef.current;
+      const progress = computeSubscriptionProgress({
+        startedAt: details?.startedAt ?? null,
+        expiresAt: details?.expiresAt ?? expiresAt ?? null,
+        planDurationDays: details?.planDurationDays ?? null,
+        serverTime: details?.serverTime ?? null,
+        serverTimeFetchedAt: details?.serverTimeFetchedAt ?? null,
+        nowMsOverride: Date.now(),
+      });
+      if (!progress.ok || progress.remainingDays > 2) {
+        reminderCoordLog('skip', source, 'reason=not_eligible', {
+          progressOk: progress.ok,
+          remainingDays: progress.remainingDays,
+        });
+        return false;
+      }
+      const displayDays = Math.min(Math.max(progress.remainingDays, 1), 2);
+      consumeHomeExpiryReminder();
+      setExpiryReminderDisplayDays(displayDays);
+      setExpiryReminderVisible(true);
+      deferredReminderRef.current = false;
+      reminderCoordLog('open', source, {
+        displayDays,
+        blockingSheetCount,
+        premiumModalVisible,
+      });
+      return true;
+    },
+    [
+      enableHomeExpiryReminder,
+      isBlockingSheetActive,
+      blockingSheetCount,
+      blockingSheetIds,
+      premiumModalVisible,
+    ],
+  );
+
+  tryShowExpiryReminderRef.current = tryShowExpiryReminder;
 
   useFocusEffect(
     useCallback(() => {
@@ -239,25 +329,8 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
       let cancelled = false;
       const tid = setTimeout(() => {
         if (cancelled) return;
-        if (isHomeExpiryReminderConsumed()) return;
-        if (premiumModalVisibleRef.current) return;
-        if (!isSubscribedRef.current) return;
-        const details = subscriptionDetailsRef.current;
-        const expiresAt = subscriptionExpiresAtRef.current;
-        const progress = computeSubscriptionProgress({
-          startedAt: details?.startedAt ?? null,
-          expiresAt: details?.expiresAt ?? expiresAt ?? null,
-          planDurationDays: details?.planDurationDays ?? null,
-          serverTime: details?.serverTime ?? null,
-          serverTimeFetchedAt: details?.serverTimeFetchedAt ?? null,
-          nowMsOverride: Date.now(),
-        });
-        if (!progress.ok) return;
-        if (progress.remainingDays > 2) return;
-        const displayDays = Math.min(Math.max(progress.remainingDays, 1), 2);
-        consumeHomeExpiryReminder();
-        setExpiryReminderDisplayDays(displayDays);
-        setExpiryReminderVisible(true);
+        reminderCoordLog('timer_fire');
+        tryShowExpiryReminderRef.current('timer');
       }, HOME_EXPIRY_REMINDER_MS);
       return () => {
         cancelled = true;
@@ -265,6 +338,18 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
       };
     }, [enableHomeExpiryReminder]),
   );
+
+  useEffect(() => {
+    if (!enableHomeExpiryReminder) return;
+    if (isBlockingSheetActive) return;
+    if (!deferredReminderRef.current) return;
+    deferredReminderRef.current = false;
+    reminderCoordLog('retry_after_unblock', {
+      blockingSheetIds,
+      blockingSheetCount,
+    });
+    tryShowExpiryReminderRef.current('after_unblock');
+  }, [isBlockingSheetActive, enableHomeExpiryReminder, blockingSheetIds, blockingSheetCount]);
 
   const dismissExpiryReminder = useCallback(() => {
     setExpiryReminderVisible(false);
@@ -274,6 +359,9 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
     setExpiryReminderVisible(false);
     setPremiumModalVisible(true);
   }, []);
+
+  const mountReminderModal =
+    enableHomeExpiryReminder && expiryReminderVisible && !isBlockingSheetActive;
 
   useEffect(() => {
     if (!emergencyMode) setEmergencyModalVisible(false);
@@ -578,12 +666,14 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
           navigation.navigate('Home');
         }}
       />
-      <SubscriptionExpiryReminderModal
-        visible={expiryReminderVisible}
-        displayDays={expiryReminderDisplayDays}
-        onRenew={onRenewFromExpiryReminder}
-        onDismissLater={dismissExpiryReminder}
-      />
+      {mountReminderModal ? (
+        <SubscriptionExpiryReminderModal
+          visible
+          displayDays={expiryReminderDisplayDays}
+          onRenew={onRenewFromExpiryReminder}
+          onDismissLater={dismissExpiryReminder}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -699,19 +789,21 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <OsmaniAppProvider>
-        <NavigationContainer
-          theme={{
-            ...DarkTheme,
-            colors: { ...DarkTheme.colors, background: COLORS.background, card: COLORS.nav },
-          }}
-        >
-          <RootNavigator />
-        </NavigationContainer>
-        <PopupSettingsModal />
-        <WhatsAppFloatingButton />
-        <UpdateOverlay />
-        <OtaDebugOverlay />
-        <SubscriptionLifecycleGates />
+        <ModalSheetCoordinatorProvider>
+          <NavigationContainer
+            theme={{
+              ...DarkTheme,
+              colors: { ...DarkTheme.colors, background: COLORS.background, card: COLORS.nav },
+            }}
+          >
+            <RootNavigator />
+          </NavigationContainer>
+          <PopupSettingsModal />
+          <WhatsAppFloatingButton />
+          <UpdateOverlay />
+          <OtaDebugOverlay />
+          <SubscriptionLifecycleGates />
+        </ModalSheetCoordinatorProvider>
       </OsmaniAppProvider>
     </SafeAreaProvider>
   );
@@ -736,6 +828,13 @@ function SubscriptionLifecycleGates() {
   } = useOsmaniApp();
   const [recovering, setRecovering] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
+
+  useRegisterBlockingSheet('lifecycle-plans', plansOpen);
+  useRegisterBlockingSheet('lifecycle-transfer', Boolean(pendingTransfer));
+  useRegisterBlockingSheet(
+    'lifecycle-revoked',
+    Boolean(revokedReason) && !plansOpen,
+  );
 
   const onRecover = useCallback(async () => {
     if (recovering) return;
