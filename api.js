@@ -3,6 +3,8 @@
  * All HTTP modules (`api.js`, `api/payment.js`, `api/settings.js`, etc.) must use this `BASE_URL`.
  */
 const DEFAULT_API_URL = "https://osmani-admin-api.onrender.com";
+/** Older deploy; `/api/channels` is empty there — builds must hit Admin API for channel JSON. */
+const LEGACY_TV_HOST = "https://osmani-tv.onrender.com";
 
 function getExpoPublicApiUrl() {
   try {
@@ -14,13 +16,20 @@ function getExpoPublicApiUrl() {
   }
 }
 
+function resolveBaseUrl() {
+  const raw = getExpoPublicApiUrl() ?? DEFAULT_API_URL;
+  const stripped = String(raw).replace(/\/+$/, "");
+  if (stripped.toLowerCase() === LEGACY_TV_HOST.toLowerCase()) {
+    return DEFAULT_API_URL;
+  }
+  return stripped;
+}
+
 // Centralized API base URL:
 // - Uses EXPO_PUBLIC_API_URL when provided (Expo web build-time injection)
 // - Falls back to the current Render API host for safety
-export const BASE_URL = (() => {
-  const raw = getExpoPublicApiUrl() ?? DEFAULT_API_URL;
-  return String(raw).replace(/\/+$/, "");
-})();
+// - Rewrites legacy `osmani-tv.onrender.com` so channel/catalog calls hit Admin API
+export const BASE_URL = resolveBaseUrl();
 
 export async function getChannels() {
   const res = await fetch(`${BASE_URL}/api/channels`);

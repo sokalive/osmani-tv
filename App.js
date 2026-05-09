@@ -123,15 +123,22 @@ function channelVisibleInApp(raw) {
   return showInApp && isActive;
 }
 
+function displaySectionSlug(raw) {
+  return String(raw?.display_section ?? raw?.displaySection ?? '').trim().toLowerCase();
+}
+
 function matchesBottomTabRow(r, filter) {
   if (filter == null || String(filter).trim() === '') return true;
-  const v = String(r.bottomTab ?? r.bottomTabsDisplay ?? r.category ?? '').trim();
-  return v.toLowerCase() === String(filter).trim().toLowerCase();
+  const f = String(filter).trim().toLowerCase();
+  if (f === 'sports') return displaySectionSlug(r) === 'sports';
+  const v = String(r.bottomTab ?? r.bottomTabsDisplay ?? r.category ?? '').trim().toLowerCase();
+  return v === f;
 }
 
 function matchesPillFilter(r, pill) {
   if (pill === 'Zote' || pill === 'Trending') return true;
-  if (pill === 'Sports' || pill === 'Movies') {
+  if (pill === 'Sports') return displaySectionSlug(r) === 'sports';
+  if (pill === 'Movies') {
     const want = pill.toLowerCase();
     const cat = String(r.category ?? '').trim().toLowerCase();
     const bt = String(r.bottomTab ?? r.bottomTabsDisplay ?? '').trim().toLowerCase();
