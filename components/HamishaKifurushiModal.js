@@ -497,22 +497,16 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                       bounces={false}
                     >
                       <Text style={styles.introBodySw}>
-                        Habari, unaweza kuhamisha kifurushi chako kwenda kwenye simu nyingine na simu yako
-                        itabaki haina kifurushi.
+                        Unaweza kuhamisha kifurushi chako kwenda kwenye simu nyingine.{'\n\n'}
+                        Simu ya sasa itapoteza kifurushi baada ya kuhamisha.
                       </Text>
                       <Text style={styles.introSectionHeading}>JINSI YA KUHAMISHA</Text>
-                      <Text style={styles.introBullet}>
-                        • Bonyeza batani ya [ ENDELEA KUHAMISHA ]
-                      </Text>
+                      <Text style={styles.introBullet}>• Bonyeza [ ENDELEA KUHAMISHA ]</Text>
                       <Text style={styles.introBullet}>• Weka namba uliyolipia nayo</Text>
                       <Text style={styles.introBullet}>• Utapokea code za kuhamisha</Text>
-                      <Text style={styles.introBullet}>• Zi-copy code hizo</Text>
-                      <Text style={styles.introBullet}>• Fungua simu unayotaka ipokee kifurushi</Text>
-                      <Text style={styles.introBullet}>• Bonyeza tena batani ya HAMISHA KIFURUSHI</Text>
-                      <Text style={styles.introBullet}>• Chagua: “Nina Code Tayari”</Text>
-                      <Text style={styles.introBullet}>
-                        • Jaza code zako ulizopata kwenye simu yenye kifurushi ✅
-                      </Text>
+                      <Text style={styles.introBullet}>• Fungua simu mpya</Text>
+                      <Text style={styles.introBullet}>• Chagua “Nina Code Tayari”</Text>
+                      <Text style={styles.introBullet}>• Weka code zako kukamilisha uhamisho ✅</Text>
                       {error ? <Text style={styles.errorText}>{error}</Text> : null}
                     </ScrollView>
                     <View style={styles.actionsBlockIntro}>
