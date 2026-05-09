@@ -492,7 +492,8 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                       bounces={false}
                     >
                       <Text style={styles.introBodySw}>
-                        Unaweza kuhamisha kifurushi chako kwenda kwenye simu nyingine.{'\n\n'}
+                        Unaweza kuhamisha kifurushi chako kwenda kwenye simu nyingine.
+                        {'\n'}
                         Simu ya sasa itapoteza kifurushi baada ya kuhamisha.
                       </Text>
                       <Text style={styles.introSectionHeading}>JINSI YA KUHAMISHA</Text>
@@ -500,7 +501,9 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                       <Text style={styles.introBullet}>• Weka namba uliyolipia nayo</Text>
                       <Text style={styles.introBullet}>• Utapokea code za kuhamisha</Text>
                       <Text style={styles.introBullet}>• Fungua simu mpya</Text>
-                      <Text style={styles.introBullet}>• Chagua “Nina Code Tayari”</Text>
+                      <Text style={styles.introBullet}>
+                        {'• Chagua \u201cNina Code Tayari\u201d'}
+                      </Text>
                       <Text style={styles.introBullet}>• Weka code zako kukamilisha uhamisho ✅</Text>
                       {error ? <Text style={styles.errorText}>{error}</Text> : null}
                     </ScrollView>
@@ -811,21 +814,21 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   introMidScrollContent: {
-    paddingBottom: 2,
+    paddingBottom: 0,
     alignItems: 'stretch',
   },
   stepColumnIntro: {
-    paddingTop: 8,
+    paddingTop: 6,
   },
   introStepTitle: {
-    marginBottom: 8,
+    marginBottom: 6,
   },
   introBodySw: {
     color: '#E5E7EB',
-    fontSize: 15,
-    lineHeight: 23,
+    fontSize: 14,
+    lineHeight: 21,
     textAlign: 'left',
-    marginBottom: 12,
+    marginBottom: 10,
     width: '100%',
   },
   introSectionHeading: {
@@ -834,15 +837,15 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.8,
     textAlign: 'left',
-    marginBottom: 8,
-    marginTop: 2,
+    marginBottom: 6,
+    marginTop: 10,
     width: '100%',
   },
   introBullet: {
     color: '#F3F4F6',
-    fontSize: 14,
-    lineHeight: 22,
-    marginBottom: 8,
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 5,
     textAlign: 'left',
     width: '100%',
   },
@@ -850,7 +853,7 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'stretch',
     alignItems: 'stretch',
-    marginTop: 12,
+    marginTop: 8,
   },
   card: {
     width: '100%',
