@@ -37,7 +37,8 @@ import { startPresence, stopPresence } from './lib/presenceTracker';
 import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
 import { resolveStream } from './lib/channelStream';
-import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
+import { normalizeBanner } from './lib/normalizeBanner';
+import { computeBannerView } from './lib/bannerEngine';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import BannerCarousel, { BannerCarouselSkeleton } from './components/BannerCarousel';
 
@@ -193,6 +194,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
     maintenanceMode,
     rawChannels,
     rawBanners,
+    bannerEngineConfig,
     serverHealth,
     loading,
     error,
@@ -237,8 +239,12 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
     if (!Array.isArray(rawBanners)) return [];
     return rawBanners
       .map((b, i) => normalizeBanner(b, i))
-      .filter((s) => isBannerVisibleAt(s, bannerVisibilityClock));
-  }, [rawBanners, bannerVisibilityClock]);
+      .filter((s) => {
+        if (s.isActive === false) return false;
+        const view = computeBannerView(s, bannerVisibilityClock, bannerEngineConfig);
+        return view.visible;
+      });
+  }, [rawBanners, bannerVisibilityClock, bannerEngineConfig]);
 
   const onPullRefresh = useCallback(async () => {
     setPullRefreshing(true);
@@ -407,6 +413,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
             onEmergency={onBannerEmergency}
             onPremiumRequired={onBannerPremiumRequired}
             verifySubscriptionBeforePlay={verifySubscriptionBeforePlay}
+            engineConfig={bannerEngineConfig}
           />
         ) : null}
 
@@ -453,6 +460,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
       handleRefresh,
       displayChannels.length,
       bannerSlides,
+      bannerEngineConfig,
       loading,
       error,
       refreshKey,

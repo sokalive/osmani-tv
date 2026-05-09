@@ -10,6 +10,7 @@ import {
   writeSubscriptionCache,
 } from '../api/subscription';
 import { readBannersCache, writeBannersCache } from '../lib/bannersCache';
+import { mergeEngineConfig } from '../lib/bannerEngine';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 
@@ -27,6 +28,16 @@ export function OsmaniAppProvider({ children }) {
   const [settings, setSettings] = useState(defaultSettings);
   const [rawChannels, setRawChannels] = useState([]);
   const [rawBanners, setRawBanners] = useState([]);
+  /**
+   * Lovable banner engine thresholds. Sourced from `app_settings.banner_engine`
+   * via `getSettings()`; falls back to `DEFAULT_ENGINE_CONFIG` until the
+   * first successful settings load. Re-derived on every settings refresh
+   * (cold start, foreground tick, `app_settings_changed` SSE) so admin
+   * changes propagate without an app restart.
+   */
+  const [bannerEngineConfig, setBannerEngineConfig] = useState(() =>
+    mergeEngineConfig(null),
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [serverHealth, setServerHealth] = useState(null);
@@ -225,6 +236,7 @@ export function OsmaniAppProvider({ children }) {
         emergencyMode: Boolean(s.emergencyMode),
         maintenanceMode: Boolean(s.maintenanceMode),
       });
+      setBannerEngineConfig(mergeEngineConfig(s.bannerEngine ?? null));
       setRawChannels(Array.isArray(list) ? list : []);
       const nextBanners = Array.isArray(bannersResult) ? bannersResult : null;
       setRawBanners((prev) => (nextBanners != null ? nextBanners : prev));
@@ -297,10 +309,21 @@ export function OsmaniAppProvider({ children }) {
       void refresh({ showGlobalLoading: false, preserveDataOnError: true });
       void reverifySubscription('sse:app_settings_changed');
     });
+    /**
+     * Banner schedule / catalog edits emit `banners_changed`. Refresh
+     * banners-only via the catalog refresh — engine thresholds (in
+     * `app_settings`) are handled by the `app_settings_changed` listener
+     * above. No subscription reverify needed for banner edits.
+     */
+    const offBanners = subscribeRealtimeEvent('banners_changed', (payload) => {
+      console.log('[BANNERS_CHANGED]', 'sse', payload);
+      void refresh({ showGlobalLoading: false, preserveDataOnError: true });
+    });
     return () => {
       offRevoked();
       offCompleted();
       offSettings();
+      offBanners();
     };
   }, [refresh, reverifySubscription]);
 
@@ -371,6 +394,7 @@ export function OsmaniAppProvider({ children }) {
       maintenanceMode: settings.maintenanceMode,
       rawChannels,
       rawBanners,
+      bannerEngineConfig,
       serverHealth,
       loading,
       error,
@@ -396,6 +420,7 @@ export function OsmaniAppProvider({ children }) {
       settings,
       rawChannels,
       rawBanners,
+      bannerEngineConfig,
       serverHealth,
       loading,
       error,

@@ -11,8 +11,14 @@ async function parseJson(res) {
 }
 
 /**
- * Global app flags from admin (Free / Emergency / Maintenance).
+ * Global app flags from admin (Free / Emergency / Maintenance) plus the
+ * Lovable-style banner engine threshold config (`banner_engine`).
+ *
  * GET /api/settings
+ *
+ * Backwards-compatible: if the backend hasn't deployed the
+ * `banner_engine` block yet, the field is null and the mobile engine
+ * falls back to its built-in defaults via `mergeEngineConfig(null)`.
  */
 export async function getSettings() {
   const res = await fetch(`${BASE_URL}/api/settings`);
@@ -24,9 +30,15 @@ export async function getSettings() {
   if (!body || typeof body !== 'object') {
     throw new Error('Could not load settings (invalid response)');
   }
+
+  const bannerEngineRaw = body.banner_engine ?? body.bannerEngine ?? null;
+  const bannerEngine =
+    bannerEngineRaw && typeof bannerEngineRaw === 'object' ? bannerEngineRaw : null;
+
   return {
     freeMode: Boolean(body.freeMode),
     emergencyMode: Boolean(body.emergencyMode),
     maintenanceMode: Boolean(body.maintenanceMode),
+    bannerEngine,
   };
 }

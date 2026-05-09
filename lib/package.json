@@ -1,0 +1,5 @@
+{
+  "type": "module",
+  "private": true,
+  "comment": "Marker so Node parses lib/*.js as ES modules for unit tests under lib/__tests__/. Metro/Babel ignore this file - app bundle behaviour is unchanged."
+}

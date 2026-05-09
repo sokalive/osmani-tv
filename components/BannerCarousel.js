@@ -10,12 +10,10 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  TRANSITION_MS,
-  computeBannerState,
-  formatCountdownClock,
-  getAutoBadge,
-  getCountdownState,
-} from '../lib/normalizeBanner';
+  BANNER_STATES,
+  DEFAULT_ENGINE_CONFIG,
+  computeBannerView,
+} from '../lib/bannerEngine';
 import {
   buildPlayerChannelFromRow,
   findRawChannelById,
@@ -31,6 +29,10 @@ const AUTO_MS = 5000;
 const SLIDE_HEIGHT = 210;
 const RADIUS = 18;
 
+/**
+ * Soft pulse used for the LIVE / TRANSITION badges. Native-driver only
+ * so it stays cheap on low-end Android.
+ */
 function useBadgePulse(enabled) {
   const opacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -59,58 +61,90 @@ function useBadgePulse(enabled) {
 }
 
 /**
- * Brief crossfade triggered when a slide's engine state changes (e.g.
- * COMING_SOON → LIVE). Reuses native-driver opacity so it stays cheap on
- * low-end Android. Visual styling is unchanged — this only adds a soft
- * transition flash when the badge / countdown content swaps.
- *
- * @param {string} stateKey
+ * Faint white flash overlay that loops while the engine reports
+ * `transitionFlash` (TRANSITION_PRE / TRANSITION_POST). Doesn't change
+ * layout — uses absoluteFill at 0..0.18 opacity. Native driver only.
  */
-function useTransitionFade(stateKey) {
+function useTransitionFlash(active) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!active) {
+      opacity.setValue(0);
+      return undefined;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 0.18,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [active, opacity]);
+  return opacity;
+}
+
+/**
+ * Brief crossfade triggered when the engine state key changes (e.g.
+ * COMING_SOON → LIVE_NOW). Reuses native driver — runs once per
+ * transition, not in a loop.
+ */
+function useStateCrossfade(stateKey) {
   const opacity = useRef(new Animated.Value(1)).current;
   const lastKey = useRef(stateKey);
   useEffect(() => {
     if (lastKey.current === stateKey) return;
     lastKey.current = stateKey;
     Animated.sequence([
-      Animated.timing(opacity, {
-        toValue: 0.4,
-        duration: Math.floor(TRANSITION_MS / 2),
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: Math.floor(TRANSITION_MS / 2),
-        useNativeDriver: true,
-      }),
+      Animated.timing(opacity, { toValue: 0.55, duration: 180, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 220, useNativeDriver: true }),
     ]).start();
   }, [stateKey, opacity]);
   return opacity;
 }
 
-const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }) {
+const BannerSlide = React.memo(function BannerSlide({
+  slide,
+  slideWidth,
+  nowMs,
+  engineConfig,
+}) {
   const [imageFailed, setImageFailed] = useState(false);
 
-  // Single tick-driven derivation: state, badge, countdown all flow from
-  // the same `nowMs`. Recomputed every second when the carousel is
-  // mounted so badges flip the instant a window crosses a boundary.
-  const computed = useMemo(() => computeBannerState(slide, nowMs), [slide, nowMs]);
-  const badge = useMemo(() => getAutoBadge(slide, computed), [slide, computed]);
-  const countdown = useMemo(
-    () => getCountdownState(slide, nowMs, computed),
-    [slide, nowMs, computed],
+  // Single tick-driven derivation: state, badge, countdown all flow
+  // from the same `nowMs`. Recomputed every second; pure function so
+  // useMemo keeps it cheap.
+  const view = useMemo(
+    () => computeBannerView(slide, nowMs, engineConfig),
+    [slide, nowMs, engineConfig],
   );
 
-  const badgeOpacity = useBadgePulse(badge.enabled && badge.blink);
-  const overlayOpacity = useTransitionFade(`${computed.state}|${badge.text}`);
+  // For unscheduled banners (state = NONE) the engine does NOT override
+  // the badge — fall back to legacy admin-supplied fields verbatim so
+  // pre-engine rows keep rendering as before.
+  const usingLegacy = view.state === BANNER_STATES.NONE;
+  const badgeText = usingLegacy ? slide.legacyBadgeText : view.badgeText;
+  const badgeColor = usingLegacy ? slide.legacyBadgeColor : view.badgeColor;
+  const badgeBlink = usingLegacy ? slide.legacyBadgeBlink : view.badgeBlink;
+  const badgeEnabled = usingLegacy
+    ? (slide.legacyBadgeEnabled && slide.legacyBadgeText.length > 0)
+    : badgeText.length > 0;
+
+  const badgeOpacity = useBadgePulse(badgeEnabled && badgeBlink);
+  const flashOpacity = useTransitionFlash(view.transitionFlash);
+  const crossfadeOpacity = useStateCrossfade(`${view.state}|${badgeText}`);
 
   useEffect(() => {
     setImageFailed(false);
   }, [slide.imageUrl, slide.id]);
-
-  const countdownLabel = countdown
-    ? `${countdown.prefix} ${formatCountdownClock(countdown.remainingSec)}`
-    : null;
 
   return (
     <View style={[styles.slide, { width: slideWidth }]}>
@@ -136,24 +170,24 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]}>
-        {countdownLabel ? (
+      <Animated.View style={[styles.overlay, { opacity: crossfadeOpacity }]}>
+        {view.countdownText ? (
           <Text style={styles.countdown} numberOfLines={1}>
-            {countdownLabel}
+            {view.countdownText}
           </Text>
         ) : null}
-        {badge.enabled && badge.text.length > 0 ? (
+        {badgeEnabled ? (
           <Animated.View
             style={[
               styles.badge,
               {
-                backgroundColor: badge.color,
-                opacity: badge.blink ? badgeOpacity : 1,
+                backgroundColor: badgeColor,
+                opacity: badgeBlink ? badgeOpacity : 1,
               },
             ]}
           >
             <Text style={styles.badgeText} numberOfLines={1}>
-              {badge.text}
+              {badgeText}
             </Text>
           </Animated.View>
         ) : null}
@@ -166,6 +200,12 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
           </Text>
         ) : null}
       </Animated.View>
+      {view.transitionFlash ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.flash, { opacity: flashOpacity }]}
+        />
+      ) : null}
     </View>
   );
 });
@@ -207,20 +247,21 @@ function BannerCarousel({
   onPremiumRequired,
   verifySubscriptionBeforePlay,
   resetKey = 0,
+  engineConfig,
 }) {
   const scrollRef = useRef(null);
   const indexRef = useRef(0);
   const userDraggingRef = useRef(false);
   const [activeSlide, setActiveSlide] = useState(0);
 
+  const cfg = engineConfig || DEFAULT_ENGINE_CONFIG;
   const n = slides.length;
 
   // Single 1Hz tick for the whole carousel. Drives the engine
-  // (computeBannerState / getAutoBadge / countdown) for every mounted
-  // slide so LIVE NOW / COMING SOON / COMING NEXT / ENDED transitions
-  // happen instantly without polling and without per-slide intervals.
-  // Cheap: one setInterval, one state setter per second, all derivations
-  // are pure and gated by useMemo.
+  // (computeBannerView) for every mounted slide so LIVE_NOW /
+  // COMING_SOON / COMING_NEXT / ENDED transitions happen instantly
+  // without per-slide intervals. Cheap: one setInterval, one state
+  // setter per second; all derivations are pure + memoised.
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     if (n === 0) return undefined;
@@ -355,6 +396,7 @@ function BannerCarousel({
               slide={slide}
               slideWidth={slideWidth}
               nowMs={nowMs}
+              engineConfig={cfg}
             />
           );
           if (!pressable) {
@@ -453,6 +495,10 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.85)',
     fontSize: 13,
     fontWeight: '500',
+  },
+  flash: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFFFF',
   },
   dotsRow: {
     marginTop: 10,
