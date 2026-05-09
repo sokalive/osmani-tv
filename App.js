@@ -73,24 +73,41 @@ const filters = ['Zote', 'Trending', 'Sports', 'Movies'];
 /**
  * Single source of truth for category-to-`display_section` mapping.
  * Channels are filtered exclusively by the backend `display_section`
- * field — no more legacy `category` / `bottomTab` heuristics.
+ * field — no legacy `category` / `bottomTab` heuristics, no fake
+ * "demo" categories.
  *
  * The keys are the UI labels (bottom tab names AND in-page pill names)
- * the app may render; the values are the canonical lower-case
- * `display_section` strings the backend emits per row.
+ * the app actually renders today; the values are the canonical
+ * lower-case `display_section` strings the backend emits per row.
  *
- * To add a new category in the future: just append a row here and
- * either expose a new bottom tab or extend the pill list. The filter
- * engine below requires no further changes.
+ * Only labels with a real runtime destination live here:
+ *   - `Sports`     -> bottom tab "Sports"  + Home pill "Sports"
+ *   - `Tamthilia`  -> bottom tab "Tamthilia"
+ *   - `Movies`     -> Home pill alias for `Tamthilia`
+ *
+ * Sections like `kids` / `news` / `music` / `docs` are intentionally
+ * absent — the app has no tab/screen for them yet. To enable a new
+ * category later:
+ *   1. add a row here, e.g. `Kids: 'kids'`,
+ *   2. add a `<Tab.Screen>` that passes `CATEGORY_TO_DISPLAY_SECTION.Kids`
+ *      as `bottomTabFilter` (or extend the pill list on Home),
+ *   3. (optional) add the section to `HOME_VISIBLE_SECTIONS` if rows
+ *      tagged with that section should also surface on Home.
  */
 const CATEGORY_TO_DISPLAY_SECTION = Object.freeze({
   Sports: 'sports',
   Tamthilia: 'movies',
   Movies: 'movies',
-  Kids: 'kids',
-  News: 'news',
-  Music: 'music',
 });
+
+/** Canonical backend values the mobile runtime understands today. */
+const KNOWN_MOBILE_DISPLAY_SECTIONS = Object.freeze(['sports', 'movies', 'general']);
+
+/**
+ * Home shows channels in these sections only — after normalization
+ * (`effectiveDisplaySection`) every coherent row resolves to one of them.
+ */
+const HOME_VISIBLE_SECTIONS = KNOWN_MOBILE_DISPLAY_SECTIONS;
 
 const TAB_BAR_HEIGHT = 76;
 /** Small gap between safe-area bottom and the tab bar (comfortable, not touching system nav). */
@@ -145,26 +162,54 @@ function channelVisibleInApp(raw) {
 }
 
 /**
- * Backend-driven section filter. Returns true when `section` is null/empty
- * (no filter) or when the row's `display_section` (snake_case canonical;
- * camelCase tolerated) matches the requested section case-insensitively.
+ * Defensive gate: tolerate partial backend payloads during migration —
+ * exclude only obviously broken entries so a bad row cannot empty the catalog.
+ */
+function isRenderableChannelRow(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const hasId = raw.id != null && String(raw.id).trim().length > 0;
+  const hasName = raw.name != null && String(raw.name).trim().length > 0;
+  const hasStream = resolveStream(raw).trim().length > 0;
+  return hasId || hasName || hasStream;
+}
+
+/**
+ * Temporary compatibility: missing / blank / unrecognized `display_section`
+ * resolves to `general` so migration rows remain visible on Home until
+ * the backend always sends a canonical section.
  *
- * Rows missing `display_section` only appear on Home / "Zote" / "Trending"
- * — they are deliberately filtered out of category tabs/pills until
- * admin assigns a section.
+ * Tabs still compare only canonical `display_section`; `general` never
+ * appears on Sports / Tamthilia.
+ *
+ * Unknown future values (e.g. `kids`) are folded to `general` for now —
+ * swap this when matching tabs/screens exist for those sections.
+ */
+function effectiveDisplaySection(raw) {
+  const v = String(raw?.display_section ?? raw?.displaySection ?? '')
+    .trim()
+    .toLowerCase();
+  if (!v) return 'general';
+  return KNOWN_MOBILE_DISPLAY_SECTIONS.includes(v) ? v : 'general';
+}
+
+/**
+ * Backend-driven section filter. Returns true when `section` is null/empty
+ * (no filter) or when the row's normalized `display_section` matches the
+ * requested section exactly (after lowercasing).
  */
 function matchesDisplaySection(raw, section) {
   if (section == null || String(section).trim() === '') return true;
   const target = String(section).trim().toLowerCase();
-  const v = String(raw?.display_section ?? raw?.displaySection ?? '')
-    .trim()
-    .toLowerCase();
-  return v === target;
+  return effectiveDisplaySection(raw) === target;
 }
 
 /** Resolve a UI label (bottom tab or pill) to its display_section. */
 function sectionForLabel(label) {
   return CATEGORY_TO_DISPLAY_SECTION[label] ?? null;
+}
+
+function isInHomeAllowlist(raw) {
+  return HOME_VISIBLE_SECTIONS.includes(effectiveDisplaySection(raw));
 }
 
 function findServerHealthForChannel(serverHealth, name) {
@@ -206,7 +251,6 @@ function mapApiChannelToCard(raw, index, freeMode = false, serverHealth = null) 
     accessBadgeColor: isPremium ? COLORS.yellow : COLORS.free,
     thumbnailUri,
     placeholderLetter: placeholderLetterFromName(name),
-    bottomTab: String(raw?.bottomTab ?? raw?.bottomTabsDisplay ?? category ?? '').trim(),
     streamUrl: resolved || DEFAULT_STREAM_URI,
     playerChannel,
     isPremium,
@@ -243,7 +287,12 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
   const listBottomPadding = getScrollContentBottomPadding(insets);
 
   const displayChannels = useMemo(() => {
-    let rows = rawChannels.filter(channelVisibleInApp);
+    const base = Array.isArray(rawChannels) ? rawChannels : [];
+    let rows = base.filter(isRenderableChannelRow).filter(channelVisibleInApp);
+    // Home catalog: normalized sections only (missing/unknown → general).
+    if (!bottomTabFilter) {
+      rows = rows.filter(isInHomeAllowlist);
+    }
     // Bottom-tab filter: `bottomTabFilter` is a canonical
     // `display_section` value (e.g. 'sports', 'movies') or null for Home.
     if (bottomTabFilter) {
