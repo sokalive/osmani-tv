@@ -95,6 +95,29 @@ function isSubscriptionActive(subscription) {
   return subscription.active === true || subscription.isActive === true;
 }
 
+function parseExpiryMs(v) {
+  if (v == null || v === '') return null;
+  const t = Date.parse(String(v));
+  return Number.isFinite(t) ? t : null;
+}
+
+/** Prefer the furthest future expiry when verify and subscription-status disagree (e.g. renewal). */
+function latestExpiryIso(...candidates) {
+  let bestStr = null;
+  let bestMs = null;
+  for (const raw of candidates) {
+    if (raw == null || raw === '') continue;
+    const s = String(raw).trim();
+    const ms = parseExpiryMs(s);
+    if (ms == null) continue;
+    if (bestMs == null || ms > bestMs) {
+      bestMs = ms;
+      bestStr = s;
+    }
+  }
+  return bestStr;
+}
+
 function normalizePlanRow(raw) {
   const active = raw?.is_active === true || raw?.isActive === true;
   return {
@@ -300,19 +323,29 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     clearTimers();
     closeSse();
     let verified = null;
+    let fetchExpires = null;
     try {
       verified = await refreshSubscription();
-      if (isSubscriptionActive(verified)) {
-        unlockChannels(verified);
+      try {
+        const { deviceId } = await getDeviceIdentity();
+        const sub = await fetchSubscription(deviceId);
+        fetchExpires = sub?.expiresAt ?? null;
+      } catch {
+        // optional enrichment only
       }
+      if (verified && isSubscriptionActive(verified)) {
+        const mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
+        unlockChannels({
+          ...verified,
+          active: true,
+          isActive: true,
+          expiresAt: mergedExpires ?? verified?.expiresAt ?? null,
+        });
+      }
+      const mergedForUi = latestExpiryIso(verified?.expiresAt, fetchExpires);
+      setSuccessExpiresAt(mergedForUi ?? verified?.expiresAt ?? null);
     } catch (e) {
       console.log('[PAYMENT_SUCCESS_VERIFY]', 'refresh_failed', e?.message ?? e);
-    }
-    try {
-      const { deviceId } = await getDeviceIdentity();
-      const sub = await fetchSubscription(deviceId);
-      setSuccessExpiresAt(verified?.expiresAt ?? sub.expiresAt ?? null);
-    } catch {
       setSuccessExpiresAt(verified?.expiresAt ?? null);
     }
     setStep(4);
@@ -506,6 +539,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setStep(2);
   };
 
+  const compactResultStep = step === 4 || step === 5;
+  const compactSheetHeight = Math.min(460, Math.round(WINDOW_HEIGHT * 0.56));
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleCancel}>
       <KeyboardAvoidingView
@@ -515,7 +551,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       >
         <Pressable style={styles.backdrop} onPress={handleCancel} />
         <View style={styles.centeredWrap} pointerEvents="box-none">
-          <View style={[styles.sheet, { height: MODAL_MAX_HEIGHT, maxHeight: MODAL_MAX_HEIGHT }]}>
+          <View
+            style={[
+              styles.sheet,
+              compactResultStep
+                ? { height: compactSheetHeight, maxHeight: compactSheetHeight }
+                : { height: MODAL_MAX_HEIGHT, maxHeight: MODAL_MAX_HEIGHT },
+            ]}
+          >
             <SafeAreaView
               edges={['top', 'bottom']}
               style={step === 2 ? [styles.sheetSafe, styles.sheetSafeCompactBottom] : styles.sheetSafe}
@@ -528,7 +571,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                   contentContainerStyle={
                     step === 2
                       ? [styles.modalScrollContentStep2Centered]
-                      : styles.modalScrollContent
+                      : compactResultStep
+                        ? styles.modalScrollContentCompactResult
+                        : styles.modalScrollContent
                   }
                   bounces={false}
                 >
@@ -746,10 +791,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         </View>
                         <Text style={styles.successTitle}>Malipo yamefanikiwa</Text>
                         <Text style={styles.successBody}>
-                          Kifurushi chako kinaisha:{'\n'}
+                          Kifurushi chako kinaisha:{' '}
                           <Text style={styles.successHighlight}>
                             {formatSubscriptionExpiry(successExpiresAt)}
                           </Text>
+                        </Text>
+                        <Text style={styles.successFootnote}>
+                          Sasa unaweza kutazama channel zote live muda wote. Kumbuka kulipia kifurushi chako kabla
+                          ya muda kuisha.
                         </Text>
                         <Pressable
                           style={[styles.ctaWrap, styles.resultCta, finalizingSuccess && styles.ctaDisabled]}
@@ -883,6 +932,9 @@ const styles = StyleSheet.create({
   },
   modalScrollContent: {
     paddingBottom: 100,
+  },
+  modalScrollContentCompactResult: {
+    paddingBottom: 24,
   },
   modalScrollContentStep2Centered: {
     flexGrow: 1,
@@ -1423,7 +1475,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   resultWrap: {
-    paddingVertical: 12,
+    paddingVertical: 6,
     paddingHorizontal: 4,
     alignItems: 'center',
   },
@@ -1432,7 +1484,7 @@ const styles = StyleSheet.create({
     height: 76,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 10,
     shadowColor: '#22C55E',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.55,
@@ -1467,7 +1519,7 @@ const styles = StyleSheet.create({
     color: '#4ADE80',
     fontSize: 20,
     fontWeight: '800',
-    marginBottom: 12,
+    marginBottom: 8,
     textAlign: 'center',
     letterSpacing: 0.3,
   },
@@ -1476,7 +1528,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     textAlign: 'center',
-    marginBottom: 22,
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  successFootnote: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginBottom: 14,
+    paddingHorizontal: 6,
   },
   successHighlight: {
     color: '#FFFFFF',
@@ -1535,7 +1596,7 @@ const styles = StyleSheet.create({
   },
   resultCta: {
     marginTop: 0,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   resultSecondary: {
     marginTop: 0,

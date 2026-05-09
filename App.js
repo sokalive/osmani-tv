@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, useFocusEffect } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Image as ExpoImage } from 'expo-image';
@@ -23,6 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import EmergencyModal from './components/EmergencyModal';
 import MaintenanceScreen from './components/MaintenanceScreen';
 import PremiumModal from './components/PremiumModal';
+import SubscriptionExpiryReminderModal from './components/SubscriptionExpiryReminderModal';
 import PopupSettingsModal from './components/PopupSettingsModal';
 import TransferConfirmModal from './components/TransferConfirmModal';
 import TransferredAwayModal from './components/TransferredAwayModal';
@@ -40,6 +41,11 @@ import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
 import { resolveStream } from './lib/channelStream';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
+import { computeSubscriptionProgress } from './lib/subscriptionMath';
+import {
+  consumeHomeExpiryReminder,
+  isHomeExpiryReminderConsumed,
+} from './lib/subscriptionReminderSession';
 import BannerCarousel, { BannerCarouselSkeleton } from './components/BannerCarousel';
 
 const Tab = createBottomTabNavigator();
@@ -189,7 +195,9 @@ function mapApiChannelToCard(raw, index, freeMode = false, serverHealth = null) 
   };
 }
 
-function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
+const HOME_EXPIRY_REMINDER_MS = 10 * 60 * 1000;
+
+function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeExpiryReminder = false }) {
   const insets = useSafeAreaInsets();
   const {
     freeMode,
@@ -202,15 +210,70 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
     error,
     refresh,
     isSubscribed,
+    subscriptionExpiresAt,
+    subscriptionDetails,
     subscriptionVersion,
     verifySubscriptionBeforePlay,
   } = useOsmaniApp();
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
+  const [expiryReminderVisible, setExpiryReminderVisible] = useState(false);
+  const [expiryReminderDisplayDays, setExpiryReminderDisplayDays] = useState(2);
   const [emergencyModalVisible, setEmergencyModalVisible] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [bannerVisibilityClock, setBannerVisibilityClock] = useState(() => Date.now());
+
+  const isSubscribedRef = useRef(isSubscribed);
+  const premiumModalVisibleRef = useRef(premiumModalVisible);
+  const subscriptionDetailsRef = useRef(subscriptionDetails);
+  const subscriptionExpiresAtRef = useRef(subscriptionExpiresAt);
+  isSubscribedRef.current = isSubscribed;
+  premiumModalVisibleRef.current = premiumModalVisible;
+  subscriptionDetailsRef.current = subscriptionDetails;
+  subscriptionExpiresAtRef.current = subscriptionExpiresAt;
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!enableHomeExpiryReminder) return undefined;
+      let cancelled = false;
+      const tid = setTimeout(() => {
+        if (cancelled) return;
+        if (isHomeExpiryReminderConsumed()) return;
+        if (premiumModalVisibleRef.current) return;
+        if (!isSubscribedRef.current) return;
+        const details = subscriptionDetailsRef.current;
+        const expiresAt = subscriptionExpiresAtRef.current;
+        const progress = computeSubscriptionProgress({
+          startedAt: details?.startedAt ?? null,
+          expiresAt: details?.expiresAt ?? expiresAt ?? null,
+          planDurationDays: details?.planDurationDays ?? null,
+          serverTime: details?.serverTime ?? null,
+          serverTimeFetchedAt: details?.serverTimeFetchedAt ?? null,
+          nowMsOverride: Date.now(),
+        });
+        if (!progress.ok) return;
+        if (progress.remainingDays > 2) return;
+        const displayDays = Math.min(Math.max(progress.remainingDays, 1), 2);
+        consumeHomeExpiryReminder();
+        setExpiryReminderDisplayDays(displayDays);
+        setExpiryReminderVisible(true);
+      }, HOME_EXPIRY_REMINDER_MS);
+      return () => {
+        cancelled = true;
+        clearTimeout(tid);
+      };
+    }, [enableHomeExpiryReminder]),
+  );
+
+  const dismissExpiryReminder = useCallback(() => {
+    setExpiryReminderVisible(false);
+  }, []);
+
+  const onRenewFromExpiryReminder = useCallback(() => {
+    setExpiryReminderVisible(false);
+    setPremiumModalVisible(true);
+  }, []);
 
   useEffect(() => {
     if (!emergencyMode) setEmergencyModalVisible(false);
@@ -515,6 +578,12 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null }) {
           navigation.navigate('Home');
         }}
       />
+      <SubscriptionExpiryReminderModal
+        visible={expiryReminderVisible}
+        displayDays={expiryReminderDisplayDays}
+        onRenew={onRenewFromExpiryReminder}
+        onDismissLater={dismissExpiryReminder}
+      />
     </SafeAreaView>
   );
 }
@@ -598,7 +667,11 @@ function AppTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home">{(props) => <ChannelCatalogScreen {...props} bottomTabFilter={null} />}</Tab.Screen>
+      <Tab.Screen name="Home">
+        {(props) => (
+          <ChannelCatalogScreen {...props} bottomTabFilter={null} enableHomeExpiryReminder />
+        )}
+      </Tab.Screen>
       <Tab.Screen name="Sports">
         {(props) => <ChannelCatalogScreen {...props} bottomTabFilter="Sports" />}
       </Tab.Screen>
