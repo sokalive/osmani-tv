@@ -4,6 +4,7 @@ import * as Crypto from 'expo-crypto';
 import { nativeApplicationVersion } from 'expo-application';
 import { BASE_URL } from '../api';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
+import { getAnalyticsLocationPayload } from '../lib/analyticsLocation';
 
 const INSTALL_TRACKED_KEY = 'osmani:install_tracked_v1';
 const PING_MS = 30000;
@@ -34,6 +35,29 @@ function detectCountry() {
     // ignore locale parsing failure
   }
   return null;
+}
+
+/** Live sessions + presence payloads: camelCase trio + legacy `country` alias. */
+async function resolveLocationEnvelope() {
+  try {
+    const loc = await getAnalyticsLocationPayload();
+    const code =
+      typeof loc.countryCode === 'string' && loc.countryCode.trim()
+        ? loc.countryCode.trim()
+        : '';
+    const fromLocale = detectCountry();
+    const countryCode = code || fromLocale || '';
+    return {
+      countryCode,
+      city: typeof loc.city === 'string' ? loc.city : '',
+      region: typeof loc.region === 'string' ? loc.region : '',
+      /** @deprecated Prefer `countryCode`; kept for APIs that map `country` only. */
+      country: countryCode || null,
+    };
+  } catch {
+    const c = detectCountry() || '';
+    return { countryCode: c, city: '', region: '', country: c || null };
+  }
 }
 
 function detectDeviceModel() {
@@ -129,18 +153,25 @@ export async function trackInstallOnce() {
 export async function startLiveSession(channelId, channelName) {
   try {
     const { deviceId } = await getDeviceIdentity();
+    const loc = await resolveLocationEnvelope();
     if (ANALYTICS_DEBUG) {
       console.log('[analytics] session start values:', {
         device_id: deviceId,
         channel_id: String(channelId ?? ''),
         channel_name: String(channelName ?? ''),
+        countryCode: loc.countryCode,
+        city: loc.city,
+        region: loc.region,
       });
     }
     await postJson('/api/analytics/session/start', {
       device_id: deviceId,
       channel_id: String(channelId ?? ''),
       channel_name: String(channelName ?? ''),
-      country: detectCountry(),
+      countryCode: loc.countryCode,
+      city: loc.city,
+      region: loc.region,
+      country: loc.country,
       started_at: new Date().toISOString(),
     });
     return deviceId;
@@ -151,31 +182,47 @@ export async function startLiveSession(channelId, channelName) {
 
 export async function stopLiveSession(deviceId, channelId) {
   if (!deviceId) return;
+  const loc = await resolveLocationEnvelope();
   if (ANALYTICS_DEBUG) {
     console.log('[analytics] session end values:', {
       device_id: deviceId,
       channel_id: String(channelId ?? ''),
+      countryCode: loc.countryCode,
+      city: loc.city,
+      region: loc.region,
     });
   }
   await postJson('/api/analytics/session/end', {
     device_id: deviceId,
     channel_id: String(channelId ?? ''),
+    countryCode: loc.countryCode,
+    city: loc.city,
+    region: loc.region,
+    country: loc.country,
     ended_at: new Date().toISOString(),
   });
 }
 
 export async function pingLiveSession(deviceId, channelId) {
   if (!deviceId) return;
+  const loc = await resolveLocationEnvelope();
   if (ANALYTICS_DEBUG) {
     console.log('[analytics] heartbeat values:', {
       device_id: deviceId,
       channel_id: String(channelId ?? ''),
       every_ms: PING_MS,
+      countryCode: loc.countryCode,
+      city: loc.city,
+      region: loc.region,
     });
   }
   await postJson('/api/analytics/session/heartbeat', {
     device_id: deviceId,
     channel_id: String(channelId ?? ''),
+    countryCode: loc.countryCode,
+    city: loc.city,
+    region: loc.region,
+    country: loc.country,
     timestamp: new Date().toISOString(),
   });
 }
@@ -191,10 +238,14 @@ export async function startAppPresence() {
   try {
     const sessionId = await getOrCreateAppSessionId();
     const { deviceId } = await getDeviceIdentity();
+    const loc = await resolveLocationEnvelope();
     if (ANALYTICS_DEBUG) {
       console.log('[analytics] presence start:', {
         session_id: sessionId,
         device_id: deviceId,
+        countryCode: loc.countryCode,
+        city: loc.city,
+        region: loc.region,
       });
     }
     const ok = await postJson('/api/analytics/presence/start', {
@@ -203,7 +254,10 @@ export async function startAppPresence() {
       platform: Platform.OS,
       app_version: nativeApplicationVersion ?? 'unknown',
       device_model: detectDeviceModel(),
-      country: detectCountry(),
+      countryCode: loc.countryCode,
+      city: loc.city,
+      region: loc.region,
+      country: loc.country,
       started_at: new Date().toISOString(),
     });
     return { sessionId, deviceId, ok };
@@ -219,11 +273,15 @@ export async function startAppPresence() {
 export async function pingAppPresence(args) {
   const sessionId = args?.sessionId;
   if (!sessionId) return false;
+  const loc = await resolveLocationEnvelope();
   if (ANALYTICS_DEBUG) {
     console.log('[analytics] presence heartbeat:', {
       session_id: sessionId,
       channel_id: args?.channelId ?? null,
       every_ms: PRESENCE_PING_MS,
+      countryCode: loc.countryCode,
+      city: loc.city,
+      region: loc.region,
     });
   }
   return postJson(
@@ -234,6 +292,10 @@ export async function pingAppPresence(args) {
       channel_id: args?.channelId != null && args.channelId !== '' ? String(args.channelId) : null,
       channel_name:
         args?.channelName != null && args.channelName !== '' ? String(args.channelName) : null,
+      countryCode: loc.countryCode,
+      city: loc.city,
+      region: loc.region,
+      country: loc.country,
       timestamp: new Date().toISOString(),
     },
     { retries: [0] },
@@ -246,14 +308,24 @@ export async function pingAppPresence(args) {
 export async function stopAppPresence(args) {
   const sessionId = args?.sessionId;
   if (!sessionId) return false;
+  const loc = await resolveLocationEnvelope();
   if (ANALYTICS_DEBUG) {
-    console.log('[analytics] presence stop:', { session_id: sessionId });
+    console.log('[analytics] presence stop:', {
+      session_id: sessionId,
+      countryCode: loc.countryCode,
+      city: loc.city,
+      region: loc.region,
+    });
   }
   return postJson(
     '/api/analytics/presence/stop',
     {
       session_id: sessionId,
       device_id: args?.deviceId ?? null,
+      countryCode: loc.countryCode,
+      city: loc.city,
+      region: loc.region,
+      country: loc.country,
       ended_at: new Date().toISOString(),
     },
     { retries: [0, 600] },
