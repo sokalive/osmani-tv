@@ -125,7 +125,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   const [rejectionReason, setRejectionReason] = useState('');
 
   const cardMaxHeight = windowHeight * 0.82;
-  const introScrollMidMaxHeight = Math.min(windowHeight * 0.5, 440);
+  const introScrollMidMaxHeight = Math.min(windowHeight * 0.54, 480);
 
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.92)).current;
@@ -490,6 +490,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                       showsVerticalScrollIndicator={false}
                       keyboardShouldPersistTaps="handled"
                       bounces={false}
+                      nestedScrollEnabled
                     >
                       <Text style={styles.introBodySw}>
                         Unaweza kuhamisha kifurushi chako kwenda kwenye simu nyingine.
@@ -501,10 +502,10 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                       <Text style={styles.introBullet}>• Weka namba uliyolipia nayo</Text>
                       <Text style={styles.introBullet}>• Utapokea code za kuhamisha</Text>
                       <Text style={styles.introBullet}>• Fungua simu mpya</Text>
-                      <Text style={styles.introBullet}>
-                        {'• Chagua \u201cNina Code Tayari\u201d'}
+                      <Text style={styles.introBullet}>• Chagua “Nina Code Tayari”</Text>
+                      <Text style={[styles.introBullet, styles.introBulletLast]}>
+                        • Weka code zako kukamilisha uhamisho ✅
                       </Text>
-                      <Text style={styles.introBullet}>• Weka code zako kukamilisha uhamisho ✅</Text>
                       {error ? <Text style={styles.errorText}>{error}</Text> : null}
                     </ScrollView>
                     <View style={styles.actionsBlockIntro}>
@@ -838,7 +839,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textAlign: 'left',
     marginBottom: 6,
-    marginTop: 10,
+    marginTop: 4,
     width: '100%',
   },
   introBullet: {
@@ -849,11 +850,15 @@ const styles = StyleSheet.create({
     textAlign: 'left',
     width: '100%',
   },
+  introBulletLast: {
+    marginBottom: 0,
+  },
   actionsBlockIntro: {
     width: '100%',
     alignSelf: 'stretch',
     alignItems: 'stretch',
     marginTop: 8,
+    paddingTop: 2,
   },
   card: {
     width: '100%',
