@@ -11,7 +11,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-const BG = '#111215';
+const BG = '#0C0608';
 const TEXT = '#F3F4F6';
 
 /** Shared copy for full-screen and inline home maintenance states. */

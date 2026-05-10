@@ -89,8 +89,9 @@ const CARD_HEIGHT = Math.round((CARD_WIDTH * 4) / 3);
 const CAROUSEL_SLIDE_WIDTH = width - HORIZONTAL_PADDING * 2;
 
 const COLORS = {
-  background: '#111215',
-  card: '#1A1D23',
+  /** Near-black with subtle deep red — stadium / premium night pitch */
+  background: '#0C0608',
+  card: '#151014',
   live: '#1BCB5A',
   free: '#2AAE5E',
   yellow: '#FFCB3D',
@@ -98,8 +99,11 @@ const COLORS = {
   filterPill: '#2A2E37',
   filterSelected: '#3A4151',
   mutedText: '#A1A8B5',
-  nav: '#171A20',
+  nav: '#12090C',
   white: '#FFFFFF',
+  /** Bottom tabs — classic warm “Home” emphasis */
+  tabActive: '#FFB347',
+  tabInactive: '#DDE3EC',
 };
 
 const filters = ['Zote', 'Trending', 'Sports', 'Movies'];
@@ -1048,7 +1052,7 @@ function OsmaniLovableTabBar(props) {
       }}
     >
       {Platform.OS === 'web' ? (
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#0A0A0A' }]} />
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#0C0608' }]} />
       ) : (
         <>
           <BlurView
@@ -1059,7 +1063,7 @@ function OsmaniLovableTabBar(props) {
           />
           <View
             pointerEvents="none"
-            style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(10,10,10,0.95)' }]}
+            style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(12, 6, 8, 0.96)' }]}
           />
         </>
       )}
@@ -1079,13 +1083,14 @@ function OsmaniLovableTabBar(props) {
           {...props}
           insets={{ top: 0, left: insets.left, right: insets.right, bottom: insets.bottom }}
           style={{
-            backgroundColor: Platform.OS === 'web' ? '#0A0A0A' : 'transparent',
+            backgroundColor: Platform.OS === 'web' ? '#0C0608' : 'transparent',
             borderTopWidth: 0,
             elevation: 0,
             height: totalHeight,
-            paddingTop: 10,
+            paddingTop: Platform.OS === 'ios' ? 5 : 4,
             paddingBottom: insets.bottom,
-            paddingHorizontal: 4,
+            paddingHorizontal: 6,
+            justifyContent: 'center',
           }}
         />
       </View>
@@ -1116,9 +1121,10 @@ function AppTabs() {
       screenOptions={({ route }) => ({
         headerShown: false,
         sceneStyle: { backgroundColor: COLORS.background },
-        tabBarActiveTintColor: COLORS.white,
-        tabBarInactiveTintColor: '#8C92A0',
+        tabBarActiveTintColor: COLORS.tabActive,
+        tabBarInactiveTintColor: COLORS.tabInactive,
         tabBarLabelStyle: styles.tabLabel,
+        tabBarItemStyle: styles.tabBarItem,
         tabBarIcon: ({ color, focused }) => {
           const iconMap = {
             Home: 'home',
@@ -1127,8 +1133,24 @@ function AppTabs() {
             'Akaunti Yangu': 'person-circle',
           };
           const iconName = iconMap[route.name];
-          const iconSize = focused ? 26 : 23;
-          return <Ionicons name={iconName} size={iconSize} color={color} />;
+          const iconSize = focused ? 27 : 24;
+          const icon = (
+            <Ionicons name={iconName} size={iconSize} color={color} />
+          );
+          if (!focused) return icon;
+          return (
+            <View
+              style={{
+                shadowColor: '#FF8C00',
+                shadowOffset: { width: 0, height: 0 },
+                shadowOpacity: 0.95,
+                shadowRadius: 10,
+                elevation: 12,
+              }}
+            >
+              {icon}
+            </View>
+          );
         },
       })}
     >
@@ -1171,7 +1193,12 @@ export default function App() {
             ref={navigationRef}
             theme={{
               ...DarkTheme,
-              colors: { ...DarkTheme.colors, background: COLORS.background, card: COLORS.nav },
+              colors: {
+                ...DarkTheme.colors,
+                background: COLORS.background,
+                card: COLORS.card,
+                border: 'rgba(255,255,255,0.06)',
+              },
             }}
             onReady={() => setNavigationRevision((n) => n + 1)}
             onStateChange={() => setNavigationRevision((n) => n + 1)}
@@ -1490,11 +1517,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
   },
+  tabBarItem: {
+    paddingTop: 2,
+    paddingBottom: 0,
+  },
   tabLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.15,
-    marginBottom: Platform.OS === 'ios' ? 2 : 0,
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 0.12,
+    marginBottom: 0,
+    marginTop: 1,
   },
   placeholderScreen: {
     flex: 1,

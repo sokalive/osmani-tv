@@ -35,7 +35,7 @@ import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
 
 /** Matches App.js theme — do not diverge */
 const COLORS = {
-  background: '#111215',
+  background: '#0C0608',
   card: '#1A1D23',
   live: '#1BCB5A',
   yellow: '#FFCB3D',

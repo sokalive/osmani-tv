@@ -24,7 +24,7 @@ import { getTransferStatus, initiateTransfer, redeemTransfer } from '../api/subs
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 
 const COLORS = {
-  background: '#111215',
+  background: '#0C0608',
   card: '#151922',
   input: '#1D222C',
   yellow: '#FFCB3D',
