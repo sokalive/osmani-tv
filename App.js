@@ -7,7 +7,7 @@ import {
   NavigationContainer,
   useFocusEffect,
 } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { BottomTabBar, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,6 +17,7 @@ import {
   AppState,
   Dimensions,
   FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -25,6 +26,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { MaintenanceHomeCentered } from './components/MaintenanceScreen';
 import EmergencyModal from './components/EmergencyModal';
@@ -52,6 +54,7 @@ import { startPresence, stopPresence } from './lib/presenceTracker';
 import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
 import { resolveStream } from './lib/channelStream';
+import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBarLayout';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import { computeSubscriptionProgress } from './lib/subscriptionMath';
@@ -100,18 +103,6 @@ const COLORS = {
 };
 
 const filters = ['Zote', 'Trending', 'Sports', 'Movies'];
-
-const TAB_BAR_HEIGHT = 76;
-/** Small gap between safe-area bottom and the tab bar (comfortable, not touching system nav). */
-const TAB_BAR_FLOAT_GAP = 4;
-/** Space between last scroll content and top of the tab bar. */
-const CONTENT_ABOVE_TAB_GAP = 28;
-
-function getScrollContentBottomPadding(insets) {
-  const tabBottomOffset = insets.bottom + TAB_BAR_FLOAT_GAP;
-  const reserved = TAB_BAR_HEIGHT + tabBottomOffset + CONTENT_ABOVE_TAB_GAP;
-  return Math.max(100, reserved);
-}
 
 /** Full image URL for API `thumbnail` (absolute or `/uploads/...`). */
 function resolveChannelThumbnailUri(raw) {
@@ -1039,6 +1030,69 @@ function PlaceholderScreen({ title }) {
   );
 }
 
+/** Lovable-style bar: full-width bottom, blur + rgba(10,10,10,0.95), safe-area inset inside. */
+function OsmaniLovableTabBar(props) {
+  const insets = useSafeAreaInsets();
+  const totalHeight = getTabBarTotalHeight(insets);
+  const blurIntensity = Platform.OS === 'ios' ? 88 : Platform.OS === 'android' ? 50 : 0;
+
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: totalHeight,
+        overflow: 'hidden',
+      }}
+    >
+      {Platform.OS === 'web' ? (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#0A0A0A' }]} />
+      ) : (
+        <>
+          <BlurView
+            intensity={blurIntensity}
+            tint="dark"
+            experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(10,10,10,0.95)' }]}
+          />
+        </>
+      )}
+      <View
+        style={{
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: 'rgba(255,255,255,0.08)',
+          height: totalHeight,
+          shadowColor: '#000000',
+          shadowOffset: { width: 0, height: -8 },
+          shadowOpacity: 0.42,
+          shadowRadius: 18,
+          elevation: 32,
+        }}
+      >
+        <BottomTabBar
+          {...props}
+          insets={{ top: 0, left: insets.left, right: insets.right, bottom: insets.bottom }}
+          style={{
+            backgroundColor: Platform.OS === 'web' ? '#0A0A0A' : 'transparent',
+            borderTopWidth: 0,
+            elevation: 0,
+            height: totalHeight,
+            paddingTop: 10,
+            paddingBottom: insets.bottom,
+            paddingHorizontal: 4,
+          }}
+        />
+      </View>
+    </View>
+  );
+}
+
 function RootNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -1056,43 +1110,16 @@ function RootNavigator() {
 }
 
 function AppTabs() {
-  const insets = useSafeAreaInsets();
-
-  const tabBarBottomOffset = insets.bottom + TAB_BAR_FLOAT_GAP;
-
-  const tabBarStyle = useMemo(
-    () => ({
-      position: 'absolute',
-      left: 12,
-      right: 12,
-      bottom: tabBarBottomOffset,
-      height: TAB_BAR_HEIGHT,
-      backgroundColor: COLORS.nav,
-      borderTopWidth: 0,
-      borderTopLeftRadius: 22,
-      borderTopRightRadius: 22,
-      paddingTop: 8,
-      paddingBottom: 12,
-      elevation: 18,
-      shadowColor: '#000000',
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.22,
-      shadowRadius: 14,
-    }),
-    [tabBarBottomOffset]
-  );
-
   return (
     <Tab.Navigator
+      tabBar={(props) => <OsmaniLovableTabBar {...props} />}
       screenOptions={({ route }) => ({
         headerShown: false,
         sceneStyle: { backgroundColor: COLORS.background },
-        tabBarStyle,
-        tabBarSafeAreaInsets: { bottom: 0 },
         tabBarActiveTintColor: COLORS.white,
         tabBarInactiveTintColor: '#8C92A0',
         tabBarLabelStyle: styles.tabLabel,
-        tabBarIcon: ({ color, size, focused }) => {
+        tabBarIcon: ({ color, focused }) => {
           const iconMap = {
             Home: 'home',
             Sports: 'football',
@@ -1100,7 +1127,8 @@ function AppTabs() {
             'Akaunti Yangu': 'person-circle',
           };
           const iconName = iconMap[route.name];
-          return <Ionicons name={iconName} size={focused ? size + 1 : size} color={color} />;
+          const iconSize = focused ? 26 : 23;
+          return <Ionicons name={iconName} size={iconSize} color={color} />;
         },
       })}
     >
@@ -1465,6 +1493,8 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 11,
     fontWeight: '600',
+    letterSpacing: 0.15,
+    marginBottom: Platform.OS === 'ios' ? 2 : 0,
   },
   placeholderScreen: {
     flex: 1,

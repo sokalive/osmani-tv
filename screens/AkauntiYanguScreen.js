@@ -31,6 +31,7 @@ import {
 } from '../lib/offerCodeCooldown';
 import { getDeviceLabel } from '../lib/deviceLabel';
 import { computeSubscriptionProgress } from '../lib/subscriptionMath';
+import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
 
 /** Matches App.js theme — do not diverge */
 const COLORS = {
@@ -47,16 +48,6 @@ const HORIZONTAL_PADDING = 16;
 const GRID_GAP = 12;
 const { width: SCREEN_W } = Dimensions.get('window');
 const STAT_CARD_W = (SCREEN_W - HORIZONTAL_PADDING * 2 - GRID_GAP) / 2;
-
-const TAB_BAR_HEIGHT = 76;
-const TAB_BAR_FLOAT_GAP = 4;
-const CONTENT_ABOVE_TAB_GAP = 28;
-
-function scrollBottomPad(insets) {
-  const tabBottomOffset = insets.bottom + TAB_BAR_FLOAT_GAP;
-  const reserved = TAB_BAR_HEIGHT + tabBottomOffset + CONTENT_ABOVE_TAB_GAP;
-  return Math.max(100, reserved);
-}
 
 function StatCard({ icon, value, label }) {
   return (
@@ -132,7 +123,7 @@ function isPremiumChannel(raw, freeMode) {
 export default function AkauntiYanguScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const bottomPad = scrollBottomPad(insets);
+  const bottomPad = getScrollContentBottomPadding(insets);
   const [hamishaModalVisible, setHamishaModalVisible] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [offerCodeInput, setOfferCodeInput] = useState('');
