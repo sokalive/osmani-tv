@@ -13,8 +13,41 @@ import { Ionicons } from '@expo/vector-icons';
 
 const BG = '#111215';
 const TEXT = '#F3F4F6';
-const MESSAGE =
+
+/** Shared copy for full-screen and inline home maintenance states. */
+export const MAINTENANCE_USER_MESSAGE =
   'Habari, kuna marekebisho yanaendelea ndani ya app kwa muda mfupi. Tafadhali subiri.';
+
+/**
+ * Centered wrench + message (same visual as legacy MaintenanceScreen body)
+ * for use inside Home catalog below banners/filters — not full-screen.
+ */
+export function MaintenanceHomeCentered() {
+  return (
+    <View style={inlineStyles.inlineRoot} accessibilityRole="text">
+      <Ionicons name="build-outline" size={64} color="#FBBF24" accessibilityLabel="Maintenance" />
+      <Text style={inlineStyles.inlineMessage}>{MAINTENANCE_USER_MESSAGE}</Text>
+    </View>
+  );
+}
+
+const inlineStyles = StyleSheet.create({
+  inlineRoot: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingTop: 36,
+    paddingBottom: 48,
+  },
+  inlineMessage: {
+    marginTop: 28,
+    color: TEXT,
+    fontSize: 17,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 26,
+  },
+});
 
 export default function MaintenanceScreen({
   contentPaddingBottom = 0,
@@ -50,8 +83,7 @@ export default function MaintenanceScreen({
         }
       >
         <View style={styles.centerBlock}>
-          <Ionicons name="build-outline" size={64} color="#FBBF24" accessibilityLabel="Maintenance" />
-          <Text style={styles.title}>{MESSAGE}</Text>
+          <MaintenanceHomeCentered />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -75,18 +107,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     minHeight: '100%',
-    paddingHorizontal: 28,
   },
   centerBlock: {
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  title: {
-    marginTop: 28,
-    color: TEXT,
-    fontSize: 17,
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 26,
   },
 });

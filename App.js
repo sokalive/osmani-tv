@@ -26,6 +26,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { MaintenanceHomeCentered } from './components/MaintenanceScreen';
 import EmergencyModal from './components/EmergencyModal';
 import PremiumModal from './components/PremiumModal';
 import SubscriptionExpiryReminderModal from './components/SubscriptionExpiryReminderModal';
@@ -849,20 +850,14 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
         ) : null}
         {error && !loading ? <Text style={styles.channelsErrorText}>{error}</Text> : null}
 
-        {maintenanceMode ? (
-          <View style={styles.maintenanceNotice}>
-            <Text style={styles.maintenanceNoticeText}>
-              Huduma ya chaneli haipatikani kwa muda — tunarekebisha mfumo. Angalia bango na urudi baadaye.
-            </Text>
+        {!maintenanceMode ? (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Michezo na Soka</Text>
+            <View style={styles.countBadge}>
+              <Text style={styles.countBadgeText}>{displayChannels.length}</Text>
+            </View>
           </View>
         ) : null}
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Michezo na Soka</Text>
-          <View style={styles.countBadge}>
-            <Text style={styles.countBadgeText}>{displayChannels.length}</Text>
-          </View>
-        </View>
       </View>
     ),
     [
@@ -887,6 +882,18 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
     ]
   );
 
+  const catalogListEmpty = useMemo(() => {
+    if (loading) return null;
+    if (maintenanceMode) {
+      return (
+        <View style={styles.maintenanceChannelArea}>
+          <MaintenanceHomeCentered />
+        </View>
+      );
+    }
+    return <Text style={styles.channelsEmptyText}>Hakuna chaneli bado.</Text>;
+  }, [loading, maintenanceMode]);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }} edges={['top']}>
       <StatusBar style="light" />
@@ -898,16 +905,12 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
         keyExtractor={(item) => item.id}
         numColumns={2}
         ListHeaderComponent={listHeader}
-        ListEmptyComponent={
-          !loading ? (
-            <Text style={styles.channelsEmptyText}>
-              {maintenanceMode
-                ? 'Chaneli hazionekani wakati wa matengenezo.'
-                : 'Hakuna chaneli bado.'}
-            </Text>
-          ) : null
-        }
-        contentContainerStyle={[styles.listContent, { paddingBottom: listBottomPadding }]}
+        ListEmptyComponent={catalogListEmpty}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingBottom: listBottomPadding },
+          !loading && maintenanceMode && displayChannels.length === 0 ? { flexGrow: 1 } : null,
+        ]}
         columnWrapperStyle={displayChannels.length > 0 ? styles.gridRow : null}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -1285,22 +1288,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingHorizontal: 2,
   },
-  maintenanceNotice: {
-    marginHorizontal: 0,
-    marginBottom: 12,
-    marginTop: 4,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: 'rgba(255,203,61,0.08)',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,203,61,0.22)',
-  },
-  maintenanceNoticeText: {
-    color: COLORS.mutedText,
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'center',
+  /** Fills channel region below header when grid is hidden (maintenance). */
+  maintenanceChannelArea: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    minHeight: 360,
+    paddingHorizontal: 0,
   },
   channelsEmptyText: {
     color: COLORS.mutedText,
