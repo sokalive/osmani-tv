@@ -157,19 +157,46 @@ function displaySectionSlug(raw) {
   return String(raw?.display_section ?? raw?.displaySection ?? '').trim().toLowerCase();
 }
 
+function legacySectionHints(r) {
+  const v = String(r.bottomTab ?? r.bottomTabsDisplay ?? r.category ?? '').trim().toLowerCase();
+  return v;
+}
+
 function matchesBottomTabRow(r, filter) {
   if (filter == null || String(filter).trim() === '') return true;
   const f = String(filter).trim().toLowerCase();
-  if (f === 'sports') return displaySectionSlug(r) === 'sports';
-  if (f === 'movies') return displaySectionSlug(r) === 'movies';
-  const v = String(r.bottomTab ?? r.bottomTabsDisplay ?? r.category ?? '').trim().toLowerCase();
+  const slug = displaySectionSlug(r);
+  if (f === 'sports') {
+    if (slug === 'sports') return true;
+    if (slug) return false;
+    const v = legacySectionHints(r);
+    return v === 'sports' || v.includes('sport');
+  }
+  if (f === 'movies') {
+    if (slug === 'movies') return true;
+    if (slug) return false;
+    const v = legacySectionHints(r);
+    return v === 'movies' || v === 'tamthilia' || v.includes('movie');
+  }
+  const v = legacySectionHints(r);
   return v === f;
 }
 
 function matchesPillFilter(r, pill) {
   if (pill === 'Zote' || pill === 'Trending') return true;
-  if (pill === 'Sports') return displaySectionSlug(r) === 'sports';
-  if (pill === 'Movies') return displaySectionSlug(r) === 'movies';
+  const slug = displaySectionSlug(r);
+  if (pill === 'Sports') {
+    if (slug === 'sports') return true;
+    if (slug) return false;
+    const v = legacySectionHints(r);
+    return v === 'sports' || v.includes('sport');
+  }
+  if (pill === 'Movies') {
+    if (slug === 'movies') return true;
+    if (slug) return false;
+    const v = legacySectionHints(r);
+    return v === 'movies' || v === 'tamthilia' || v.includes('movie');
+  }
   return true;
 }
 
