@@ -1080,11 +1080,16 @@ function OsmaniLovableTabBar(props) {
           elevation: 32,
         }}
       >
-        {/* Shift tab row up for optical vertical balance (safe area unchanged). */}
+        {/* Shift tab row up for optical vertical balance (bar height + bottom inset unchanged). */}
         <View
           style={{
             flex: 1,
-            transform: [{ translateY: Platform.OS === 'ios' ? -4 : -3 }],
+            transform: [
+              {
+                translateY:
+                  Platform.OS === 'ios' ? -4 : Platform.OS === 'android' ? -5 : -3,
+              },
+            ],
           }}
         >
           <BottomTabBar
