@@ -157,46 +157,53 @@ function displaySectionSlug(raw) {
   return String(raw?.display_section ?? raw?.displaySection ?? '').trim().toLowerCase();
 }
 
-function legacySectionHints(r) {
-  const v = String(r.bottomTab ?? r.bottomTabsDisplay ?? r.category ?? '').trim().toLowerCase();
-  return v;
+/**
+ * Single catalog section for Sports / Tamthilia tabs and Home pills.
+ * Order matches how the live API actually ships rows today:
+ *   1) `display_section` / `displaySection` when set (backend canonical)
+ *   2) `category` (Sports, Movies, General) — current API uses this; do NOT
+ *      let `bottomTab` win first (it is often the generic "General" for all rows)
+ *   3) `bottomTab` / `bottomTabsDisplay` as legacy hints
+ * Unknown/empty → `general` so Home "Zote" still lists the row; Sports/Movies
+ * tabs only show when section matches.
+ */
+function effectiveCatalogSection(raw) {
+  const slug = displaySectionSlug(raw);
+  if (slug === 'sports' || slug === 'movies') return slug;
+  if (slug === 'general') return 'general';
+
+  const cat = String(raw?.category ?? '')
+    .trim()
+    .toLowerCase();
+  if (cat === 'sports' || cat === 'sport') return 'sports';
+  if (cat === 'movies' || cat === 'movie' || cat === 'tamthilia') return 'movies';
+  if (cat === 'general' || cat === 'zote') return 'general';
+
+  const tab = String(raw?.bottomTab ?? raw?.bottomTabsDisplay ?? '')
+    .trim()
+    .toLowerCase();
+  if (tab === 'sports' || tab === 'sport') return 'sports';
+  if (tab === 'movies' || tab === 'movie' || tab === 'tamthilia') return 'movies';
+  if (tab === 'general') return 'general';
+
+  return slug || 'general';
 }
 
 function matchesBottomTabRow(r, filter) {
   if (filter == null || String(filter).trim() === '') return true;
   const f = String(filter).trim().toLowerCase();
-  const slug = displaySectionSlug(r);
-  if (f === 'sports') {
-    if (slug === 'sports') return true;
-    if (slug) return false;
-    const v = legacySectionHints(r);
-    return v === 'sports' || v.includes('sport');
-  }
-  if (f === 'movies') {
-    if (slug === 'movies') return true;
-    if (slug) return false;
-    const v = legacySectionHints(r);
-    return v === 'movies' || v === 'tamthilia' || v.includes('movie');
-  }
-  const v = legacySectionHints(r);
+  const sec = effectiveCatalogSection(r);
+  if (f === 'sports') return sec === 'sports';
+  if (f === 'movies') return sec === 'movies';
+  const v = String(r.bottomTab ?? r.bottomTabsDisplay ?? r.category ?? '').trim().toLowerCase();
   return v === f;
 }
 
 function matchesPillFilter(r, pill) {
   if (pill === 'Zote' || pill === 'Trending') return true;
-  const slug = displaySectionSlug(r);
-  if (pill === 'Sports') {
-    if (slug === 'sports') return true;
-    if (slug) return false;
-    const v = legacySectionHints(r);
-    return v === 'sports' || v.includes('sport');
-  }
-  if (pill === 'Movies') {
-    if (slug === 'movies') return true;
-    if (slug) return false;
-    const v = legacySectionHints(r);
-    return v === 'movies' || v === 'tamthilia' || v.includes('movie');
-  }
+  const sec = effectiveCatalogSection(r);
+  if (pill === 'Sports') return sec === 'sports';
+  if (pill === 'Movies') return sec === 'movies';
   return true;
 }
 
@@ -282,6 +289,23 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [bannerVisibilityClock, setBannerVisibilityClock] = useState(() => Date.now());
+
+  /** Once per mount: log real API shape + derived section (production-safe diagnostic). */
+  const catalogShapeLoggedRef = useRef(false);
+  useEffect(() => {
+    if (catalogShapeLoggedRef.current || !Array.isArray(rawChannels) || rawChannels.length === 0) return;
+    catalogShapeLoggedRef.current = true;
+    const r = rawChannels[0];
+    console.log('[CATALOG_SHAPE]', {
+      sampleKeys: r && typeof r === 'object' ? Object.keys(r).sort() : [],
+      display_section: r?.display_section ?? r?.displaySection ?? null,
+      category: r?.category ?? null,
+      bottomTab: r?.bottomTab ?? null,
+      bottomTabsDisplay: r?.bottomTabsDisplay ?? null,
+      type: r?.type ?? null,
+      effectiveCatalogSection: effectiveCatalogSection(r),
+    });
+  }, [rawChannels]);
 
   const isSubscribedRef = useRef(isSubscribed);
   const subscriptionDetailsRef = useRef(subscriptionDetails);
