@@ -11,6 +11,7 @@ import { BASE_URL } from '../api';
  *   POST /api/subscription/verify   { device_id, device_fingerprint }
  *   POST /api/subscription/recover  { device_id, device_fingerprint }
  *   POST /api/subscription/acknowledge-manual-gift { device_id, device_fingerprint, manual_gift_ack_key }
+ *   POST /api/subscription/redeem-offer-code { device_id, device_fingerprint, offer_code }
  *   POST /api/transfer/request      { source_device_id, target_device_id, phone? }
  *   POST /api/transfer/confirm      { code, target_device_id, device_fingerprint }
  *   GET  /api/subscription/transfer/:code
@@ -606,6 +607,83 @@ export async function recoverSubscription(deviceId, deviceFingerprint) {
  *
  * @param {string} manualGiftAckKey Same stable key as verify `manualGiftAckKey`.
  */
+function mapOfferRedeemErrorMessage(body, httpStatus) {
+  const msg = String(body?.error ?? body?.message ?? '').toLowerCase();
+  const code = String(body?.code ?? body?.reason ?? '').toLowerCase();
+  const t = `${msg} ${code}`;
+  if (
+    t.includes('already') ||
+    t.includes('other_device') ||
+    t.includes('other device') ||
+    t.includes('imetumika') ||
+    t.includes('kingine')
+  ) {
+    return 'Code hii tayari imetumika kwenye kifaa kingine';
+  }
+  if (t.includes('expired') || t.includes('expires') || t.includes('imeisha') || t.includes('muda wake')) {
+    return 'Code hii imeisha muda wake';
+  }
+  if (t.includes('block') || t.includes('banned') || t.includes('zui') || t.includes('forbidden')) {
+    return 'Code hii imezuiwa';
+  }
+  if (
+    t.includes('invalid') ||
+    t.includes('wrong') ||
+    t.includes('si sahihi') ||
+    httpStatus === 400 ||
+    httpStatus === 404 ||
+    httpStatus === 422
+  ) {
+    return 'Code si sahihi';
+  }
+  return 'Code si sahihi';
+}
+
+/**
+ * Redeem admin offer code from Account screen.
+ * POST /api/subscription/redeem-offer-code
+ *
+ * @returns {Promise<
+ *   | { ok: true; raw: object }
+ *   | { ok: false; locked: true; remainingSeconds: number; raw: object }
+ *   | { ok: false; locked: false; message: string; raw: object }
+ * >}
+ */
+export async function redeemOfferCode(deviceId, deviceFingerprint, offerCode) {
+  const url = `${API}/subscription/redeem-offer-code`;
+  const code = String(offerCode ?? '').trim();
+  console.log('[OFFER_CODE]', 'redeem_try', { codeLen: code.length });
+  try {
+    const { res, body } = await postJson(url, {
+      device_id: deviceId,
+      device_fingerprint: deviceFingerprint,
+      offer_code: code,
+    });
+    const plain = isPlainObject(body) ? body : {};
+    if (res.ok) {
+      console.log('[OFFER_CODE]', 'redeem_success', { status: res.status });
+      return { ok: true, raw: plain };
+    }
+    if (plain.locked === true || plain.locked === 1 || plain.locked === 'true') {
+      const rs = Number(plain.remaining_seconds ?? plain.remainingSeconds ?? 0);
+      const remainingSeconds = Number.isFinite(rs) ? Math.max(0, Math.floor(rs)) : 0;
+      console.log('[OFFER_CODE]', 'cooldown_active', { remaining_seconds: remainingSeconds });
+      return {
+        ok: false,
+        locked: true,
+        remainingSeconds,
+        raw: plain,
+      };
+    }
+    const message = mapOfferRedeemErrorMessage(plain, res.status);
+    console.log('[OFFER_CODE]', 'redeem_fail', { status: res.status, message });
+    return { ok: false, locked: false, message, raw: plain };
+  } catch (e) {
+    console.log('[OFFER_CODE]', 'redeem_fail', { error: String(e?.message ?? e) });
+    throw e;
+  }
+}
+
 export async function acknowledgeManualGift(deviceId, deviceFingerprint, manualGiftAckKey) {
   const url = `${API}/subscription/acknowledge-manual-gift`;
   const key = String(manualGiftAckKey ?? '').trim();

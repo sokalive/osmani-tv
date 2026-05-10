@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   Platform,
@@ -7,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
@@ -18,9 +20,15 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import HamishaKifurushiModal from '../components/HamishaKifurushiModal';
 import PremiumModal from '../components/PremiumModal';
+import { redeemOfferCode } from '../api/subscription';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { formatSubscriptionExpiry } from '../lib/formatExpiry';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
+import {
+  clearOfferCodeCooldown,
+  readOfferCodeCooldownEndMs,
+  writeOfferCodeCooldownEndMs,
+} from '../lib/offerCodeCooldown';
 import { getDeviceLabel } from '../lib/deviceLabel';
 import { computeSubscriptionProgress } from '../lib/subscriptionMath';
 
@@ -105,6 +113,13 @@ function resolveSubscriptionPaymentLabel(details) {
   return null;
 }
 
+function formatOfferCooldownMmSs(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
 function isPremiumChannel(raw, freeMode) {
   if (freeMode) return false;
   return (
@@ -120,6 +135,10 @@ export default function AkauntiYanguScreen() {
   const bottomPad = scrollBottomPad(insets);
   const [hamishaModalVisible, setHamishaModalVisible] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
+  const [offerCodeInput, setOfferCodeInput] = useState('');
+  const [redeemBusy, setRedeemBusy] = useState(false);
+  const [cooldownEndMs, setCooldownEndMs] = useState(null);
+  const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);
   const [deviceIdFull, setDeviceIdFull] = useState('');
   const {
     isSubscribed,
@@ -201,9 +220,39 @@ export default function AkauntiYanguScreen() {
   // Card 5 (status)
   const statusLabel = isSubscribed ? 'ACTIVE' : 'HUNA USAJILI';
 
+  const syncCooldownFromStorage = useCallback(async () => {
+    const end = await readOfferCodeCooldownEndMs();
+    if (end != null && end > Date.now()) {
+      setCooldownEndMs(end);
+      setCooldownRemainingSec(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
+    } else {
+      setCooldownEndMs(null);
+      setCooldownRemainingSec(0);
+      if (end != null) await clearOfferCodeCooldown();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!cooldownEndMs || cooldownEndMs <= Date.now()) {
+      return undefined;
+    }
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((cooldownEndMs - Date.now()) / 1000));
+      setCooldownRemainingSec(left);
+      if (left <= 0) {
+        setCooldownEndMs(null);
+        void clearOfferCodeCooldown();
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [cooldownEndMs]);
+
   useFocusEffect(
     useCallback(() => {
       void refreshSubscription();
+      void syncCooldownFromStorage();
       (async () => {
         try {
           const { deviceId } = await getDeviceIdentity();
@@ -212,7 +261,7 @@ export default function AkauntiYanguScreen() {
           setDeviceIdFull('');
         }
       })();
-    }, [refreshSubscription]),
+    }, [refreshSubscription, syncCooldownFromStorage]),
   );
 
   const handleCopyDeviceId = useCallback(async () => {
@@ -220,6 +269,42 @@ export default function AkauntiYanguScreen() {
     await Clipboard.setStringAsync(deviceIdFull);
     Alert.alert('', 'Device ID imenakiliwa');
   }, [deviceIdFull]);
+
+  const cooldownActive = cooldownRemainingSec > 0;
+
+  const handleRedeemOfferCode = useCallback(async () => {
+    const raw = offerCodeInput.trim();
+    if (!raw || redeemBusy || cooldownActive) return;
+    setRedeemBusy(true);
+    try {
+      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+      const r = await redeemOfferCode(deviceId, deviceFingerprint, raw);
+      if (r.ok) {
+        await refreshSubscription();
+        setOfferCodeInput('');
+        navigation.navigate('Home');
+        return;
+      }
+      if (r.locked) {
+        const end = Date.now() + r.remainingSeconds * 1000;
+        await writeOfferCodeCooldownEndMs(end);
+        setCooldownEndMs(end);
+        setCooldownRemainingSec(r.remainingSeconds);
+        return;
+      }
+      Alert.alert('', r.message);
+    } catch (e) {
+      Alert.alert('', typeof e?.message === 'string' ? e.message : 'Jaribu tena baadaye.');
+    } finally {
+      setRedeemBusy(false);
+    }
+  }, [
+    offerCodeInput,
+    redeemBusy,
+    cooldownActive,
+    refreshSubscription,
+    navigation,
+  ]);
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
@@ -356,6 +441,46 @@ export default function AkauntiYanguScreen() {
           <Text style={styles.deviceFooter}>
             Tuma Device ID hii kwa admin wakati wa kuhamisha kifurushi
           </Text>
+        </View>
+
+        <View style={styles.offerSection}>
+          <Text style={styles.offerSectionTitle}>WEKA CODE YA OFA ULIYOPEWA NA MUHUDUMU</Text>
+          <Text style={styles.offerDescription}>Ingiza code uliyopewa na muhudumu</Text>
+          {cooldownActive ? (
+            <>
+              <Text style={styles.offerCooldownWarning}>Umejaribu code nyingi zisizo sahihi</Text>
+              <Text style={styles.offerCooldownTimer}>{formatOfferCooldownMmSs(cooldownRemainingSec)}</Text>
+            </>
+          ) : null}
+          <TextInput
+            style={[styles.offerInput, (cooldownActive || redeemBusy) && styles.offerInputDisabled]}
+            value={offerCodeInput}
+            onChangeText={setOfferCodeInput}
+            placeholder="__________"
+            placeholderTextColor="#6B7280"
+            editable={!cooldownActive && !redeemBusy}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            keyboardType="default"
+          />
+          <Pressable
+            style={[styles.offerSubmitOuter, (cooldownActive || redeemBusy || !offerCodeInput.trim()) && styles.offerSubmitOuterDisabled]}
+            onPress={() => void handleRedeemOfferCode()}
+            disabled={cooldownActive || redeemBusy || !offerCodeInput.trim()}
+          >
+            <LinearGradient
+              colors={[COLORS.yellow, '#E5A020']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.offerSubmitGradient}
+            >
+              {redeemBusy ? (
+                <ActivityIndicator color="#111827" />
+              ) : (
+                <Text style={styles.offerSubmitText}>THIBITISHA CODE</Text>
+              )}
+            </LinearGradient>
+          </Pressable>
         </View>
       </ScrollView>
 
@@ -618,5 +743,87 @@ const styles = StyleSheet.create({
     color: COLORS.mutedText,
     fontSize: 12,
     lineHeight: 18,
+  },
+  offerSection: {
+    marginTop: 24,
+    marginBottom: 16,
+    backgroundColor: COLORS.card,
+    borderRadius: 14,
+    padding: 16,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255,203,61,0.12)',
+  },
+  offerSectionTitle: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 10,
+    letterSpacing: 0.3,
+    lineHeight: 20,
+  },
+  offerDescription: {
+    color: COLORS.mutedText,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  offerCooldownWarning: {
+    color: '#FCA5A5',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  offerCooldownTimer: {
+    color: COLORS.yellow,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: 2,
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  offerInput: {
+    backgroundColor: '#151922',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'ios' ? 14 : 12,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 2,
+    color: COLORS.white,
+    marginBottom: 14,
+  },
+  offerInputDisabled: {
+    opacity: 0.5,
+  },
+  offerSubmitOuter: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  offerSubmitOuterDisabled: {
+    opacity: 0.55,
+  },
+  offerSubmitGradient: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  offerSubmitText: {
+    color: '#111827',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });
