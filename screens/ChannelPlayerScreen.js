@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   Pressable,
+  Platform,
   StatusBar,
   BackHandler,
   Alert,
@@ -72,6 +73,10 @@ function hlsLevelLabel(level) {
   if (level.bitrate) return `${Math.round(level.bitrate / 1000)} kbps`;
   return level.name ? String(level.name) : '';
 }
+
+// Android WebView: software layer reduces white-flash vs animated opacity overlays.
+const ANDROID_WEBVIEW_SURFACE =
+  Platform.OS === 'android' ? { androidLayerType: 'software' } : {};
 
 function hlsAudioLabel(track) {
   if (!track) return '';
@@ -970,67 +975,73 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           - everything else (player.php, embed pages, iframe HTML) → plain WebView
       */}
       <Pressable style={{ flex: 1 }} onPress={showControls}>
-        <View pointerEvents="none" style={styles.videoUnderlay} />
-
-        {useNativePlayer ? (
-          <Video
-            key={`native-${playerEpoch}`}
-            ref={videoRef}
-            source={{
-              uri,
-              headers,
-              ...(looksLikeHlsUrl(uri) ? { overrideFileExtensionAndroid: 'm3u8' } : {}),
-            }}
-            style={styles.video}
-            resizeMode={resizeMode}
-            shouldPlay
-            progressUpdateIntervalMillis={1000}
-            onPlaybackStatusUpdate={onStatusUpdate}
-            onError={onError}
-            useNativeControls={false}
-          />
-        ) : useHlsWebView ? (
-          <WebView
-            key={`hls-${playerEpoch}`}
-            ref={hlsWebRef}
-            style={styles.video}
-            source={hlsWebViewSource}
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            javaScriptEnabled
-            domStorageEnabled
-            originWhitelist={['*']}
-            mixedContentMode="always"
-            onLoadStart={onEmbedLoadStart}
-            onLoadEnd={onEmbedLoadEnd}
-            onMessage={onHlsWebMessage}
-            onHttpError={onHlsWebHttpError}
-            onError={onHlsWebError}
-          />
-        ) : (
-          <WebView
-            key={`embed-${playerEpoch}`}
-            ref={embedWebRef}
-            style={styles.video}
-            source={embedWebViewSource}
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            javaScriptEnabled
-            domStorageEnabled
-            originWhitelist={['*']}
-            mixedContentMode="always"
-            injectedJavaScript={embedBridgeJs}
-            onLoadStart={onEmbedLoadStart}
-            onLoadEnd={onEmbedLoadEnd}
-            onMessage={onEmbedMessage}
-            onError={onEmbedError}
-            onHttpError={onEmbedHttpError}
-          />
-        )}
+        <View style={styles.playerStage} collapsable={false}>
+          {useNativePlayer ? (
+            <Video
+              key={`native-${playerEpoch}`}
+              ref={videoRef}
+              source={{
+                uri,
+                headers,
+                ...(looksLikeHlsUrl(uri) ? { overrideFileExtensionAndroid: 'm3u8' } : {}),
+              }}
+              style={styles.video}
+              resizeMode={resizeMode}
+              shouldPlay
+              progressUpdateIntervalMillis={1000}
+              onPlaybackStatusUpdate={onStatusUpdate}
+              onError={onError}
+              useNativeControls={false}
+            />
+          ) : useHlsWebView ? (
+            <WebView
+              key={`hls-${playerEpoch}`}
+              ref={hlsWebRef}
+              style={styles.video}
+              source={hlsWebViewSource}
+              {...ANDROID_WEBVIEW_SURFACE}
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+              javaScriptEnabled
+              domStorageEnabled
+              originWhitelist={['*']}
+              mixedContentMode="always"
+              onLoadStart={onEmbedLoadStart}
+              onLoadEnd={onEmbedLoadEnd}
+              onMessage={onHlsWebMessage}
+              onHttpError={onHlsWebHttpError}
+              onError={onHlsWebError}
+            />
+          ) : (
+            <WebView
+              key={`embed-${playerEpoch}`}
+              ref={embedWebRef}
+              style={styles.video}
+              source={embedWebViewSource}
+              {...ANDROID_WEBVIEW_SURFACE}
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+              javaScriptEnabled
+              domStorageEnabled
+              originWhitelist={['*']}
+              mixedContentMode="always"
+              injectedJavaScript={embedBridgeJs}
+              onLoadStart={onEmbedLoadStart}
+              onLoadEnd={onEmbedLoadEnd}
+              onMessage={onEmbedMessage}
+              onError={onEmbedError}
+              onHttpError={onEmbedHttpError}
+            />
+          )}
+        </View>
 
         {/* CONTROLS */}
         {controlsVisible && (
-          <Animated.View style={[styles.controls, { opacity: controlsOpacity }]} pointerEvents="box-none">
+          <Animated.View
+            style={[styles.controls, { opacity: controlsOpacity }]}
+            pointerEvents="box-none"
+            needsOffscreenAlphaCompositing={false}
+          >
 
             {/* TOP */}
             <View style={[styles.topBar, { paddingTop: Math.max(8, insets.top) }]}>
@@ -1116,9 +1127,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
-  videoUnderlay: {
-    ...StyleSheet.absoluteFillObject,
+  playerStage: {
+    flex: 1,
     backgroundColor: '#000000',
+    overflow: 'hidden',
+    zIndex: 0,
   },
   gateScreen: {
     alignItems: 'center',
