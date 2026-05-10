@@ -284,7 +284,6 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
         : 'other';
 
   useRegisterBlockingSheet(`catalog-premium-${catalogBlockingSuffix}`, premiumModalVisible);
-  useRegisterBlockingSheet(`catalog-emergency-${catalogBlockingSuffix}`, emergencyModalVisible);
   useRegisterBlockingSheet(`catalog-manual-gift-${catalogBlockingSuffix}`, manualGiftVisible);
 
   useEffect(() => {
