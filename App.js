@@ -1117,6 +1117,8 @@ function RootNavigator() {
         options={{
           animation: 'fade',
           gestureEnabled: false,
+          // Blocks Navigation theme background from tinting Video/WebView compositing.
+          contentStyle: { backgroundColor: '#000000' },
         }}
       />
     </Stack.Navigator>

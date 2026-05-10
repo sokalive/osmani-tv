@@ -969,7 +969,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           - .mp4 / .ts ... → expo-av native
           - everything else (player.php, embed pages, iframe HTML) → plain WebView
       */}
-      <Pressable style={{ flex: 1 }} onPress={showControls}>
+      <Pressable style={styles.playerShell} onPress={showControls}>
 
         {useNativePlayer ? (
           <Video
@@ -1115,6 +1115,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
+  playerShell: { flex: 1, backgroundColor: '#000000' },
   gateScreen: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -1130,6 +1131,7 @@ const styles = StyleSheet.create({
 
   video: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000000',
   },
 
   controls: {
