@@ -1048,7 +1048,7 @@ function OsmaniLovableTabBar(props) {
         right: 0,
         bottom: 0,
         height: totalHeight,
-        overflow: 'hidden',
+        overflow: 'visible',
       }}
     >
       {Platform.OS === 'web' ? (
@@ -1072,6 +1072,7 @@ function OsmaniLovableTabBar(props) {
           borderTopWidth: StyleSheet.hairlineWidth,
           borderTopColor: 'rgba(255,255,255,0.08)',
           height: totalHeight,
+          overflow: 'visible',
           shadowColor: '#000000',
           shadowOffset: { width: 0, height: -8 },
           shadowOpacity: 0.42,
@@ -1079,20 +1080,28 @@ function OsmaniLovableTabBar(props) {
           elevation: 32,
         }}
       >
-        <BottomTabBar
-          {...props}
-          insets={{ top: 0, left: insets.left, right: insets.right, bottom: insets.bottom }}
+        {/* Shift tab row up for optical vertical balance (safe area unchanged). */}
+        <View
           style={{
-            backgroundColor: Platform.OS === 'web' ? '#0C0608' : 'transparent',
-            borderTopWidth: 0,
-            elevation: 0,
-            height: totalHeight,
-            paddingTop: Platform.OS === 'ios' ? 5 : 4,
-            paddingBottom: insets.bottom,
-            paddingHorizontal: 6,
-            justifyContent: 'center',
+            flex: 1,
+            transform: [{ translateY: Platform.OS === 'ios' ? -4 : -3 }],
           }}
-        />
+        >
+          <BottomTabBar
+            {...props}
+            insets={{ top: 0, left: insets.left, right: insets.right, bottom: insets.bottom }}
+            style={{
+              backgroundColor: Platform.OS === 'web' ? '#0C0608' : 'transparent',
+              borderTopWidth: 0,
+              elevation: 0,
+              height: totalHeight,
+              paddingTop: Platform.OS === 'ios' ? 8 : 7,
+              paddingBottom: insets.bottom,
+              paddingHorizontal: 6,
+              justifyContent: 'flex-start',
+            }}
+          />
+        </View>
       </View>
     </View>
   );
@@ -1518,15 +1527,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   tabBarItem: {
-    paddingTop: 2,
+    paddingTop: 0,
     paddingBottom: 0,
+    justifyContent: 'center',
   },
   tabLabel: {
     fontSize: 10.5,
     fontWeight: '700',
     letterSpacing: 0.12,
     marginBottom: 0,
-    marginTop: 1,
+    marginTop: 0,
   },
   placeholderScreen: {
     flex: 1,
