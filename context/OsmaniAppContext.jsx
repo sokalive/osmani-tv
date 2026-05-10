@@ -20,6 +20,8 @@ const defaultSettings = {
 };
 const LIVE_SYNC_BASE_MS = 15000;
 const LIVE_SYNC_MAX_MS = 120000;
+/** Fast poll for admin flags (maintenance / emergency / free); complements SSE. */
+const SETTINGS_POLL_MS = 2500;
 
 const OsmaniAppContext = createContext(null);
 
@@ -77,6 +79,8 @@ export function OsmaniAppProvider({ children }) {
   const [revokedReason, setRevokedReason] = useState(null);
   /** Active `transfer_requested` payload (source-device approval popup). */
   const [pendingTransfer, setPendingTransfer] = useState(null);
+  /** Bumped to re-open global emergency modal (banner / channel tap while emergency). */
+  const [emergencyModalRequestVersion, setEmergencyModalRequestVersion] = useState(0);
 
   const verifyInFlightRef = useRef(false);
   const lastVerifyKeyRef = useRef(0);
@@ -257,6 +261,27 @@ export function OsmaniAppProvider({ children }) {
    * Reload settings + channels.
    * @param {{ showGlobalLoading?: boolean }} [opts] — set showGlobalLoading: false for pull-to-refresh (no full-screen blocking load).
    */
+  /**
+   * Lightweight: `/api/settings` only — instant admin flag updates without reloading catalogs.
+   */
+  const refreshSettingsOnly = useCallback(async (reason = 'poll') => {
+    try {
+      const s = await getSettings();
+      setSettings({
+        freeMode: Boolean(s.freeMode),
+        emergencyMode: Boolean(s.emergencyMode),
+        maintenanceMode: Boolean(s.maintenanceMode),
+      });
+      console.log('[SETTINGS_SYNC]', reason, {
+        freeMode: s.freeMode,
+        emergencyMode: s.emergencyMode,
+        maintenanceMode: s.maintenanceMode,
+      });
+    } catch (e) {
+      console.log('[SETTINGS_SYNC]', reason, 'error', e?.message ?? e);
+    }
+  }, []);
+
   const refresh = useCallback(async (opts = {}) => {
     const showGlobalLoading = opts.showGlobalLoading !== false;
     const preserveDataOnError = opts.preserveDataOnError === true;
@@ -310,6 +335,22 @@ export function OsmaniAppProvider({ children }) {
     });
     return unsubscribe;
   }, [refresh, refreshServerHealth]);
+
+  // Fast settings poll + resume: admin flags update without waiting for full catalog refresh.
+  useEffect(() => {
+    let interval = null;
+    const onAppState = (next) => {
+      if (next === 'active') void refreshSettingsOnly('app_resume');
+    };
+    const sub = AppState.addEventListener('change', onAppState);
+    interval = setInterval(() => {
+      void refreshSettingsOnly('interval');
+    }, SETTINGS_POLL_MS);
+    return () => {
+      sub.remove();
+      if (interval) clearInterval(interval);
+    };
+  }, [refreshSettingsOnly]);
 
   // Realtime subscription lifecycle events from /api/sync/stream.
   useEffect(() => {
@@ -395,7 +436,7 @@ export function OsmaniAppProvider({ children }) {
     );
     const offSettings = subscribeRealtimeEvent('app_settings_changed', (payload) => {
       console.log('[APP_SETTINGS_CHANGED]', 'sse', payload);
-      void refresh({ showGlobalLoading: false, preserveDataOnError: true });
+      void refreshSettingsOnly('sse:app_settings_changed');
       void reverifySubscription('sse:app_settings_changed');
     });
     return () => {
@@ -406,7 +447,7 @@ export function OsmaniAppProvider({ children }) {
       offConfirmationRequired();
       offSettings();
     };
-  }, [refresh, reverifySubscription]);
+  }, [refresh, reverifySubscription, refreshSettingsOnly]);
 
   // Foreground sync: refresh catalog + reverify periodically while app is active.
   useEffect(() => {
@@ -471,6 +512,10 @@ export function OsmaniAppProvider({ children }) {
     setPendingTransfer(null);
   }, []);
 
+  const requestEmergencyModal = useCallback(() => {
+    setEmergencyModalRequestVersion((v) => v + 1);
+  }, []);
+
   /**
    * Force-set the pending transfer payload from an external code path
    * (polling fallback, optimistic local transition, etc). Logs the
@@ -501,6 +546,7 @@ export function OsmaniAppProvider({ children }) {
       loading,
       error,
       refresh,
+      refreshSettingsOnly,
       isSubscribed,
       setIsSubscribed,
       subscriptionExpiresAt,
@@ -520,6 +566,8 @@ export function OsmaniAppProvider({ children }) {
       pendingTransfer,
       dismissPendingTransfer,
       triggerPendingTransfer,
+      emergencyModalRequestVersion,
+      requestEmergencyModal,
     }),
     [
       settings,
@@ -529,6 +577,7 @@ export function OsmaniAppProvider({ children }) {
       loading,
       error,
       refresh,
+      refreshSettingsOnly,
       isSubscribed,
       subscriptionExpiresAt,
       subscriptionDetails,
@@ -542,6 +591,8 @@ export function OsmaniAppProvider({ children }) {
       pendingTransfer,
       dismissPendingTransfer,
       triggerPendingTransfer,
+      emergencyModalRequestVersion,
+      requestEmergencyModal,
     ],
   );
 

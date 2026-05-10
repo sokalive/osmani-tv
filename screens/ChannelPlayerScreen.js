@@ -98,6 +98,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     freeMode,
     gateForPlayback,
     reverifySubscription,
+    emergencyMode,
   } = useOsmaniApp();
   const channel = liveChannel ?? initialChannel;
   const channelIsPremium = Boolean(
@@ -194,6 +195,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const sessionChannelIdRef = useRef('');
   const pingTimerRef = useRef(null);
   const stopSentRef = useRef(false);
+  const emergencyInterruptOnceRef = useRef(false);
 
   // LOG
   useEffect(() => {
@@ -299,6 +301,44 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     };
   }, [channelIsPremium, navigation, reverifySubscription]);
 
+  // Admin emergency: stop all playback surfaces, portrait, then leave player so global Emergency modal shows.
+  useEffect(() => {
+    if (!emergencyMode) {
+      emergencyInterruptOnceRef.current = false;
+      return;
+    }
+    if (emergencyInterruptOnceRef.current) return;
+    emergencyInterruptOnceRef.current = true;
+    console.log('[player][emergency] interrupt_stop_playback');
+    (async () => {
+      try {
+        await videoRef.current?.pauseAsync?.();
+        await videoRef.current?.unloadAsync?.();
+      } catch {}
+      try {
+        hlsWebRef.current?.injectJavaScript(
+          `(function(){try{var v=document.getElementById('v');if(v){v.pause();}}catch(e){}})();true;`,
+        );
+      } catch {}
+      try {
+        embedWebRef.current?.injectJavaScript(
+          `(function(){try{var v=document.querySelector('video');if(v)v.pause();}catch(e){}})();true;`,
+        );
+      } catch {}
+      try {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
+        StatusBar.setHidden(false);
+      } catch {}
+      try {
+        navigation.navigate('MainTabs', { screen: 'Home' });
+      } catch {
+        try {
+          navigation.goBack();
+        } catch {}
+      }
+    })();
+  }, [emergencyMode, navigation]);
+
   // Realtime stream/channel updates from live app catalog.
   useEffect(() => {
     const current = liveChannel ?? route?.params?.channel;
@@ -390,7 +430,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
-  }, []);
+  }, [navigation]);
 
   // ANALYTICS: start session + heartbeat + stop on exit
   useEffect(() => {

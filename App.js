@@ -27,7 +27,6 @@ import {
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import EmergencyModal from './components/EmergencyModal';
-import MaintenanceScreen from './components/MaintenanceScreen';
 import PremiumModal from './components/PremiumModal';
 import SubscriptionExpiryReminderModal from './components/SubscriptionExpiryReminderModal';
 import ManualSubscriptionGiftModal from './components/ManualSubscriptionGiftModal';
@@ -243,6 +242,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
     subscriptionDetails,
     subscriptionVersion,
     verifySubscriptionBeforePlay,
+    requestEmergencyModal,
   } = useOsmaniApp();
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
@@ -251,7 +251,6 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   const [manualGiftVisible, setManualGiftVisible] = useState(false);
   const [manualGiftAckBusy, setManualGiftAckBusy] = useState(false);
   const [manualGiftAckLoaded, setManualGiftAckLoaded] = useState(false);
-  const [emergencyModalVisible, setEmergencyModalVisible] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [bannerVisibilityClock, setBannerVisibilityClock] = useState(() => Date.now());
@@ -628,10 +627,6 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
     enableHomeExpiryReminder && expiryReminderVisible && !isBlockingSheetActive;
 
   useEffect(() => {
-    if (!emergencyMode) setEmergencyModalVisible(false);
-  }, [emergencyMode]);
-
-  useEffect(() => {
     if (!Array.isArray(rawBanners) || rawBanners.length === 0) return undefined;
     const id = setInterval(() => setBannerVisibilityClock(Date.now()), 1000);
     return () => clearInterval(id);
@@ -640,6 +635,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   const listBottomPadding = getScrollContentBottomPadding(insets);
 
   const displayChannels = useMemo(() => {
+    if (maintenanceMode) return [];
     let rows = rawChannels.filter(channelVisibleInApp);
     if (bottomTabFilter) {
       rows = rows.filter((r) => matchesBottomTabRow(r, bottomTabFilter));
@@ -650,7 +646,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
       rows = rows.filter((r) => matchesPillFilter(r, selectedFilter));
     }
     return rows.map((raw, i) => mapApiChannelToCard(raw, i, freeMode, serverHealth));
-  }, [rawChannels, bottomTabFilter, selectedFilter, freeMode, serverHealth]);
+  }, [rawChannels, bottomTabFilter, selectedFilter, freeMode, serverHealth, maintenanceMode]);
 
   const bannerSlides = useMemo(() => {
     if (!Array.isArray(rawBanners)) return [];
@@ -675,8 +671,8 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   }, [refresh]);
 
   const onBannerEmergency = useCallback(() => {
-    setEmergencyModalVisible(true);
-  }, []);
+    requestEmergencyModal();
+  }, [requestEmergencyModal]);
 
   const onBannerPremiumRequired = useCallback(() => {
     setPremiumModalVisible(true);
@@ -687,7 +683,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
       const locked = !freeMode && item.isPremium && !isSubscribed;
       if (maintenanceMode) return;
       if (emergencyMode) {
-        setEmergencyModalVisible(true);
+        requestEmergencyModal();
         return;
       }
       if (locked) {
@@ -716,6 +712,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
       emergencyMode,
       verifySubscriptionBeforePlay,
       navigation,
+      requestEmergencyModal,
     ],
   );
 
@@ -853,6 +850,14 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
         ) : null}
         {error && !loading ? <Text style={styles.channelsErrorText}>{error}</Text> : null}
 
+        {maintenanceMode ? (
+          <View style={styles.maintenanceNotice}>
+            <Text style={styles.maintenanceNoticeText}>
+              Huduma ya chaneli haipatikani kwa muda — tunarekebisha mfumo. Angalia bango na urudi baadaye.
+            </Text>
+          </View>
+        ) : null}
+
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Michezo na Soka</Text>
           <View style={styles.countBadge}>
@@ -883,29 +888,25 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
     ]
   );
 
-  if (maintenanceMode) {
-    return (
-      <MaintenanceScreen
-        contentPaddingBottom={listBottomPadding}
-        refreshing={pullRefreshing}
-        onRefresh={onPullRefresh}
-      />
-    );
-  }
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }} edges={['top']}>
       <StatusBar style="light" />
       <FlatList
         key={String(refreshKey)}
         data={displayChannels}
-        extraData={{ isSubscribed, subscriptionVersion }}
+        extraData={{ isSubscribed, subscriptionVersion, maintenanceMode }}
         renderItem={renderCard}
         keyExtractor={(item) => item.id}
         numColumns={2}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={
-          !loading ? <Text style={styles.channelsEmptyText}>Hakuna chaneli bado.</Text> : null
+          !loading ? (
+            <Text style={styles.channelsEmptyText}>
+              {maintenanceMode
+                ? 'Chaneli hazionekani wakati wa matengenezo.'
+                : 'Hakuna chaneli bado.'}
+            </Text>
+          ) : null
         }
         contentContainerStyle={[styles.listContent, { paddingBottom: listBottomPadding }]}
         columnWrapperStyle={displayChannels.length > 0 ? styles.gridRow : null}
@@ -918,10 +919,6 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
             colors={[COLORS.greenButton]}
           />
         }
-      />
-      <EmergencyModal
-        visible={emergencyModalVisible}
-        onSawa={() => setEmergencyModalVisible(false)}
       />
       <PremiumModal
         visible={premiumModalVisible}
@@ -947,6 +944,32 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
       ) : null}
     </SafeAreaView>
   );
+}
+
+/**
+ * Emergency modal is global so ChannelPlayer can return to tabs and the user still sees the alert.
+ * Re-opens when admin toggles emergency on or user taps emergency banner/channel.
+ */
+function GlobalEmergencyGate() {
+  const { emergencyMode, emergencyModalRequestVersion } = useOsmaniApp();
+  const [dismissed, setDismissed] = useState(false);
+  const prevEmergencyRef = useRef(false);
+
+  useEffect(() => {
+    const was = prevEmergencyRef.current;
+    if (emergencyMode && !was) setDismissed(false);
+    if (!emergencyMode) setDismissed(false);
+    prevEmergencyRef.current = emergencyMode;
+  }, [emergencyMode]);
+
+  useEffect(() => {
+    if (emergencyModalRequestVersion > 0) setDismissed(false);
+  }, [emergencyModalRequestVersion]);
+
+  const visible = Boolean(emergencyMode) && !dismissed;
+  useRegisterBlockingSheet('global-emergency', visible);
+
+  return <EmergencyModal visible={visible} onSawa={() => setDismissed(true)} />;
 }
 
 function PlaceholderScreen({ title }) {
@@ -1074,6 +1097,7 @@ export default function App() {
           >
             <RootNavigator />
           </NavigationContainer>
+          <GlobalEmergencyGate />
           <WhatsAppFloatingButtonGate
             navigationRef={navigationRef}
             navigationRevision={navigationRevision}
@@ -1261,6 +1285,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 12,
     paddingHorizontal: 2,
+  },
+  maintenanceNotice: {
+    marginHorizontal: 0,
+    marginBottom: 12,
+    marginTop: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(255,203,61,0.08)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,203,61,0.22)',
+  },
+  maintenanceNoticeText: {
+    color: COLORS.mutedText,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
   },
   channelsEmptyText: {
     color: COLORS.mutedText,
