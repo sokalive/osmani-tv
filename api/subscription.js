@@ -10,6 +10,7 @@ import { BASE_URL } from '../api';
  * Endpoints (production /api):
  *   POST /api/subscription/verify   { device_id, device_fingerprint }
  *   POST /api/subscription/recover  { device_id, device_fingerprint }
+ *   POST /api/subscription/acknowledge-manual-gift { device_id, device_fingerprint, manual_gift_ack_key }
  *   POST /api/transfer/request      { source_device_id, target_device_id, phone? }
  *   POST /api/transfer/confirm      { code, target_device_id, device_fingerprint }
  *   GET  /api/subscription/transfer/:code
@@ -596,6 +597,38 @@ export async function recoverSubscription(deviceId, deviceFingerprint) {
   } catch (e) {
     console.log('[SUBSCRIPTION_RECOVER]', 'error', e?.message ?? e);
     return { active: false, expiresAt: null, error: String(e?.message ?? e) };
+  }
+}
+
+/**
+ * Required acknowledgement for admin manual subscription gifts.
+ * POST /api/subscription/acknowledge-manual-gift
+ *
+ * @param {string} manualGiftAckKey Same stable key as verify `manualGiftAckKey`.
+ */
+export async function acknowledgeManualGift(deviceId, deviceFingerprint, manualGiftAckKey) {
+  const url = `${API}/subscription/acknowledge-manual-gift`;
+  const key = String(manualGiftAckKey ?? '').trim();
+  console.log('[MANUAL_GIFT]', 'acknowledge_request', { url, keyPreview: key.slice(0, 24) });
+  try {
+    const { res, body } = await postJson(url, {
+      device_id: deviceId,
+      device_fingerprint: deviceFingerprint,
+      manual_gift_ack_key: key,
+      manualGiftAckKey: key,
+      gift_ack_key: key,
+    });
+    if (!res.ok) {
+      console.log('[MANUAL_GIFT]', 'acknowledge_failed', res.status, body);
+      const msg =
+        (body && typeof body === 'object' && (body.message || body.error)) || `HTTP ${res.status}`;
+      throw new Error(typeof msg === 'string' ? msg : `HTTP ${res.status}`);
+    }
+    console.log('[MANUAL_GIFT]', 'acknowledge_ok', res.status);
+    return { ok: true, raw: body };
+  } catch (e) {
+    console.log('[MANUAL_GIFT]', 'acknowledge_error', e?.message ?? e);
+    throw e;
   }
 }
 

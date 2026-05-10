@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
+  ActivityIndicator,
+  BackHandler,
   Dimensions,
   Modal,
   Platform,
@@ -20,16 +22,28 @@ const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MAX_SHEET_H = Math.min(320, Math.round(WINDOW_HEIGHT * 0.62));
 
 /**
- * One-time admin manual gift congratulations (Home only; parent controls mount).
- * @param {{ visible: boolean; onDismiss: () => void }} props
+ * Blocking admin manual gift acknowledgment — only `onAcknowledge` may dismiss.
+ * @param {{ visible: boolean; busy?: boolean; onAcknowledge: () => void | Promise<void> }} props
  */
-export default function ManualSubscriptionGiftModal({ visible, onDismiss }) {
+export default function ManualSubscriptionGiftModal({ visible, busy = false, onAcknowledge }) {
   const insets = useSafeAreaInsets();
 
+  useEffect(() => {
+    if (!visible) return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
+  }, [visible]);
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={() => {}}
+      presentationStyle="overFullScreen"
+    >
       <View style={[styles.overlay, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 12 }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onDismiss} />
+        <View style={styles.touchBlocker} />
         <View style={styles.centeredWrap} pointerEvents="box-none">
           <View style={[styles.sheet, { maxHeight: MAX_SHEET_H }]}>
             <ScrollView
@@ -45,14 +59,22 @@ export default function ManualSubscriptionGiftModal({ visible, onDismiss }) {
                   'Umepokea kifurushi cha Ofa kutoka kwa Muhudumu Wetu. Sasa Unaweza Kutazama Channel Zote Bureee Kuanzia sasa🥳.'
                 }
               </Text>
-              <Pressable style={styles.ctaWrap} onPress={onDismiss}>
+              <Pressable
+                style={[styles.ctaWrap, busy && styles.ctaDisabled]}
+                onPress={onAcknowledge}
+                disabled={busy}
+              >
                 <LinearGradient
                   colors={ACCENT_GRADIENT}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.ctaGradient}
                 >
-                  <Text style={styles.ctaText}>ASANTE</Text>
+                  {busy ? (
+                    <ActivityIndicator color="#111827" />
+                  ) : (
+                    <Text style={styles.ctaText}>ASANTE</Text>
+                  )}
                 </LinearGradient>
               </Pressable>
             </ScrollView>
@@ -70,6 +92,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 16,
+  },
+  /** Blocks interaction with content behind the modal (does not dismiss). */
+  touchBlocker: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
   },
   centeredWrap: {
     width: '100%',
@@ -128,6 +155,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.55,
     shadowRadius: 18,
+  },
+  ctaDisabled: {
+    opacity: 0.85,
   },
   ctaGradient: {
     minHeight: 52,

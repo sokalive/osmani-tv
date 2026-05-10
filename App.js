@@ -14,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Dimensions,
   FlatList,
   Pressable,
@@ -45,6 +46,7 @@ import {
   useRegisterBlockingSheet,
 } from './context/ModalSheetCoordinatorContext';
 import { BASE_URL } from './api';
+import { acknowledgeManualGift } from './api/subscription';
 import { trackInstallOnce } from './api/analytics';
 import { startPresence, stopPresence } from './lib/presenceTracker';
 import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
@@ -57,7 +59,14 @@ import {
   consumeHomeExpiryReminder,
   isHomeExpiryReminderConsumed,
 } from './lib/subscriptionReminderSession';
-import { readManualGiftAck, writeManualGiftAck } from './lib/manualGiftAck';
+import { getDeviceIdentity } from './lib/deviceIdentity';
+import {
+  clearPendingManualGiftKey,
+  readManualGiftAck,
+  readPendingManualGiftKey,
+  writeManualGiftAck,
+  writePendingManualGiftKey,
+} from './lib/manualGiftAck';
 import BannerCarousel, { BannerCarouselSkeleton } from './components/BannerCarousel';
 
 const Tab = createBottomTabNavigator();
@@ -240,6 +249,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   const [expiryReminderVisible, setExpiryReminderVisible] = useState(false);
   const [expiryReminderDisplayDays, setExpiryReminderDisplayDays] = useState(2);
   const [manualGiftVisible, setManualGiftVisible] = useState(false);
+  const [manualGiftAckBusy, setManualGiftAckBusy] = useState(false);
   const [manualGiftAckLoaded, setManualGiftAckLoaded] = useState(false);
   const [emergencyModalVisible, setEmergencyModalVisible] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
@@ -251,6 +261,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   const subscriptionExpiresAtRef = useRef(subscriptionExpiresAt);
   const deferredReminderRef = useRef(false);
   const deferredManualGiftRef = useRef(false);
+  const pendingGiftBlocksExpiryRef = useRef(false);
   const tryShowExpiryReminderRef = useRef(() => false);
   const tryShowManualGiftRef = useRef(async () => false);
   const manualGiftVisibleRef = useRef(false);
@@ -291,22 +302,37 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
       setManualGiftAckLoaded(false);
       return undefined;
     }
-    readManualGiftAck().then(() => {
-      if (!cancelled) setManualGiftAckLoaded(true);
-    });
+    Promise.all([readManualGiftAck(), readPendingManualGiftKey()])
+      .then(() => {
+        if (!cancelled) setManualGiftAckLoaded(true);
+      })
+      .catch(() => {
+        if (!cancelled) setManualGiftAckLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
   }, [enableHomeExpiryReminder]);
 
+  const syncPendingGiftBlocking = useCallback(async () => {
+    try {
+      const [ack, pending] = await Promise.all([readManualGiftAck(), readPendingManualGiftKey()]);
+      const dk = subscriptionDetailsRef.current?.manualGiftAckKey ?? null;
+      pendingGiftBlocksExpiryRef.current =
+        (dk != null && dk !== '' && ack !== dk) || (pending !== '' && ack !== pending);
+    } catch {
+      pendingGiftBlocksExpiryRef.current = manualGiftVisibleRef.current;
+    }
+  }, []);
+
   const tryShowManualGift = useCallback(
     async (source) => {
-      const key = subscriptionDetailsRef.current?.manualGiftAckKey;
+      const detailsKey = subscriptionDetailsRef.current?.manualGiftAckKey ?? null;
       const subscribed = isSubscribedRef.current;
       console.log('[MANUAL_GIFT]', 'popup_try', source, {
         enableHomeExpiryReminder,
         manualGiftAckLoaded,
-        manualGiftAckKey: key ?? null,
+        manualGiftAckKey: detailsKey ?? null,
         isSubscribed: subscribed,
         blockingSheetActive: isBlockingSheetActive,
         blockingSheetIds,
@@ -321,19 +347,37 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
         console.log('[MANUAL_GIFT]', 'popup_skip', source, 'ack_storage_not_loaded');
         return false;
       }
-      if (!key || !subscribed) {
-        console.log('[MANUAL_GIFT]', 'popup_skip', source, 'no_ack_key_or_not_subscribed', {
-          manualGiftAckKey: key ?? null,
-          isSubscribed: subscribed,
-        });
-        return false;
-      }
+      await syncPendingGiftBlocking();
+
       const ack = await readManualGiftAck();
-      console.log('[MANUAL_GIFT]', 'popup_ack_compare', source, { storedAck: ack || '(empty)', expectedKey: key });
-      if (ack === key) {
-        console.log('[MANUAL_GIFT]', 'popup_skip', source, 'already_acked');
+      const pending = await readPendingManualGiftKey();
+
+      if (detailsKey != null && detailsKey !== '' && ack === detailsKey) {
+        await clearPendingManualGiftKey();
+        await syncPendingGiftBlocking();
+        console.log('[MANUAL_GIFT]', 'popup_skip', source, 'already_acked_matches_verify');
         return false;
       }
+
+      let outstanding = null;
+      if (detailsKey != null && detailsKey !== '' && ack !== detailsKey) {
+        outstanding = detailsKey;
+      } else if (pending !== '' && ack !== pending) {
+        outstanding = pending;
+      }
+
+      console.log('[MANUAL_GIFT]', 'popup_ack_compare', source, {
+        storedAck: ack || '(empty)',
+        pending,
+        detailsKey,
+        outstanding,
+      });
+
+      if (!outstanding || !subscribed) {
+        console.log('[MANUAL_GIFT]', 'popup_skip', source, 'no_outstanding_or_not_subscribed');
+        return false;
+      }
+
       if (expiryReminderVisibleRef.current) {
         deferredManualGiftRef.current = true;
         reminderCoordLog('manual_gift_defer', source, 'reason=expiry_visible');
@@ -353,9 +397,11 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
         return false;
       }
       deferredManualGiftRef.current = false;
+      await writePendingManualGiftKey(outstanding);
+      await syncPendingGiftBlocking();
       setManualGiftVisible(true);
-      reminderCoordLog('manual_gift_open', source, { key });
-      console.log('[MANUAL_GIFT]', 'popup_open', source, { key });
+      reminderCoordLog('manual_gift_open', source, { key: outstanding });
+      console.log('[MANUAL_GIFT]', 'popup_open', source, { key: outstanding });
       return true;
     },
     [
@@ -364,6 +410,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
       isBlockingSheetActive,
       blockingSheetIds,
       premiumModalVisible,
+      syncPendingGiftBlocking,
     ],
   );
 
@@ -375,9 +422,9 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
         reminderCoordLog('skip', source, 'reason=not_home_catalog');
         return false;
       }
-      if (manualGiftVisibleRef.current) {
+      if (pendingGiftBlocksExpiryRef.current || manualGiftVisibleRef.current) {
         deferredReminderRef.current = true;
-        reminderCoordLog('defer', source, 'reason=manual_gift_visible');
+        reminderCoordLog('defer', source, 'reason=manual_gift_blocking');
         return false;
       }
       if (isHomeExpiryReminderConsumed()) {
@@ -474,6 +521,26 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
   ]);
 
   useEffect(() => {
+    if (!enableHomeExpiryReminder || !manualGiftAckLoaded) return;
+    void syncPendingGiftBlocking();
+  }, [
+    enableHomeExpiryReminder,
+    manualGiftAckLoaded,
+    subscriptionVersion,
+    subscriptionDetails?.manualGiftAckKey,
+    manualGiftVisible,
+    syncPendingGiftBlocking,
+  ]);
+
+  useEffect(() => {
+    if (!enableHomeExpiryReminder) return undefined;
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void tryShowManualGiftRef.current('app_resume');
+    });
+    return () => sub.remove();
+  }, [enableHomeExpiryReminder]);
+
+  useEffect(() => {
     if (!enableHomeExpiryReminder) return;
     if (isBlockingSheetActive) return;
     if (!deferredReminderRef.current) return;
@@ -513,16 +580,42 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
     setExpiryReminderVisible(false);
   }, []);
 
-  const dismissManualGift = useCallback(async () => {
-    const key = subscriptionDetailsRef.current?.manualGiftAckKey;
-    if (key) await writeManualGiftAck(key);
-    console.log('[MANUAL_GIFT]', 'popup_dismiss_asante', { wroteAck: Boolean(key), key: key ?? null });
-    manualGiftVisibleRef.current = false;
-    setManualGiftVisible(false);
-    setTimeout(() => {
-      tryShowExpiryReminderRef.current('after_manual_gift_close');
-    }, 0);
-  }, []);
+  const acknowledgeManualGiftPress = useCallback(async () => {
+    const dk = subscriptionDetailsRef.current?.manualGiftAckKey ?? null;
+    const pending = await readPendingManualGiftKey();
+    const key =
+      dk != null && dk !== ''
+        ? dk
+        : pending !== ''
+          ? pending
+          : null;
+    if (!key) {
+      console.log('[MANUAL_GIFT]', 'ack_press_skip_no_key');
+      return;
+    }
+    setManualGiftAckBusy(true);
+    try {
+      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+      await acknowledgeManualGift(deviceId, deviceFingerprint, key);
+      await writeManualGiftAck(key);
+      await clearPendingManualGiftKey();
+      pendingGiftBlocksExpiryRef.current = false;
+      manualGiftVisibleRef.current = false;
+      setManualGiftVisible(false);
+      console.log('[MANUAL_GIFT]', 'ack_complete', { key });
+      void syncPendingGiftBlocking();
+      setTimeout(() => {
+        tryShowExpiryReminderRef.current('after_manual_gift_close');
+      }, 0);
+    } catch (e) {
+      Alert.alert(
+        'Hitilafu',
+        typeof e?.message === 'string' ? e.message : 'Huwezi kuthibitisha sasa. Jaribu tena.',
+      );
+    } finally {
+      setManualGiftAckBusy(false);
+    }
+  }, [syncPendingGiftBlocking]);
 
   const onRenewFromExpiryReminder = useCallback(() => {
     setExpiryReminderVisible(false);
@@ -838,7 +931,11 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
         }}
       />
       {mountManualGiftModal ? (
-        <ManualSubscriptionGiftModal visible onDismiss={dismissManualGift} />
+        <ManualSubscriptionGiftModal
+          visible
+          busy={manualGiftAckBusy}
+          onAcknowledge={acknowledgeManualGiftPress}
+        />
       ) : null}
       {mountReminderModal ? (
         <SubscriptionExpiryReminderModal
