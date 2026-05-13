@@ -75,8 +75,12 @@ export default function PopupSettingsModal() {
     load();
 
     const unsubscribe = subscribeRealtimeEvent('popup_settings_changed', (payload) => {
-      if (payload && typeof payload === 'object' && VALID_MODES.has(payload.mode)) {
-        void applySettings(payload, 'sse');
+      const inner =
+        payload && typeof payload === 'object' && payload.payload && typeof payload.payload === 'object'
+          ? payload.payload
+          : payload;
+      if (inner && typeof inner === 'object' && VALID_MODES.has(inner.mode)) {
+        void applySettings(inner, 'sse');
       } else {
         load();
       }

@@ -41,8 +41,12 @@ export default function WhatsAppFloatingButton() {
     load();
 
     const unsubscribe = subscribeRealtimeEvent('whatsapp_settings_changed', (payload) => {
-      if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'enabled')) {
-        applySettings(payload);
+      const inner =
+        payload && typeof payload === 'object' && payload.payload && typeof payload.payload === 'object'
+          ? payload.payload
+          : payload;
+      if (inner && typeof inner === 'object' && Object.prototype.hasOwnProperty.call(inner, 'enabled')) {
+        applySettings(inner);
       } else {
         load();
       }

@@ -9,6 +9,7 @@ import {
   verifySubscription,
   writeSubscriptionCache,
 } from '../api/subscription';
+import { ADMIN_SOFT_REFRESH_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import { readBannersCache, writeBannersCache } from '../lib/bannersCache';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
@@ -262,7 +263,7 @@ export function OsmaniAppProvider({ children }) {
    * @param {{ showGlobalLoading?: boolean }} [opts] — set showGlobalLoading: false for pull-to-refresh (no full-screen blocking load).
    */
   /**
-   * Lightweight: viewer-safe app flags (public route or best-effort `/api/settings`).
+   * Lightweight: viewer-safe app flags via GET /api/public/app-settings only.
    */
   const refreshSettingsOnly = useCallback(async (reason = 'poll') => {
     const s = await tryGetViewerAppSettings();
@@ -309,6 +310,28 @@ export function OsmaniAppProvider({ children }) {
       if (showGlobalLoading) setLoading(false);
     }
   }, []);
+
+  /** Debounced channels/banners + subscription reverify after admin SSE bursts. */
+  const adminSoftSyncTimerRef = useRef(null);
+  const scheduleAdminDrivenSoftSync = useCallback(
+    (reason = 'sse:admin') => {
+      if (adminSoftSyncTimerRef.current) clearTimeout(adminSoftSyncTimerRef.current);
+      adminSoftSyncTimerRef.current = setTimeout(() => {
+        adminSoftSyncTimerRef.current = null;
+        console.log('[ADMIN_SYNC]', 'soft_refresh', reason);
+        void refresh({ showGlobalLoading: false, preserveDataOnError: true });
+        void reverifySubscription(reason);
+      }, 550);
+    },
+    [refresh, reverifySubscription],
+  );
+
+  useEffect(
+    () => () => {
+      if (adminSoftSyncTimerRef.current) clearTimeout(adminSoftSyncTimerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     refresh();
@@ -437,9 +460,11 @@ export function OsmaniAppProvider({ children }) {
         setSettings((prev) => ({ ...prev, ...patch }));
         console.log('[SETTINGS_SYNC]', 'sse:app_settings_changed', patch);
       }
-      void refresh({ showGlobalLoading: false, preserveDataOnError: true });
-      void reverifySubscription('sse:app_settings_changed');
+      scheduleAdminDrivenSoftSync('sse:app_settings_changed');
     });
+    const offCatalogAliases = ADMIN_SOFT_REFRESH_SSE_EVENTS.map((ev) =>
+      subscribeRealtimeEvent(ev, () => scheduleAdminDrivenSoftSync(`sse:${ev}`)),
+    );
     return () => {
       offRevoked();
       offCompleted();
@@ -447,8 +472,9 @@ export function OsmaniAppProvider({ children }) {
       offRequested();
       offConfirmationRequired();
       offSettings();
+      offCatalogAliases.forEach((off) => off());
     };
-  }, [refresh, reverifySubscription, refreshSettingsOnly]);
+  }, [refresh, reverifySubscription, scheduleAdminDrivenSoftSync]);
 
   // Foreground sync: refresh catalog + reverify periodically while app is active.
   useEffect(() => {
