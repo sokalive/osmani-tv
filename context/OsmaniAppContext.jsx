@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { getBanners, getChannels, getServerHealth } from '../api';
-import { tryGetViewerAppSettings } from '../api/settings';
+import { parseAppSettingsRealtimePatch, tryGetViewerAppSettings } from '../api/settings';
 import {
   clearSubscriptionCache,
   readSubscriptionCache,
@@ -432,7 +432,12 @@ export function OsmaniAppProvider({ children }) {
     );
     const offSettings = subscribeRealtimeEvent('app_settings_changed', (payload) => {
       console.log('[APP_SETTINGS_CHANGED]', 'sse', payload);
-      void refreshSettingsOnly('sse:app_settings_changed');
+      const patch = parseAppSettingsRealtimePatch(payload);
+      if (patch) {
+        setSettings((prev) => ({ ...prev, ...patch }));
+        console.log('[SETTINGS_SYNC]', 'sse:app_settings_changed', patch);
+      }
+      void refresh({ showGlobalLoading: false, preserveDataOnError: true });
       void reverifySubscription('sse:app_settings_changed');
     });
     return () => {

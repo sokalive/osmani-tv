@@ -20,6 +20,43 @@ function normalizeAppFlags(body) {
 }
 
 /**
+ * Merge admin app flags from SSE / realtime envelopes (outer frame, nested
+ * `payload`, `settings`, snake_case DB fields). Used so Android updates
+ * immediately without calling protected GET /api/settings.
+ *
+ * @param {unknown} payload
+ * @returns {{ freeMode?: boolean, emergencyMode?: boolean, maintenanceMode?: boolean } | null}
+ */
+export function parseAppSettingsRealtimePatch(payload) {
+  const candidates = [];
+  const push = (x) => {
+    if (x && typeof x === 'object' && !candidates.includes(x)) candidates.push(x);
+  };
+  push(payload);
+  if (payload && typeof payload === 'object') {
+    push(payload.payload);
+    push(payload.data);
+    push(payload.settings);
+    push(payload.current_settings);
+    push(payload.app_settings);
+  }
+  /** @type {{ freeMode?: boolean, emergencyMode?: boolean, maintenanceMode?: boolean }} */
+  const out = {};
+  for (const o of candidates) {
+    if ('freeMode' in o || 'free_mode' in o) {
+      out.freeMode = Boolean(o.freeMode ?? o.free_mode);
+    }
+    if ('emergencyMode' in o || 'emergency_mode' in o) {
+      out.emergencyMode = Boolean(o.emergencyMode ?? o.emergency_mode);
+    }
+    if ('maintenanceMode' in o || 'maintenance_mode' in o) {
+      out.maintenanceMode = Boolean(o.maintenanceMode ?? o.maintenance_mode);
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
  * Global app flags from admin (Free / Emergency / Maintenance).
  * GET /api/settings — may require admin session on hardened APIs.
  */
@@ -37,22 +74,17 @@ export async function getSettings() {
 }
 
 /**
- * Viewer / APK bootstrap: same flags as {@link getSettings} but never throws.
- * Tries an unauthenticated public route first (when deployed), then `/api/settings`.
- * Returns `null` if no route succeeds — callers keep defaults or last-known flags.
+ * Viewer / APK bootstrap: public app flags only (never calls admin GET /api/settings).
+ * Prefer live values from {@link parseAppSettingsRealtimePatch} + SSE; optional cold start
+ * when GET /api/public/app-settings is deployed.
  */
 export async function tryGetViewerAppSettings() {
-  const tryPath = async (path) => {
-    try {
-      const res = await fetch(`${BASE_URL}${path}`);
-      const body = await parseJson(res);
-      if (!res.ok) return null;
-      return normalizeAppFlags(body);
-    } catch {
-      return null;
-    }
-  };
-  const pub = await tryPath('/api/public/app-settings');
-  if (pub) return pub;
-  return tryPath('/api/settings');
+  try {
+    const res = await fetch(`${BASE_URL}/api/public/app-settings`);
+    const body = await parseJson(res);
+    if (!res.ok) return null;
+    return normalizeAppFlags(body);
+  } catch {
+    return null;
+  }
 }
