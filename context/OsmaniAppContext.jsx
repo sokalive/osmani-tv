@@ -9,7 +9,7 @@ import {
   verifySubscription,
   writeSubscriptionCache,
 } from '../api/subscription';
-import { ADMIN_SOFT_REFRESH_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
+import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import { readBannersCache, writeBannersCache } from '../lib/bannersCache';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
@@ -19,6 +19,8 @@ const defaultSettings = {
   emergencyMode: false,
   maintenanceMode: false,
 };
+/** SSE names that carry free / emergency / maintenance — must not share the catalog debouncer. */
+const RUNTIME_MODE_SSE_NAMES = Object.freeze(['app_settings_changed', ...ADMIN_RUNTIME_MODE_SSE_EVENTS]);
 const LIVE_SYNC_BASE_MS = 15000;
 const LIVE_SYNC_MAX_MS = 120000;
 /** Fast poll for admin flags (maintenance / emergency / free); complements SSE. */
@@ -273,17 +275,14 @@ export function OsmaniAppProvider({ children }) {
       }
       return;
     }
-    setSettings(s);
-    console.log('[SETTINGS_SYNC]', reason, {
-      freeMode: s.freeMode,
-      emergencyMode: s.emergencyMode,
-      maintenanceMode: s.maintenanceMode,
-    });
+    setSettings((prev) => ({ ...prev, ...s }));
+    console.log('[SETTINGS_SYNC]', reason, s);
   }, []);
 
   const refresh = useCallback(async (opts = {}) => {
     const showGlobalLoading = opts.showGlobalLoading !== false;
     const preserveDataOnError = opts.preserveDataOnError === true;
+    const skipSettingsFromHttp = opts.skipSettingsFromHttp === true;
     if (showGlobalLoading) setLoading(true);
     setError(null);
     try {
@@ -292,8 +291,8 @@ export function OsmaniAppProvider({ children }) {
         getBanners().catch(() => null),
         tryGetViewerAppSettings(),
       ]);
-      if (flags) {
-        setSettings(flags);
+      if (flags && !skipSettingsFromHttp) {
+        setSettings((prev) => ({ ...prev, ...flags }));
       }
       setRawChannels(Array.isArray(list) ? list : []);
       const nextBanners = Array.isArray(bannersResult) ? bannersResult : null;
@@ -319,9 +318,13 @@ export function OsmaniAppProvider({ children }) {
       adminSoftSyncTimerRef.current = setTimeout(() => {
         adminSoftSyncTimerRef.current = null;
         console.log('[ADMIN_SYNC]', 'soft_refresh', reason);
-        void refresh({ showGlobalLoading: false, preserveDataOnError: true });
+        void refresh({
+          showGlobalLoading: false,
+          preserveDataOnError: true,
+          skipSettingsFromHttp: true,
+        });
         void reverifySubscription(reason);
-      }, 550);
+      }, 320);
     },
     [refresh, reverifySubscription],
   );
@@ -453,17 +456,28 @@ export function OsmaniAppProvider({ children }) {
       'transfer_confirmation_required',
       handleSourceTransferRequest('transfer_confirmation_required'),
     );
-    const offSettings = subscribeRealtimeEvent('app_settings_changed', (payload) => {
-      console.log('[APP_SETTINGS_CHANGED]', 'sse', payload);
-      const patch = parseAppSettingsRealtimePatch(payload);
-      if (patch) {
-        setSettings((prev) => ({ ...prev, ...patch }));
-        console.log('[SETTINGS_SYNC]', 'sse:app_settings_changed', patch);
-      }
-      scheduleAdminDrivenSoftSync('sse:app_settings_changed');
-    });
+    const offRuntimeModes = RUNTIME_MODE_SSE_NAMES.map((ev) =>
+      subscribeRealtimeEvent(ev, (payload) => {
+        console.log('[RUNTIME_MODES_SSE]', ev, payload);
+        const patch = parseAppSettingsRealtimePatch(payload);
+        if (patch) {
+          setSettings((prev) => ({ ...prev, ...patch }));
+          console.log('[SETTINGS_SYNC]', ev, patch);
+        } else {
+          console.log('[SETTINGS_SYNC]', ev, 'no_mode_keys_in_payload');
+        }
+        void reverifySubscription(`sse:${ev}`);
+      }),
+    );
     const offCatalogAliases = ADMIN_SOFT_REFRESH_SSE_EVENTS.map((ev) =>
-      subscribeRealtimeEvent(ev, () => scheduleAdminDrivenSoftSync(`sse:${ev}`)),
+      subscribeRealtimeEvent(ev, (payload) => {
+        const patch = parseAppSettingsRealtimePatch(payload);
+        if (patch) {
+          setSettings((prev) => ({ ...prev, ...patch }));
+          console.log('[SETTINGS_SYNC]', ev, patch);
+        }
+        scheduleAdminDrivenSoftSync(`sse:${ev}`);
+      }),
     );
     return () => {
       offRevoked();
@@ -471,7 +485,7 @@ export function OsmaniAppProvider({ children }) {
       offApproved();
       offRequested();
       offConfirmationRequired();
-      offSettings();
+      offRuntimeModes.forEach((off) => off());
       offCatalogAliases.forEach((off) => off());
     };
   }, [refresh, reverifySubscription, scheduleAdminDrivenSoftSync]);

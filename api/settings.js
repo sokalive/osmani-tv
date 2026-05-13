@@ -19,10 +19,70 @@ function normalizeAppFlags(body) {
   };
 }
 
+function pickDefined(obj, keys) {
+  if (!obj || typeof obj !== 'object') return undefined;
+  for (const k of keys) {
+    if (Object.prototype.hasOwnProperty.call(obj, k)) return obj[k];
+  }
+  return undefined;
+}
+
+function coerceBool(v) {
+  if (v === true || v === 1) return true;
+  if (v === false || v === 0) return false;
+  if (typeof v === 'string') {
+    const t = v.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(t)) return true;
+    if (['0', 'false', 'no', 'off', ''].includes(t)) return false;
+  }
+  return Boolean(v);
+}
+
+/**
+ * Read booleans for the three runtime modes from one object (many admin/API shapes).
+ * @param {Record<string, unknown>} o
+ * @returns {{ freeMode?: boolean, emergencyMode?: boolean, maintenanceMode?: boolean }}
+ */
+function triStateModesFromObject(o) {
+  /** @type {{ freeMode?: boolean, emergencyMode?: boolean, maintenanceMode?: boolean }} */
+  const patch = {};
+  const fm = pickDefined(o, [
+    'freeMode',
+    'free_mode',
+    'free',
+    'isFreeMode',
+    'is_free_mode',
+    'freeModeEnabled',
+    'free_mode_enabled',
+  ]);
+  if (fm !== undefined) patch.freeMode = coerceBool(fm);
+  const em = pickDefined(o, [
+    'emergencyMode',
+    'emergency_mode',
+    'emergency',
+    'isEmergencyMode',
+    'is_emergency_mode',
+    'emergencyModeEnabled',
+    'emergency_mode_enabled',
+  ]);
+  if (em !== undefined) patch.emergencyMode = coerceBool(em);
+  const mm = pickDefined(o, [
+    'maintenanceMode',
+    'maintenance_mode',
+    'maintenance',
+    'isMaintenanceMode',
+    'is_maintenance_mode',
+    'maintenanceModeEnabled',
+    'maintenance_mode_enabled',
+  ]);
+  if (mm !== undefined) patch.maintenanceMode = coerceBool(mm);
+  return patch;
+}
+
 /**
  * Merge admin app flags from SSE / realtime envelopes (outer frame, nested
- * `payload`, `settings`, snake_case DB fields). Used so Android updates
- * immediately without calling protected GET /api/settings.
+ * `payload`, `settings`, `app_modes`, `config`, snake_case DB fields). Used so
+ * Android updates immediately without calling protected GET /api/settings.
  *
  * @param {unknown} payload
  * @returns {{ freeMode?: boolean, emergencyMode?: boolean, maintenanceMode?: boolean } | null}
@@ -36,22 +96,32 @@ export function parseAppSettingsRealtimePatch(payload) {
   if (payload && typeof payload === 'object') {
     push(payload.payload);
     push(payload.data);
+    push(payload.body);
     push(payload.settings);
     push(payload.current_settings);
     push(payload.app_settings);
+    push(payload.app_modes);
+    push(payload.appModes);
+    push(payload.runtime_modes);
+    push(payload.runtimeModes);
+    push(payload.config);
+    if (payload.config && typeof payload.config === 'object') {
+      push(payload.config.app_modes);
+      push(payload.config.appModes);
+      push(payload.config.modes);
+    }
+    if (payload.data && typeof payload.data === 'object') {
+      push(payload.data.app_modes);
+      push(payload.data.settings);
+    }
   }
   /** @type {{ freeMode?: boolean, emergencyMode?: boolean, maintenanceMode?: boolean }} */
   const out = {};
   for (const o of candidates) {
-    if ('freeMode' in o || 'free_mode' in o) {
-      out.freeMode = Boolean(o.freeMode ?? o.free_mode);
-    }
-    if ('emergencyMode' in o || 'emergency_mode' in o) {
-      out.emergencyMode = Boolean(o.emergencyMode ?? o.emergency_mode);
-    }
-    if ('maintenanceMode' in o || 'maintenance_mode' in o) {
-      out.maintenanceMode = Boolean(o.maintenanceMode ?? o.maintenance_mode);
-    }
+    const part = triStateModesFromObject(o);
+    if (part.freeMode !== undefined) out.freeMode = part.freeMode;
+    if (part.emergencyMode !== undefined) out.emergencyMode = part.emergencyMode;
+    if (part.maintenanceMode !== undefined) out.maintenanceMode = part.maintenanceMode;
   }
   return Object.keys(out).length ? out : null;
 }
@@ -79,12 +149,17 @@ export async function getSettings() {
  * when GET /api/public/app-settings is deployed.
  */
 export async function tryGetViewerAppSettings() {
-  try {
-    const res = await fetch(`${BASE_URL}/api/public/app-settings`);
-    const body = await parseJson(res);
-    if (!res.ok) return null;
-    return normalizeAppFlags(body);
-  } catch {
-    return null;
+  const paths = ['/api/public/app-settings', '/api/public/runtime-modes'];
+  for (const path of paths) {
+    try {
+      const res = await fetch(`${BASE_URL}${path}`);
+      const body = await parseJson(res);
+      if (!res.ok) continue;
+      const patch = parseAppSettingsRealtimePatch(body);
+      if (patch && Object.keys(patch).length > 0) return patch;
+    } catch {
+      /* ignore */
+    }
   }
+  return null;
 }
