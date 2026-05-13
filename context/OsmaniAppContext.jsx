@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { getBanners, getChannels, getServerHealth } from '../api';
-import { getSettings } from '../api/settings';
+import { tryGetViewerAppSettings } from '../api/settings';
 import {
   clearSubscriptionCache,
   readSubscriptionCache,
@@ -262,24 +262,22 @@ export function OsmaniAppProvider({ children }) {
    * @param {{ showGlobalLoading?: boolean }} [opts] — set showGlobalLoading: false for pull-to-refresh (no full-screen blocking load).
    */
   /**
-   * Lightweight: `/api/settings` only — instant admin flag updates without reloading catalogs.
+   * Lightweight: viewer-safe app flags (public route or best-effort `/api/settings`).
    */
   const refreshSettingsOnly = useCallback(async (reason = 'poll') => {
-    try {
-      const s = await getSettings();
-      setSettings({
-        freeMode: Boolean(s.freeMode),
-        emergencyMode: Boolean(s.emergencyMode),
-        maintenanceMode: Boolean(s.maintenanceMode),
-      });
-      console.log('[SETTINGS_SYNC]', reason, {
-        freeMode: s.freeMode,
-        emergencyMode: s.emergencyMode,
-        maintenanceMode: s.maintenanceMode,
-      });
-    } catch (e) {
-      console.log('[SETTINGS_SYNC]', reason, 'error', e?.message ?? e);
+    const s = await tryGetViewerAppSettings();
+    if (!s) {
+      if (__DEV__) {
+        console.log('[SETTINGS_SYNC]', reason, 'skip_no_public_flags');
+      }
+      return;
     }
+    setSettings(s);
+    console.log('[SETTINGS_SYNC]', reason, {
+      freeMode: s.freeMode,
+      emergencyMode: s.emergencyMode,
+      maintenanceMode: s.maintenanceMode,
+    });
   }, []);
 
   const refresh = useCallback(async (opts = {}) => {
@@ -288,16 +286,14 @@ export function OsmaniAppProvider({ children }) {
     if (showGlobalLoading) setLoading(true);
     setError(null);
     try {
-      const [s, list, bannersResult] = await Promise.all([
-        getSettings(),
+      const [list, bannersResult, flags] = await Promise.all([
         getChannels(),
         getBanners().catch(() => null),
+        tryGetViewerAppSettings(),
       ]);
-      setSettings({
-        freeMode: Boolean(s.freeMode),
-        emergencyMode: Boolean(s.emergencyMode),
-        maintenanceMode: Boolean(s.maintenanceMode),
-      });
+      if (flags) {
+        setSettings(flags);
+      }
       setRawChannels(Array.isArray(list) ? list : []);
       const nextBanners = Array.isArray(bannersResult) ? bannersResult : null;
       setRawBanners((prev) => (nextBanners != null ? nextBanners : prev));

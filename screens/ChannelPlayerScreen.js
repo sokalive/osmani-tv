@@ -32,16 +32,20 @@ function looksLikeHlsUrl(url) {
 }
 
 /**
- * Pick a playback engine from the URL shape only:
- *   .m3u8          → 'hls-webview'      (proxy + hls.js inside WebView)
- *   .mp4/.ts/.mts  → 'native'           (expo-av direct)
- *   anything else  → 'embed-webview'    (plain WebView for player.php / iframe pages)
+ * Pick a playback engine:
+ *   HLS (.m3u8)     → 'native' by default (expo-av / ExoPlayer + stream-proxy manifest URL)
+ *                    Admin may force 'hls-webview' when playerType is `webview`.
+ *   .mp4/.ts/.mts  → 'native' (expo-av direct)
+ *   anything else  → 'embed-webview' (player.php / iframe pages)
  */
-function pickPlaybackRoute(url) {
+function pickPlaybackRoute(url, playerTypeNorm) {
   const s = String(url ?? '');
   if (!s.trim()) return 'embed-webview';
   const lower = s.split(/[#?]/)[0].toLowerCase();
-  if (/\.m3u8$/i.test(lower)) return 'hls-webview';
+  if (looksLikeHlsUrl(s)) {
+    if (playerTypeNorm === 'webview') return 'hls-webview';
+    return 'native';
+  }
   if (/\.mp4$/i.test(lower)) return 'native';
   if (/\.(?:m2ts|mts|ts)$/i.test(lower)) return 'native';
   return 'embed-webview';
@@ -118,26 +122,47 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   const uri = streams[currentUrlIndex];
-  const headers = {
-    ...(channel?.referer && { Referer: channel.referer }),
-    ...(channel?.origin && { Origin: channel.origin }),
-    ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
-  };
+  const headers = useMemo(
+    () => ({
+      ...(channel?.referer && { Referer: channel.referer }),
+      ...(channel?.origin && { Origin: channel.origin }),
+      ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
+    }),
+    [channel?.referer, channel?.origin, channel?.userAgent],
+  );
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
-  const playbackRoute = useMemo(() => pickPlaybackRoute(uri), [uri]);
+  const playbackRoute = useMemo(
+    () => pickPlaybackRoute(uri, normalizedPlayerType),
+    [uri, normalizedPlayerType],
+  );
   const useNativePlayer = playbackRoute === 'native';
   const useHlsWebView = playbackRoute === 'hls-webview';
   const useEmbedWebView = playbackRoute === 'embed-webview';
 
-  /** Proxy URL for HLS, generated once per (uri + headers) tuple. */
+  const isHlsManifest = Boolean(uri && looksLikeHlsUrl(uri));
+
+  /** Tokenized IPTV-safe proxy URL for HLS (native Exo + optional hls.js webview). */
   const proxiedHlsUrl = useMemo(() => {
-    if (!useHlsWebView) return '';
+    if (!isHlsManifest) return '';
     return buildHlsProxyUrl(uri, {
       referer: channel?.referer,
       origin: channel?.origin,
       userAgent: channel?.userAgent,
     });
-  }, [useHlsWebView, uri, channel?.referer, channel?.origin, channel?.userAgent]);
+  }, [isHlsManifest, uri, channel?.referer, channel?.origin, channel?.userAgent]);
+
+  /** expo-av source: HLS plays through proxy URL so Exo gets a stable manifest; override extension when URI has no .m3u8 suffix. */
+  const nativeVideoSource = useMemo(() => {
+    if (!useNativePlayer || !uri) return null;
+    if (looksLikeHlsUrl(uri)) {
+      const u = proxiedHlsUrl || uri;
+      return {
+        uri: u,
+        overrideFileExtensionAndroid: 'm3u8',
+      };
+    }
+    return { uri, headers };
+  }, [useNativePlayer, uri, proxiedHlsUrl, headers]);
 
   const hlsWebViewSource = useMemo(() => {
     if (!useHlsWebView || !proxiedHlsUrl) return null;
@@ -153,7 +178,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     const hEntries = Object.entries(headers).filter(([, v]) => v != null && String(v).trim() !== '');
     if (!hEntries.length) return { uri };
     return { uri, headers: Object.fromEntries(hEntries) };
-  }, [useEmbedWebView, uri, channel?.referer, channel?.origin, channel?.userAgent]);
+  }, [useEmbedWebView, uri, headers]);
 
   const embedBridgeJs = useMemo(() => buildEmbedBridgeJs(), []);
   const [isBuffering, setIsBuffering] = useState(true);
@@ -965,22 +990,18 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
       {/*
         Routing:
-          - .m3u8          → proxy + hls.js inside WebView (tokenized IPTV-safe)
+          - HLS (.m3u8)     → expo-av / ExoPlayer + stream-proxy (default); optional hls.js WebView if playerType=webview
           - .mp4 / .ts ... → expo-av native
           - everything else (player.php, embed pages, iframe HTML) → plain WebView
       */}
       <Pressable style={{ flex: 1 }} onPress={showControls}>
         <View pointerEvents="none" style={styles.videoUnderlay} />
 
-        {useNativePlayer ? (
+        {useNativePlayer && nativeVideoSource ? (
           <Video
             key={`native-${playerEpoch}`}
             ref={videoRef}
-            source={{
-              uri,
-              headers,
-              ...(looksLikeHlsUrl(uri) ? { overrideFileExtensionAndroid: 'm3u8' } : {}),
-            }}
+            source={nativeVideoSource}
             style={styles.video}
             resizeMode={resizeMode}
             shouldPlay
