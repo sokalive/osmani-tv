@@ -9,15 +9,16 @@ const googleServicesFile = fs.existsSync(googleJsonPath) ? './google-services.js
 
 if (!googleServicesFile) {
   console.warn(
-    '[app.config] Missing ./google-services.json — add the Firebase Android file (package com.burudanitv.app) at the project root before EAS Android builds so FCM works with OneSignal.',
+    '[app.config] Missing ./google-services.json — add the Firebase Android file (package com.burudanitv.app) at the project root before EAS Android production builds so FCM works with OneSignal.',
   );
 }
 
-/** OneSignal App ID (dashboard → Settings → Keys & IDs). Prefer EAS env / .env for CI. */
+const DEFAULT_ONESIGNAL_APP_ID = '6a3f9dc9-96e9-402a-90e9-9dd829b212b2';
+
 const oneSignalAppId =
   process.env.EXPO_PUBLIC_ONESIGNAL_APP_ID?.trim?.() ||
   process.env.ONESIGNAL_APP_ID?.trim?.() ||
-  '';
+  DEFAULT_ONESIGNAL_APP_ID;
 
 module.exports = {
   expo: {
@@ -26,6 +27,7 @@ module.exports = {
     version: '1.0.0',
     orientation: 'portrait',
     icon: './assets/icon.png',
+    scheme: 'osmani',
     userInterfaceStyle: 'dark',
     newArchEnabled: true,
     splash: {

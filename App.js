@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   createNavigationContainerRef,
@@ -54,6 +54,7 @@ import { startPresence, stopPresence } from './lib/presenceTracker';
 import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
 import { setupOneSignal } from './lib/oneSignal';
+import { resolveMainTabFromOsmaniUrl } from './lib/osmaniDeepLink';
 import { resolveStream } from './lib/channelStream';
 import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBarLayout';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
@@ -86,6 +87,26 @@ const Stack = createNativeStackNavigator();
 
 /** Single ref for WhatsApp FAB visibility (must not use hooks outside a navigator). */
 const navigationRef = createNavigationContainerRef();
+
+/** Cold start: OneSignal may open before `NavigationContainer` is ready — queue then flush in `onReady`. */
+const pendingOsmaniUrlRef = useRef(null);
+const openOsmaniUrlRef = useRef((/** @type {string} */ _url) => {});
+
+const osmaniLinking = {
+  prefixes: ['osmani://'],
+  config: {
+    screens: {
+      MainTabs: {
+        screens: {
+          Home: 'home',
+          Sports: 'sports',
+          Tamthilia: 'tamthilia',
+          'Akaunti Yangu': 'akaunti',
+        },
+      },
+    },
+  },
+};
 
 /** Used only when channel API omits stream URLs (playback fallback). */
 const DEFAULT_STREAM_URI =
@@ -1301,12 +1322,29 @@ function AppTabs() {
 export default function App() {
   const [navigationRevision, setNavigationRevision] = useState(0);
 
+  useLayoutEffect(() => {
+    openOsmaniUrlRef.current = (url) => {
+      const tab = resolveMainTabFromOsmaniUrl(url);
+      if (!tab) return;
+      if (navigationRef.isReady()) {
+        pendingOsmaniUrlRef.current = null;
+        navigationRef.navigate('MainTabs', { screen: tab });
+      } else {
+        pendingOsmaniUrlRef.current = url;
+      }
+    };
+  });
+
   useEffect(() => {
     void trackInstallOnce();
     void startPresence();
     startRealtimeSync();
     startUpdateClient();
-    const stopOneSignal = setupOneSignal();
+    const stopOneSignal = setupOneSignal({
+      onOpenUrl: (url) => {
+        openOsmaniUrlRef.current(url);
+      },
+    });
     return () => {
       void stopPresence();
       stopRealtimeSync();
@@ -1325,6 +1363,7 @@ export default function App() {
         <ModalSheetCoordinatorProvider>
           <NavigationContainer
             ref={navigationRef}
+            linking={osmaniLinking}
             theme={{
               ...DarkTheme,
               colors: {
@@ -1334,7 +1373,14 @@ export default function App() {
                 border: 'rgba(255,255,255,0.06)',
               },
             }}
-            onReady={() => setNavigationRevision((n) => n + 1)}
+            onReady={() => {
+              setNavigationRevision((n) => n + 1);
+              const pending = pendingOsmaniUrlRef.current;
+              if (pending) {
+                pendingOsmaniUrlRef.current = null;
+                openOsmaniUrlRef.current(pending);
+              }
+            }}
             onStateChange={() => setNavigationRevision((n) => n + 1)}
           >
             <RootNavigator />
