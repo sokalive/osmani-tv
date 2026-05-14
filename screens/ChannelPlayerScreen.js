@@ -592,8 +592,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       });
       lastStatusRef.current = nextState;
     }
-    setIsBuffering(Boolean(status.isBuffering));
-    setIsPlaying(status.isPlaying);
+    const playing = Boolean(status.isPlaying);
+    const nativeBuffering = Boolean(status.isBuffering);
+    // Exo/HLS often keeps isBuffering true briefly (or stuck) while isPlaying is
+    // already true — hide the blocking loader as soon as playback has started.
+    setIsBuffering(playing ? false : nativeBuffering);
+    setIsPlaying(playing);
     setPlaybackError('');
     if (status.isPlaying) startHideTimer();
   };
