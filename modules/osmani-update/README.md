@@ -24,7 +24,7 @@ Autolinking — no manual linking required.
 Query parameters:
 
 - `platform=android`
-- `package=com.osmantv.app`
+- `package=com.burudanitv.app`
 - `version_code=<int>` — currently installed `versionCode`
 - `version_name=<x.y.z>` — currently installed `versionName`
 - `device_id=<uuid>` — optional, used for canary / staged rollout
@@ -42,8 +42,8 @@ camelCase aliases are accepted for compatibility.
   "apk_url": "https://cdn.osmani.tv/builds/osmanitv-1.2.3.apk",
   "apk_sha256": "abcd…64-hex…",
   "apk_size_bytes": 12345678,
-  "play_store_url": "https://play.google.com/store/apps/details?id=com.osmantv.app",
-  "playstore_url": "https://play.google.com/store/apps/details?id=com.osmantv.app",
+  "play_store_url": "https://play.google.com/store/apps/details?id=com.burudanitv.app",
+  "playstore_url": "https://play.google.com/store/apps/details?id=com.burudanitv.app",
   "release_notes": "Markdown or plaintext",
   "notice": "Short user-facing update message",
   "source": "apk | play | notice"

@@ -26,7 +26,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.osmantv.app",
+      "package": "com.burudanitv.app",
       "usesCleartextTraffic": true
     },
     "web": {
