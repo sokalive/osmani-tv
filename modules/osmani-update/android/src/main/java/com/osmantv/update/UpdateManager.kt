@@ -155,7 +155,6 @@ class UpdateManager : Module() {
                             // no expected hash is provided.
                             null
                         }
-                    }
 
                     emit(
                         Bundle().apply {
