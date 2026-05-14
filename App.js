@@ -53,6 +53,7 @@ import { trackInstallOnce } from './api/analytics';
 import { startPresence, stopPresence } from './lib/presenceTracker';
 import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
+import { setupOneSignal } from './lib/oneSignal';
 import { resolveStream } from './lib/channelStream';
 import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBarLayout';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
@@ -1305,10 +1306,16 @@ export default function App() {
     void startPresence();
     startRealtimeSync();
     startUpdateClient();
+    const stopOneSignal = setupOneSignal();
     return () => {
       void stopPresence();
       stopRealtimeSync();
       stopUpdateClient();
+      try {
+        stopOneSignal();
+      } catch {
+        /* ignore */
+      }
     };
   }, []);
 
