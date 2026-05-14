@@ -107,6 +107,8 @@ module.exports = {
         projectId: 'adf835d4-ad5d-425d-9e5b-de9a803066e0',
       },
       oneSignalAppId,
+      /** EAS: set EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS=1 to log push id / permission / opt-in at startup (logcat). */
+      oneSignalStartupLogs: process.env.EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS === '1',
     },
     plugins: [
       [
