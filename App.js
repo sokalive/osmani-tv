@@ -71,6 +71,14 @@ import {
   writePendingManualGiftKey,
 } from './lib/manualGiftAck';
 import BannerCarousel, { BannerCarouselSkeleton } from './components/BannerCarousel';
+import {
+  channelAppearsOnNavigatorTab,
+  channelIsFeatured,
+  channelIsPopular,
+  compareHomeMixChannels,
+  getChannelTabKeys,
+  matchesHomePillFilter,
+} from './lib/channelTabVisibility';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -86,6 +94,9 @@ const HORIZONTAL_PADDING = 16;
 const GRID_GAP = 12;
 const CARD_WIDTH = (width - HORIZONTAL_PADDING * 2 - GRID_GAP) / 2;
 const CARD_HEIGHT = Math.round((CARD_WIDTH * 4) / 3);
+/** Home “Maarufu / Vipengele” horizontal strips */
+const HIGHLIGHT_CARD_WIDTH = 152;
+const HIGHLIGHT_CARD_HEIGHT = Math.round((HIGHLIGHT_CARD_WIDTH * 4) / 3);
 const CAROUSEL_SLIDE_WIDTH = width - HORIZONTAL_PADDING * 2;
 
 const COLORS = {
@@ -106,7 +117,7 @@ const COLORS = {
   tabInactive: '#DDE3EC',
 };
 
-const filters = ['Zote', 'Trending', 'Sports', 'Movies'];
+const filters = ['Zote', 'Trending', 'Sports', 'Tamthilia'];
 
 /** Full image URL for API `thumbnail` (absolute or `/uploads/...`). */
 function resolveChannelThumbnailUri(raw) {
@@ -148,58 +159,13 @@ function channelVisibleInApp(raw) {
   return showInApp && isActive;
 }
 
-function displaySectionSlug(raw) {
-  return String(raw?.display_section ?? raw?.displaySection ?? '').trim().toLowerCase();
-}
-
-/**
- * Single catalog section for Sports / Tamthilia tabs and Home pills.
- * Order matches how the live API actually ships rows today:
- *   1) `display_section` / `displaySection` when set (backend canonical)
- *   2) `category` (Sports, Movies, General) — current API uses this; do NOT
- *      let `bottomTab` win first (it is often the generic "General" for all rows)
- *   3) `bottomTab` / `bottomTabsDisplay` as legacy hints
- * Unknown/empty → `general` so Home "Zote" still lists the row; Sports/Movies
- * tabs only show when section matches.
- */
-function effectiveCatalogSection(raw) {
-  const slug = displaySectionSlug(raw);
-  if (slug === 'sports' || slug === 'movies') return slug;
-  if (slug === 'general') return 'general';
-
-  const cat = String(raw?.category ?? '')
-    .trim()
-    .toLowerCase();
-  if (cat === 'sports' || cat === 'sport') return 'sports';
-  if (cat === 'movies' || cat === 'movie' || cat === 'tamthilia') return 'movies';
-  if (cat === 'general' || cat === 'zote') return 'general';
-
-  const tab = String(raw?.bottomTab ?? raw?.bottomTabsDisplay ?? '')
-    .trim()
-    .toLowerCase();
-  if (tab === 'sports' || tab === 'sport') return 'sports';
-  if (tab === 'movies' || tab === 'movie' || tab === 'tamthilia') return 'movies';
-  if (tab === 'general') return 'general';
-
-  return slug || 'general';
-}
-
-function matchesBottomTabRow(r, filter) {
-  if (filter == null || String(filter).trim() === '') return true;
-  const f = String(filter).trim().toLowerCase();
-  const sec = effectiveCatalogSection(r);
-  if (f === 'sports') return sec === 'sports';
-  if (f === 'movies') return sec === 'movies';
-  const v = String(r.bottomTab ?? r.bottomTabsDisplay ?? r.category ?? '').trim().toLowerCase();
-  return v === f;
-}
-
-function matchesPillFilter(r, pill) {
-  if (pill === 'Zote' || pill === 'Trending') return true;
-  const sec = effectiveCatalogSection(r);
-  if (pill === 'Sports') return sec === 'sports';
-  if (pill === 'Movies') return sec === 'movies';
-  return true;
+function catalogGridSectionTitle(navigatorTabKey, selectedFilter) {
+  if (navigatorTabKey === 'sports') return 'Michezo';
+  if (navigatorTabKey === 'tamthilia') return 'Tamthilia';
+  if (selectedFilter === 'Sports') return 'Michezo';
+  if (selectedFilter === 'Tamthilia') return 'Tamthilia';
+  if (selectedFilter === 'Trending') return 'Chaneli Live';
+  return 'Chaneli';
 }
 
 function findServerHealthForChannel(serverHealth, name) {
@@ -241,7 +207,9 @@ function mapApiChannelToCard(raw, index, freeMode = false, serverHealth = null) 
     accessBadgeColor: isPremium ? COLORS.yellow : COLORS.free,
     thumbnailUri,
     placeholderLetter: placeholderLetterFromName(name),
-    bottomTab: String(raw?.bottomTab ?? raw?.bottomTabsDisplay ?? category ?? '').trim(),
+    bottomTab: String(
+      raw?.bottom_tab ?? raw?.bottomTab ?? raw?.bottomTabsDisplay ?? category ?? '',
+    ).trim(),
     streamUrl: resolved || DEFAULT_STREAM_URI,
     playerChannel,
     isPremium,
@@ -255,7 +223,11 @@ function reminderCoordLog(...args) {
   if (__DEV__) console.log(REMINDER_DEBUG_PREFIX, ...args);
 }
 
-function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeExpiryReminder = false }) {
+function ChannelCatalogScreen({
+  navigation,
+  navigatorTabKey = 'home',
+  enableHomeExpiryReminder = false,
+}) {
   const insets = useSafeAreaInsets();
   const {
     freeMode,
@@ -295,10 +267,12 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
       sampleKeys: r && typeof r === 'object' ? Object.keys(r).sort() : [],
       display_section: r?.display_section ?? r?.displaySection ?? null,
       category: r?.category ?? null,
+      visibleTabs: r?.visibleTabs ?? r?.visible_tabs ?? null,
+      bottom_tab: r?.bottom_tab ?? null,
       bottomTab: r?.bottomTab ?? null,
       bottomTabsDisplay: r?.bottomTabsDisplay ?? null,
       type: r?.type ?? null,
-      effectiveCatalogSection: effectiveCatalogSection(r),
+      resolvedTabKeys: r && typeof r === 'object' ? [...getChannelTabKeys(r)].sort().join(',') : null,
     });
   }, [rawChannels]);
 
@@ -324,9 +298,9 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
 
   const catalogBlockingSuffix = enableHomeExpiryReminder
     ? 'home'
-    : bottomTabFilter === 'Sports'
+    : navigatorTabKey === 'sports'
       ? 'sports'
-      : bottomTabFilter === 'Movies'
+      : navigatorTabKey === 'tamthilia'
         ? 'tamthilia'
         : 'other';
 
@@ -680,19 +654,50 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
 
   const listBottomPadding = getScrollContentBottomPadding(insets);
 
+  const homeZotePool = useMemo(() => {
+    if (maintenanceMode) return [];
+    if (navigatorTabKey !== 'home') return [];
+    return rawChannels
+      .filter(channelVisibleInApp)
+      .filter((r) => channelAppearsOnNavigatorTab(r, 'home'));
+  }, [rawChannels, maintenanceMode, navigatorTabKey]);
+
+  const popularChannelCards = useMemo(() => {
+    if (navigatorTabKey !== 'home' || selectedFilter !== 'Zote') return [];
+    const hits = homeZotePool.filter(channelIsPopular);
+    return hits.map((raw, i) => mapApiChannelToCard(raw, i, freeMode, serverHealth));
+  }, [homeZotePool, navigatorTabKey, selectedFilter, freeMode, serverHealth]);
+
+  const featuredChannelCards = useMemo(() => {
+    if (navigatorTabKey !== 'home' || selectedFilter !== 'Zote') return [];
+    const hits = homeZotePool.filter((r) => channelIsFeatured(r) && !channelIsPopular(r));
+    return hits.map((raw, i) => mapApiChannelToCard(raw, i, freeMode, serverHealth));
+  }, [homeZotePool, navigatorTabKey, selectedFilter, freeMode, serverHealth]);
+
   const displayChannels = useMemo(() => {
     if (maintenanceMode) return [];
     let rows = rawChannels.filter(channelVisibleInApp);
-    if (bottomTabFilter) {
-      rows = rows.filter((r) => matchesBottomTabRow(r, bottomTabFilter));
-    }
+    rows = rows.filter((r) => channelAppearsOnNavigatorTab(r, navigatorTabKey));
     if (selectedFilter === 'Trending') {
       rows = rows.filter((r) => Boolean(r.isLive ?? r.live));
-    } else if (selectedFilter === 'Sports' || selectedFilter === 'Movies') {
-      rows = rows.filter((r) => matchesPillFilter(r, selectedFilter));
+    } else if (selectedFilter === 'Sports' || selectedFilter === 'Tamthilia') {
+      rows = rows.filter((r) => matchesHomePillFilter(r, selectedFilter));
+    }
+    if (
+      navigatorTabKey === 'home' &&
+      (selectedFilter === 'Zote' || selectedFilter === 'Trending')
+    ) {
+      rows = [...rows].sort(compareHomeMixChannels);
     }
     return rows.map((raw, i) => mapApiChannelToCard(raw, i, freeMode, serverHealth));
-  }, [rawChannels, bottomTabFilter, selectedFilter, freeMode, serverHealth, maintenanceMode]);
+  }, [
+    rawChannels,
+    navigatorTabKey,
+    selectedFilter,
+    freeMode,
+    serverHealth,
+    maintenanceMode,
+  ]);
 
   const bannerSlides = useMemo(() => {
     if (!Array.isArray(rawBanners)) return [];
@@ -823,6 +828,68 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
     );
   };
 
+  const renderHighlightCard = useCallback(
+    (item) => (
+      <Pressable
+        style={styles.highlightCard}
+        onPress={() => {
+          void handleCardPress(item);
+        }}
+      >
+        <View style={styles.highlightImageWrap}>
+          {item.thumbnailUri ? (
+            <ExpoImage
+              source={{ uri: item.thumbnailUri }}
+              style={styles.cardImage}
+              contentFit="cover"
+              transition={120}
+            />
+          ) : (
+            <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
+              <Text style={styles.cardImagePlaceholderText}>{item.placeholderLetter}</Text>
+            </View>
+          )}
+          <View style={styles.cardBadgesRow} pointerEvents="none">
+            <View style={styles.cardBadgesLeft}>
+              {item.showHD ? (
+                <View style={styles.hdBadge}>
+                  <Text style={styles.hdBadgeText}>HD</Text>
+                </View>
+              ) : null}
+              <View style={[styles.statusPill, { backgroundColor: item.livePillColor }]}>
+                <Text style={styles.liveBadgeText}>{item.liveLabel}</Text>
+              </View>
+            </View>
+            <View style={[styles.statusPill, { backgroundColor: item.accessBadgeColor }]}>
+              <Text
+                style={[
+                  styles.liveBadgeText,
+                  item.accessBadge === 'KULIPIA' ? styles.liveBadgeTextOnYellow : null,
+                ]}
+              >
+                {item.accessBadge}
+              </Text>
+            </View>
+          </View>
+          <LinearGradient
+            colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.72)']}
+            start={{ x: 0.5, y: 0.35 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.cardGradient}
+          />
+          <View style={styles.cardTitleOverlayWrap} pointerEvents="none">
+            <View style={styles.cardChannelTitlePill}>
+              <Text style={styles.cardChannelTitleText} numberOfLines={2}>
+                {item.title}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Pressable>
+    ),
+    [handleCardPress],
+  );
+
   const listHeader = useMemo(
     () => (
       <View>
@@ -896,9 +963,51 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
         ) : null}
         {error && !loading ? <Text style={styles.channelsErrorText}>{error}</Text> : null}
 
+        {!maintenanceMode &&
+        navigatorTabKey === 'home' &&
+        selectedFilter === 'Zote' &&
+        popularChannelCards.length > 0 ? (
+          <View style={styles.highlightSection}>
+            <Text style={styles.highlightSectionTitle}>Maarufu</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.highlightRow}
+            >
+              {popularChannelCards.map((item) => (
+                <View key={`pop-${item.id}`} style={styles.highlightCardWrap}>
+                  {renderHighlightCard(item)}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
+        {!maintenanceMode &&
+        navigatorTabKey === 'home' &&
+        selectedFilter === 'Zote' &&
+        featuredChannelCards.length > 0 ? (
+          <View style={styles.highlightSection}>
+            <Text style={styles.highlightSectionTitle}>Vipengele</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.highlightRow}
+            >
+              {featuredChannelCards.map((item) => (
+                <View key={`feat-${item.id}`} style={styles.highlightCardWrap}>
+                  {renderHighlightCard(item)}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
+
         {!maintenanceMode ? (
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Michezo na Soka</Text>
+            <Text style={styles.sectionTitle}>
+              {catalogGridSectionTitle(navigatorTabKey, selectedFilter)}
+            </Text>
             <View style={styles.countBadge}>
               <Text style={styles.countBadgeText}>{displayChannels.length}</Text>
             </View>
@@ -908,6 +1017,9 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
     ),
     [
       selectedFilter,
+      navigatorTabKey,
+      popularChannelCards,
+      featuredChannelCards,
       handleRefresh,
       displayChannels.length,
       bannerSlides,
@@ -925,6 +1037,7 @@ function ChannelCatalogScreen({ navigation, bottomTabFilter = null, enableHomeEx
       onBannerPremiumRequired,
       verifySubscriptionBeforePlay,
       handleCardPress,
+      renderHighlightCard,
     ]
   );
 
@@ -1170,14 +1283,14 @@ function AppTabs() {
     >
       <Tab.Screen name="Home">
         {(props) => (
-          <ChannelCatalogScreen {...props} bottomTabFilter={null} enableHomeExpiryReminder />
+          <ChannelCatalogScreen {...props} navigatorTabKey="home" enableHomeExpiryReminder />
         )}
       </Tab.Screen>
       <Tab.Screen name="Sports">
-        {(props) => <ChannelCatalogScreen {...props} bottomTabFilter="Sports" />}
+        {(props) => <ChannelCatalogScreen {...props} navigatorTabKey="sports" />}
       </Tab.Screen>
       <Tab.Screen name="Tamthilia">
-        {(props) => <ChannelCatalogScreen {...props} bottomTabFilter="Movies" />}
+        {(props) => <ChannelCatalogScreen {...props} navigatorTabKey="tamthilia" />}
       </Tab.Screen>
       <Tab.Screen name="Akaunti Yangu" component={AkauntiYanguScreen} />
     </Tab.Navigator>
@@ -1378,6 +1491,36 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 20,
     fontWeight: '700',
+  },
+  highlightSection: {
+    marginTop: 16,
+  },
+  highlightSectionTitle: {
+    color: COLORS.white,
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  highlightRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    paddingRight: HORIZONTAL_PADDING,
+    gap: 10,
+  },
+  highlightCardWrap: {
+    marginRight: 2,
+  },
+  highlightCard: {
+    width: HIGHLIGHT_CARD_WIDTH,
+    backgroundColor: COLORS.card,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  highlightImageWrap: {
+    width: HIGHLIGHT_CARD_WIDTH,
+    height: HIGHLIGHT_CARD_HEIGHT,
+    overflow: 'hidden',
+    backgroundColor: '#283246',
   },
   countBadge: {
     marginLeft: 8,
