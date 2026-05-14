@@ -89,8 +89,10 @@ const Stack = createNativeStackNavigator();
 const navigationRef = createNavigationContainerRef();
 
 /** Cold start: OneSignal may open before `NavigationContainer` is ready — queue then flush in `onReady`. */
-const pendingOsmaniUrlRef = useRef(null);
-const openOsmaniUrlRef = useRef((/** @type {string} */ _url) => {});
+const pendingOsmaniUrlRef = { current: /** @type {string | null} */ (null) };
+const openOsmaniUrlRef = {
+  current: /** @param {string} _url */ (_url) => {},
+};
 
 const osmaniLinking = {
   prefixes: ['osmani://'],
