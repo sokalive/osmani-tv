@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "54797685231",
+    "project_id": "osmani-tv",
+    "storage_bucket": "osmani-tv.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:54797685231:android:8ba20a70980cf30b48e61a",
+        "android_client_info": {
+          "package_name": "com.burudanitv.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDl_71uer9vi3wyzXmIWIxZbcMsgyXrRH0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

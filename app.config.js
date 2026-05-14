@@ -4,12 +4,51 @@ const path = require('path');
 const easProfile = process.env.EAS_BUILD_PROFILE || '';
 const oneSignalMode = easProfile === 'production' ? 'production' : 'development';
 
-const googleJsonPath = path.join(__dirname, 'google-services.json');
-const googleServicesFile = fs.existsSync(googleJsonPath) ? './google-services.json' : undefined;
+const rootGooglePath = path.join(__dirname, 'google-services.json');
+
+/**
+ * Resolve Android `googleServicesFile` for Expo / EAS.
+ *
+ * 1) **Repo file** — commit `./google-services.json` (package must match `android.package`).
+ * 2) **EAS file secret** — `eas secret:create --scope project --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json`
+ *    then link the variable to your build **environment** in Expo dashboard (or `eas.json` → `environment`).
+ *    During the build, `GOOGLE_SERVICES_JSON` is a temp **file path**; we copy it into the project root.
+ * 3) **Raw JSON env** (optional) — if `GOOGLE_SERVICES_JSON` is JSON text (not a path), it is written to `./google-services.json`.
+ */
+function resolveGoogleServicesFile() {
+  if (fs.existsSync(rootGooglePath)) {
+    return './google-services.json';
+  }
+
+  const fromEas = process.env.GOOGLE_SERVICES_JSON;
+  if (fromEas && typeof fromEas === 'string') {
+    const trimmed = fromEas.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        JSON.parse(trimmed);
+        fs.writeFileSync(rootGooglePath, trimmed, 'utf8');
+        return './google-services.json';
+      } catch (e) {
+        console.warn('[app.config] GOOGLE_SERVICES_JSON is not valid JSON:', e?.message);
+      }
+    } else if (fs.existsSync(trimmed)) {
+      try {
+        fs.copyFileSync(trimmed, rootGooglePath);
+        return './google-services.json';
+      } catch (e) {
+        console.warn('[app.config] Failed to copy GOOGLE_SERVICES_JSON file into project:', e?.message);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+const googleServicesFile = resolveGoogleServicesFile();
 
 if (!googleServicesFile) {
   console.warn(
-    '[app.config] Missing ./google-services.json — add the Firebase Android file (package com.burudanitv.app) at the project root before EAS Android production builds so FCM works with OneSignal.',
+    '[app.config] Missing Android FCM config: add committed ./google-services.json or set GOOGLE_SERVICES_JSON (EAS file secret / JSON) for OneSignal + FCM on EAS builds.',
   );
 }
 
