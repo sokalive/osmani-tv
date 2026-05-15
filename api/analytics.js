@@ -126,12 +126,13 @@ export async function trackInstallOnce() {
       }
       return;
     }
-    const { deviceId } = await getDeviceIdentity();
+    const { deviceId, installInstanceId } = await getDeviceIdentity();
     if (ANALYTICS_DEBUG) {
-      console.log('[analytics] install device_id:', deviceId);
+      console.log('[analytics] install device_id:', deviceId, 'install_instance_id:', installInstanceId);
     }
     const ok = await postJson('/api/analytics/install', {
       device_id: deviceId,
+      install_instance_id: installInstanceId,
       platform: Platform.OS,
       app_version: nativeApplicationVersion ?? 'unknown',
       country: detectCountry(),
