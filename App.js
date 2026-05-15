@@ -255,6 +255,7 @@ function reminderCoordLog(...args) {
 
 function ChannelCatalogScreen({
   navigation,
+  route,
   navigatorTabKey = 'home',
   enableHomeExpiryReminder = false,
 }) {
@@ -352,6 +353,14 @@ function ChannelCatalogScreen({
   useEffect(() => {
     expiryReminderVisibleRef.current = expiryReminderVisible;
   }, [expiryReminderVisible]);
+
+  useEffect(() => {
+    if (!enableHomeExpiryReminder) return;
+    if (route?.params?.openPremiumAfterExpiry === true) {
+      setPremiumModalVisible(true);
+      navigation.setParams({ openPremiumAfterExpiry: false });
+    }
+  }, [enableHomeExpiryReminder, navigation, route?.params?.openPremiumAfterExpiry]);
 
   useEffect(() => {
     let cancelled = false;

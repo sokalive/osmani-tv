@@ -14,7 +14,7 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -122,11 +122,20 @@ function isPremiumChannel(raw, freeMode) {
 
 export default function AkauntiYanguScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
   const insets = useSafeAreaInsets();
   const bottomPad = getScrollContentBottomPadding(insets);
   const [hamishaModalVisible, setHamishaModalVisible] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [offerCodeInput, setOfferCodeInput] = useState('');
+
+  useEffect(() => {
+    if (route?.params?.openPremiumAfterExpiry === true) {
+      setPremiumModalVisible(true);
+      navigation.setParams({ openPremiumAfterExpiry: false });
+    }
+  }, [navigation, route?.params?.openPremiumAfterExpiry]);
+
   const [redeemBusy, setRedeemBusy] = useState(false);
   const [cooldownEndMs, setCooldownEndMs] = useState(null);
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);

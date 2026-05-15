@@ -26,6 +26,7 @@ import { normalizePlayerType } from '../lib/channelStream';
 import { buildHlsProxyUrl, STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
 import { buildEmbedBridgeJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
+import { getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
 import {
   SecurityPlaybackBlock,
   SecurityPlayerBanner,
@@ -108,6 +109,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     gateForPlayback,
     reverifySubscription,
     emergencyMode,
+    subscriptionDetails,
+    subscriptionExpiresAt,
+    subscriptionVersion,
   } = useOsmaniApp();
   const playbackSecurity = usePlaybackSecurityGate();
   const channel = liveChannel ?? initialChannel;
@@ -232,6 +236,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const pingTimerRef = useRef(null);
   const stopSentRef = useRef(false);
   const emergencyInterruptOnceRef = useRef(false);
+  /** True after hard expiry: no Video/WebView surfaces (buffers cleared by unmount). */
+  const [playbackSuppressed, setPlaybackSuppressed] = useState(false);
+  const hardWallClockExpiryDoneRef = useRef(false);
+  /** @type {React.MutableRefObject<ReturnType<typeof setInterval> | null>} */
+  const premiumExpiryTickRef = useRef(null);
+  const [expiryOverlay, setExpiryOverlay] = useState({
+    visible: false,
+    minuteCeil: 0,
+    secondCeil: 0,
+    critical: false,
+  });
 
   // LOG
   useEffect(() => {
@@ -254,6 +269,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setEmbedHasControls(null);
     setPickerKind(null);
     playbackHideArmedRef.current = false;
+    hardWallClockExpiryDoneRef.current = false;
+    setPlaybackSuppressed(false);
+    setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
   }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
 
   useEffect(() => {
@@ -613,6 +631,148 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   useEffect(() => {
     return () => clearHideTimer();
   }, [clearHideTimer]);
+
+  const TEN_MIN_MS = 10 * 60 * 1000;
+  const ONE_MIN_MS = 60 * 1000;
+
+  const performHardExpiryShutdown = useCallback(async () => {
+    if (hardWallClockExpiryDoneRef.current) return;
+    hardWallClockExpiryDoneRef.current = true;
+    console.log('[player][expiry] hard_wallclock_shutdown');
+    clearHideTimer();
+    setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
+    setPlaybackSuppressed(true);
+    setPickerKind(null);
+    setIsBuffering(false);
+    setIsPlaying(false);
+
+    try {
+      await videoRef.current?.pauseAsync?.();
+      await videoRef.current?.unloadAsync?.();
+    } catch {
+      /* ignore */
+    }
+    try {
+      hlsWebRef.current?.injectJavaScript(
+        `(function(){try{var v=document.getElementById('v');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
+      );
+    } catch {
+      /* ignore */
+    }
+    try {
+      embedWebRef.current?.injectJavaScript(
+        `(function(){try{var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
+      );
+    } catch {
+      /* ignore */
+    }
+
+    setPlayerEpoch((e) => e + 1);
+
+    try {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
+      StatusBar.setHidden(false);
+    } catch {
+      /* ignore */
+    }
+
+    try {
+      await reverifySubscription('player-expiry-wallclock');
+    } catch (e) {
+      console.log('[player][expiry] reverify_after_shutdown', e?.message ?? e);
+    }
+
+    try {
+      navigation.navigate('MainTabs', {
+        screen: 'Home',
+        params: { openPremiumAfterExpiry: true },
+      });
+    } catch {
+      try {
+        navigation.navigate('MainTabs', {
+          screen: 'Akaunti Yangu',
+          params: { openPremiumAfterExpiry: true },
+        });
+      } catch {
+        try {
+          navigation.goBack();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }, [clearHideTimer, navigation, reverifySubscription]);
+
+  useEffect(() => {
+    if (!channelIsPremium || freeMode || !accessAllowed || playbackSuppressed) {
+      if (premiumExpiryTickRef.current) {
+        clearInterval(premiumExpiryTickRef.current);
+        premiumExpiryTickRef.current = null;
+      }
+      if (!channelIsPremium || freeMode) {
+        setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
+      }
+      return undefined;
+    }
+    const tick = () => {
+      if (hardWallClockExpiryDoneRef.current || playbackSuppressed) return;
+      const expiresAt =
+        subscriptionDetails?.expiresAt != null && String(subscriptionDetails.expiresAt).trim() !== ''
+          ? subscriptionDetails.expiresAt
+          : subscriptionExpiresAt;
+      const rem = getServerAnchoredRemainingMs({
+        expiresAt,
+        serverTime: subscriptionDetails?.serverTime ?? null,
+        serverTimeFetchedAt: subscriptionDetails?.serverTimeFetchedAt ?? null,
+        nowMsOverride: Date.now(),
+      });
+      if (rem == null) {
+        setExpiryOverlay((s) => ({ ...s, visible: false }));
+        return;
+      }
+      if (rem <= 0) {
+        void performHardExpiryShutdown();
+        return;
+      }
+      if (rem > TEN_MIN_MS) {
+        setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
+        return;
+      }
+      const critical = rem <= ONE_MIN_MS;
+      setExpiryOverlay({
+        visible: true,
+        minuteCeil: Math.max(1, Math.ceil(rem / ONE_MIN_MS)),
+        secondCeil: Math.max(0, Math.ceil(rem / 1000)),
+        critical,
+      });
+    };
+    premiumExpiryTickRef.current = setInterval(tick, 1000);
+    tick();
+    return () => {
+      if (premiumExpiryTickRef.current) {
+        clearInterval(premiumExpiryTickRef.current);
+        premiumExpiryTickRef.current = null;
+      }
+    };
+  }, [
+    channelIsPremium,
+    freeMode,
+    accessAllowed,
+    playbackSuppressed,
+    subscriptionDetails,
+    subscriptionExpiresAt,
+    subscriptionVersion,
+    performHardExpiryShutdown,
+  ]);
+
+  useEffect(() => {
+    if (!channelIsPremium || freeMode || !accessAllowed || playbackSuppressed) return undefined;
+    const id = setInterval(() => {
+      if (hardWallClockExpiryDoneRef.current) return;
+      void reverifySubscription('player-expiry-sync');
+    }, 90 * 1000);
+    return () => clearInterval(id);
+  }, [channelIsPremium, freeMode, accessAllowed, playbackSuppressed, reverifySubscription]);
 
   useEffect(() => {
     if (!accessAllowed || !uri) return undefined;
@@ -1083,9 +1243,41 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     );
   }
 
+  if (playbackSuppressed) {
+    return (
+      <View style={[styles.root, styles.gateScreen]}>
+        <ActivityIndicator color="#FBBF24" size="large" />
+        <Text style={styles.gateText}>Kifurushi kimekwisha…</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.root}>
       <SecurityPlayerBanner />
+
+      {channelIsPremium && !freeMode && expiryOverlay.visible ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.subscriptionExpiryStrip,
+            expiryOverlay.critical ? styles.subscriptionExpiryStripCritical : null,
+            { top: Math.max(10, insets.top + 6) },
+          ]}
+        >
+          <Text
+            style={[
+              styles.subscriptionExpiryStripText,
+              expiryOverlay.critical ? styles.subscriptionExpiryStripTextCritical : null,
+            ]}
+            numberOfLines={2}
+          >
+            {expiryOverlay.critical
+              ? `Kifurushi chako kinaisha baada ya sekunde ${expiryOverlay.secondCeil}`
+              : `Kifurushi chako kinaisha baada ya dakika ${expiryOverlay.minuteCeil}`}
+          </Text>
+        </View>
+      ) : null}
 
       {/*
         Routing:
@@ -1258,6 +1450,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
+  },
+
+  subscriptionExpiryStrip: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    zIndex: 25,
+    elevation: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(15,17,21,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.38)',
+  },
+  subscriptionExpiryStripCritical: {
+    backgroundColor: 'rgba(60,12,12,0.96)',
+    borderColor: 'rgba(252,165,165,0.95)',
+  },
+  subscriptionExpiryStripText: {
+    color: '#FEF9C3',
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  subscriptionExpiryStripTextCritical: {
+    color: '#FEE2E2',
   },
 
   video: {
