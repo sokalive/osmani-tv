@@ -67,6 +67,7 @@ import {
   isHomeExpiryReminderConsumed,
 } from './lib/subscriptionReminderSession';
 import { getDeviceIdentity } from './lib/deviceIdentity';
+import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
 import {
   clearPendingManualGiftKey,
   readManualGiftAck,
@@ -1332,6 +1333,7 @@ function AppTabs() {
 
 export default function App() {
   const [navigationRevision, setNavigationRevision] = useState(0);
+  useGlobalSecureScreen();
 
   useLayoutEffect(() => {
     openOsmaniUrlRef.current = (url) => {

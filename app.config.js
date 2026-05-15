@@ -134,6 +134,7 @@ module.exports = {
       ],
       'expo-video',
       './plugins/withOsmaniUpdate.js',
+      './plugins/withGlobalSecureScreen.js',
     ],
   },
 };

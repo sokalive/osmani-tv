@@ -26,7 +26,6 @@ import { normalizePlayerType } from '../lib/channelStream';
 import { buildHlsProxyUrl, STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
 import { buildEmbedBridgeJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
-import { useSecureScreenOnFocus } from '../lib/security/useSecureScreenOnFocus';
 import {
   SecurityPlaybackBlock,
   SecurityPlayerBanner,
@@ -111,7 +110,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     emergencyMode,
   } = useOsmaniApp();
   const playbackSecurity = usePlaybackSecurityGate();
-  useSecureScreenOnFocus();
   const channel = liveChannel ?? initialChannel;
   const channelIsPremium = Boolean(
     channel?.isPremium ||
