@@ -1,4 +1,5 @@
 import 'react-native-gesture-handler';
+import './lib/oneSignalBoot';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
