@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
+  BackHandler,
   Dimensions,
   Modal,
   Platform,
@@ -11,33 +12,55 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 
 const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
 const SHEET_BG = '#0F1115';
 const TEXT_MUTED = '#9CA3AF';
 
 const WINDOW_HEIGHT = Dimensions.get('window').height;
-const MAX_SHEET_H = Math.min(380, Math.round(WINDOW_HEIGHT * 0.72));
+const MAX_SHEET_H = Math.min(420, Math.round(WINDOW_HEIGHT * 0.78));
 
 /**
- * Home-only subscription expiry nudge (controlled by parent visibility + timer).
- * @param {{ visible: boolean; displayDays: number; onRenew: () => void; onDismissLater: () => void }} props
+ * Near-expiry reminder — same visual language as PremiumModal / ManualSubscriptionGiftModal.
+ * @param {{
+ *   visible: boolean;
+ *   displaySikuX: number;
+ *   onRenew: () => void;
+ *   onCancel: () => void;
+ * }} props
  */
 export default function SubscriptionExpiryReminderModal({
   visible,
-  displayDays,
+  displaySikuX,
   onRenew,
-  onDismissLater,
+  onCancel,
 }) {
   const insets = useSafeAreaInsets();
-  const days = Math.min(2, Math.max(1, Number(displayDays) || 1));
+  const x = Math.max(1, Math.min(99, Number(displaySikuX) || 1));
+
+  useEffect(() => {
+    if (!visible) return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onCancel();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible, onCancel]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismissLater}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <View style={[styles.overlay, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 12 }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onDismissLater} />
+        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 38 : 50}
+            tint="dark"
+            experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
+            style={StyleSheet.absoluteFill}
+          />
+        </Pressable>
         <View style={styles.centeredWrap} pointerEvents="box-none">
-          <View style={[styles.sheet, { maxHeight: MAX_SHEET }]}>
+          <View style={[styles.sheet, { maxHeight: MAX_SHEET_H }]}>
             <ScrollView
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
@@ -45,9 +68,10 @@ export default function SubscriptionExpiryReminderModal({
               contentContainerStyle={styles.scrollInner}
             >
               <View style={styles.handleBar} />
+              <Text style={styles.title}>KIFURUSHI 💰</Text>
               <Text style={styles.body}>
-                Kifurushi chako kimebakiza siku {days} kuisha. Tafadhali lipia kifurushi chako kabla ya muda
-                kuisha.
+                Habari! Kifurushi chako kimebakiza siku {x} kuisha. Tafadhali lipia mapema kabla ya kifurushi
+                chako kuisha kuepuka kukosa burudani.
               </Text>
               <Pressable style={styles.ctaWrap} onPress={onRenew}>
                 <LinearGradient
@@ -59,8 +83,8 @@ export default function SubscriptionExpiryReminderModal({
                   <Text style={styles.ctaText}>LIPIA TENA</Text>
                 </LinearGradient>
               </Pressable>
-              <Pressable style={styles.secondaryBtn} onPress={onDismissLater}>
-                <Text style={styles.secondaryBtnText}>SIKU NYINGINE</Text>
+              <Pressable style={styles.secondaryBtn} onPress={onCancel}>
+                <Text style={styles.secondaryBtnText}>CANCEL</Text>
               </Pressable>
             </ScrollView>
           </View>
@@ -75,7 +99,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 16,
   },
   centeredWrap: {
@@ -108,6 +131,14 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: 'rgba(250,204,21,0.30)',
     marginBottom: 14,
+  },
+  title: {
+    color: '#F9FAFB',
+    fontSize: 18,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 0.6,
+    marginBottom: 12,
   },
   body: {
     color: TEXT_MUTED,

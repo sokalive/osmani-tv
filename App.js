@@ -33,6 +33,7 @@ import { MaintenanceHomeCentered } from './components/MaintenanceScreen';
 import EmergencyModal from './components/EmergencyModal';
 import PremiumModal from './components/PremiumModal';
 import SubscriptionExpiryReminderModal from './components/SubscriptionExpiryReminderModal';
+import HomeExpiryFloatingBanner from './components/HomeExpiryFloatingBanner';
 import ManualSubscriptionGiftModal from './components/ManualSubscriptionGiftModal';
 import PopupSettingsModal from './components/PopupSettingsModal';
 import TransferConfirmModal from './components/TransferConfirmModal';
@@ -61,11 +62,7 @@ import { resolveStream } from './lib/channelStream';
 import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBarLayout';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
-import { computeSubscriptionProgress } from './lib/subscriptionMath';
-import {
-  consumeHomeExpiryReminder,
-  isHomeExpiryReminderConsumed,
-} from './lib/subscriptionReminderSession';
+import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
 import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
 import {
@@ -243,7 +240,13 @@ function mapApiChannelToCard(raw, index, freeMode = false, serverHealth = null) 
   };
 }
 
-const HOME_EXPIRY_REMINDER_MS = 10 * 60 * 1000;
+/** First auto-attempt for near-expiry modal after Home gains focus (subscription context ready). */
+const HOME_EXPIRY_REMINDER_MS = 2000;
+/** After user taps CANCEL on expiry modal, suppress auto re-open for this session (resume uses same rule). */
+const EXPIRY_MODAL_DISMISS_COOLDOWN_MS = 30 * 60 * 1000;
+/** Home floating banner: hidden gap then visible window (repeats). */
+const HOME_EXPIRY_FLOATER_GAP_MS = 5 * 60 * 1000;
+const HOME_EXPIRY_FLOATER_SHOW_MS = 3 * 60 * 1000;
 
 const REMINDER_DEBUG_PREFIX = '[REMINDER_COORD]';
 function reminderCoordLog(...args) {
@@ -277,7 +280,8 @@ function ChannelCatalogScreen({
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [expiryReminderVisible, setExpiryReminderVisible] = useState(false);
-  const [expiryReminderDisplayDays, setExpiryReminderDisplayDays] = useState(2);
+  const [expiryReminderDisplaySiku, setExpiryReminderDisplaySiku] = useState(1);
+  const [homeFloaterVisible, setHomeFloaterVisible] = useState(false);
   const [manualGiftVisible, setManualGiftVisible] = useState(false);
   const [manualGiftAckBusy, setManualGiftAckBusy] = useState(false);
   const [manualGiftAckLoaded, setManualGiftAckLoaded] = useState(false);
@@ -307,6 +311,11 @@ function ChannelCatalogScreen({
   const isSubscribedRef = useRef(isSubscribed);
   const subscriptionDetailsRef = useRef(subscriptionDetails);
   const subscriptionExpiresAtRef = useRef(subscriptionExpiresAt);
+  const freeModeRef = useRef(freeMode);
+  const lastExpiryDismissAtRef = useRef(0);
+  const homeFloaterPhaseRef = useRef(/** @type {'gap'|'show'} */ ('gap'));
+  const homeFloaterDeadlineRef = useRef(0);
+  const homeFloaterBootRef = useRef(false);
   const deferredReminderRef = useRef(false);
   const deferredManualGiftRef = useRef(false);
   const pendingGiftBlocksExpiryRef = useRef(false);
@@ -317,6 +326,7 @@ function ChannelCatalogScreen({
   isSubscribedRef.current = isSubscribed;
   subscriptionDetailsRef.current = subscriptionDetails;
   subscriptionExpiresAtRef.current = subscriptionExpiresAt;
+  freeModeRef.current = freeMode;
 
   const {
     isBlockingSheetActive,
@@ -474,8 +484,13 @@ function ChannelCatalogScreen({
         reminderCoordLog('defer', source, 'reason=manual_gift_blocking');
         return false;
       }
-      if (isHomeExpiryReminderConsumed()) {
-        reminderCoordLog('skip', source, 'reason=session_already_consumed');
+      const dismissedAgo = Date.now() - (lastExpiryDismissAtRef.current || 0);
+      if (
+        source !== 'after_manual_gift_close' &&
+        lastExpiryDismissAtRef.current &&
+        dismissedAgo < EXPIRY_MODAL_DISMISS_COOLDOWN_MS
+      ) {
+        reminderCoordLog('skip', source, 'reason=dismiss_cooldown', { dismissedAgo });
         return false;
       }
       if (isBlockingSheetActive) {
@@ -487,46 +502,33 @@ function ChannelCatalogScreen({
         });
         return false;
       }
-      if (!isSubscribedRef.current) {
-        reminderCoordLog('skip', source, 'reason=not_subscribed');
+      if (!isSubscribedRef.current || freeModeRef.current) {
+        reminderCoordLog('skip', source, 'reason=not_subscribed_or_free');
         return false;
       }
-      const details = subscriptionDetailsRef.current;
-      const expiresAt = subscriptionExpiresAtRef.current;
-      const progress = computeSubscriptionProgress({
-        startedAt: details?.startedAt ?? null,
-        expiresAt: details?.expiresAt ?? expiresAt ?? null,
-        planDurationDays: details?.planDurationDays ?? null,
-        serverTime: details?.serverTime ?? null,
-        serverTimeFetchedAt: details?.serverTimeFetchedAt ?? null,
-        nowMsOverride: Date.now(),
+      const snap = computeNearExpirySnapshot({
+        isSubscribed: isSubscribedRef.current,
+        freeMode: freeModeRef.current,
+        subscriptionDetails: subscriptionDetailsRef.current,
+        subscriptionExpiresAt: subscriptionExpiresAtRef.current,
       });
-      if (!progress.ok || progress.remainingDays > 2) {
+      if (!snap.eligible) {
         reminderCoordLog('skip', source, 'reason=not_eligible', {
-          progressOk: progress.ok,
-          remainingDays: progress.remainingDays,
+          remainingMs: snap.remainingMs,
         });
         return false;
       }
-      const displayDays = Math.min(Math.max(progress.remainingDays, 1), 2);
-      consumeHomeExpiryReminder();
-      setExpiryReminderDisplayDays(displayDays);
+      setExpiryReminderDisplaySiku(snap.displaySikuX);
       setExpiryReminderVisible(true);
       deferredReminderRef.current = false;
       reminderCoordLog('open', source, {
-        displayDays,
+        displaySikuX: snap.displaySikuX,
         blockingSheetCount,
         premiumModalVisible,
       });
       return true;
     },
-    [
-      enableHomeExpiryReminder,
-      isBlockingSheetActive,
-      blockingSheetCount,
-      blockingSheetIds,
-      premiumModalVisible,
-    ],
+    [enableHomeExpiryReminder, isBlockingSheetActive, blockingSheetCount, blockingSheetIds, premiumModalVisible],
   );
 
   tryShowExpiryReminderRef.current = tryShowExpiryReminder;
@@ -582,10 +584,75 @@ function ChannelCatalogScreen({
   useEffect(() => {
     if (!enableHomeExpiryReminder) return undefined;
     const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') void tryShowManualGiftRef.current('app_resume');
+      if (next === 'active') {
+        void tryShowManualGiftRef.current('app_resume');
+        setTimeout(() => {
+          tryShowExpiryReminderRef.current('app_resume');
+        }, 900);
+      }
     });
     return () => sub.remove();
   }, [enableHomeExpiryReminder]);
+
+  useEffect(() => {
+    if (!enableHomeExpiryReminder || navigatorTabKey !== 'home') {
+      setHomeFloaterVisible(false);
+      homeFloaterBootRef.current = false;
+      return undefined;
+    }
+    const id = setInterval(() => {
+      const snap = computeNearExpirySnapshot({
+        isSubscribed,
+        freeMode,
+        subscriptionDetails,
+        subscriptionExpiresAt,
+      });
+      if (!snap.eligible) {
+        setHomeFloaterVisible(false);
+        homeFloaterBootRef.current = false;
+        return;
+      }
+      const now = Date.now();
+      if (!homeFloaterBootRef.current) {
+        homeFloaterBootRef.current = true;
+        homeFloaterPhaseRef.current = 'gap';
+        homeFloaterDeadlineRef.current = now + HOME_EXPIRY_FLOATER_GAP_MS;
+        setHomeFloaterVisible(false);
+        return;
+      }
+      if (now >= homeFloaterDeadlineRef.current) {
+        if (homeFloaterPhaseRef.current === 'gap') {
+          homeFloaterPhaseRef.current = 'show';
+          homeFloaterDeadlineRef.current = now + HOME_EXPIRY_FLOATER_SHOW_MS;
+          setHomeFloaterVisible(true);
+        } else {
+          homeFloaterPhaseRef.current = 'gap';
+          homeFloaterDeadlineRef.current = now + HOME_EXPIRY_FLOATER_GAP_MS;
+          setHomeFloaterVisible(false);
+        }
+      }
+    }, 500);
+    return () => clearInterval(id);
+  }, [
+    enableHomeExpiryReminder,
+    navigatorTabKey,
+    isSubscribed,
+    freeMode,
+    subscriptionDetails,
+    subscriptionExpiresAt,
+    subscriptionVersion,
+  ]);
+
+  const homeNearExpirySnap = useMemo(
+    () =>
+      computeNearExpirySnapshot({
+        isSubscribed,
+        freeMode,
+        subscriptionDetails,
+        subscriptionExpiresAt,
+      }),
+    [isSubscribed, freeMode, subscriptionDetails, subscriptionExpiresAt, subscriptionVersion],
+  );
 
   useEffect(() => {
     if (!enableHomeExpiryReminder) return;
@@ -624,6 +691,7 @@ function ChannelCatalogScreen({
   }, [expiryReminderVisible, enableHomeExpiryReminder]);
 
   const dismissExpiryReminder = useCallback(() => {
+    lastExpiryDismissAtRef.current = Date.now();
     setExpiryReminderVisible(false);
   }, []);
 
@@ -1115,6 +1183,13 @@ function ChannelCatalogScreen({
           />
         }
       />
+      {enableHomeExpiryReminder && navigatorTabKey === 'home' && homeNearExpirySnap.eligible ? (
+        <HomeExpiryFloatingBanner
+          visible={homeFloaterVisible}
+          detailLine={`Bado siku ~${homeNearExpirySnap.displaySikuX} (saa ~${homeNearExpirySnap.remainingHoursCeil}).`}
+          onPayPress={() => setPremiumModalVisible(true)}
+        />
+      ) : null}
       <PremiumModal
         visible={premiumModalVisible}
         onClose={() => setPremiumModalVisible(false)}
@@ -1132,9 +1207,9 @@ function ChannelCatalogScreen({
       {mountReminderModal ? (
         <SubscriptionExpiryReminderModal
           visible
-          displayDays={expiryReminderDisplayDays}
+          displaySikuX={expiryReminderDisplaySiku}
           onRenew={onRenewFromExpiryReminder}
-          onDismissLater={dismissExpiryReminder}
+          onCancel={dismissExpiryReminder}
         />
       ) : null}
     </SafeAreaView>
