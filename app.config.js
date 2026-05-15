@@ -46,6 +46,23 @@ function resolveGoogleServicesFile() {
 
 const googleServicesFile = resolveGoogleServicesFile();
 
+/** Read ProGuard file content (extraProguardRules expects a string, not a path). */
+function loadAndroidProguardRules() {
+  const file = path.join(__dirname, 'android-proguard-rules.pro');
+  try {
+    if (!fs.existsSync(file)) {
+      console.warn('[app.config] Missing android-proguard-rules.pro');
+      return '';
+    }
+    return fs.readFileSync(file, 'utf8').trim();
+  } catch (e) {
+    console.warn('[app.config] Failed to read android-proguard-rules.pro:', e?.message);
+    return '';
+  }
+}
+
+const androidProguardRules = loadAndroidProguardRules();
+
 if (!googleServicesFile) {
   console.warn(
     '[app.config] Missing Android FCM config: add committed ./google-services.json or set GOOGLE_SERVICES_JSON (EAS file secret / JSON) for OneSignal + FCM on EAS builds.',
@@ -128,7 +145,7 @@ module.exports = {
           android: {
             enableMinifyInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
-            extraProguardRules: './android-proguard-rules.pro',
+            extraProguardRules: androidProguardRules,
           },
         },
       ],
