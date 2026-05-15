@@ -25,7 +25,7 @@ import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChan
 import { normalizePlayerType } from '../lib/channelStream';
 import { buildHlsProxyUrl, STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
-import { buildEmbedBridgeJs } from '../lib/embedBridgeJs';
+import { buildEmbedBridgeJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
 
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
@@ -190,6 +190,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const hlsWebRef = useRef(null);
   const embedWebRef = useRef(null);
   const hideTimer = useRef(null);
+  const pickerKindRef = useRef(null);
+  const playbackErrorRef = useRef('');
+  const AUTO_HIDE_MS = 4000;
   const lastStatusRef = useRef({
     isLoaded: null,
     isBuffering: null,
@@ -410,9 +413,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const applyPlaybackFailure = useCallback((reasonText) => {
     setIsBuffering(false);
     setPlaybackError(playbackFailureMessage(reasonText));
+    clearHideTimer();
     setControlsVisible(true);
     controlsOpacity.setValue(1);
-  }, [controlsOpacity]);
+  }, [controlsOpacity, clearHideTimer]);
 
   /** User-only: fresh mount without automatic timers or replay loops. */
   const manualReloadSameStream = useCallback(() => {
@@ -535,7 +539,15 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, []);
 
   // AUTO HIDE CONTROLS
+  const clearHideTimer = useCallback(() => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  }, []);
+
   const hideControls = useCallback(() => {
+    if (pickerKindRef.current) return;
     Animated.timing(controlsOpacity, {
       toValue: 0,
       duration: 220,
@@ -552,17 +564,43 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }).start();
   }, [controlsOpacity]);
 
-  const startHideTimer = useCallback(() => {
-    if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => {
-      hideControls();
-    }, 3000);
-  }, [hideControls]);
+  useEffect(() => {
+    playbackErrorRef.current = playbackError;
+  }, [playbackError]);
 
-  const showControls = () => {
+  const scheduleAutoHide = useCallback(() => {
+    if (pickerKindRef.current || playbackErrorRef.current) return;
+    clearHideTimer();
+    hideTimer.current = setTimeout(() => {
+      if (pickerKindRef.current || playbackErrorRef.current) return;
+      hideControls();
+    }, AUTO_HIDE_MS);
+  }, [clearHideTimer, hideControls]);
+
+  const revealControls = useCallback(() => {
     showControlsAnimated();
-    startHideTimer();
-  };
+    scheduleAutoHide();
+  }, [showControlsAnimated, scheduleAutoHide]);
+
+  useEffect(() => {
+    pickerKindRef.current = pickerKind;
+    if (pickerKind) {
+      clearHideTimer();
+      showControlsAnimated();
+    } else if (!playbackError && isPlaying) {
+      scheduleAutoHide();
+    }
+  }, [pickerKind, playbackError, isPlaying, clearHideTimer, showControlsAnimated, scheduleAutoHide]);
+
+  useEffect(() => {
+    return () => clearHideTimer();
+  }, [clearHideTimer]);
+
+  useEffect(() => {
+    if (!accessAllowed || !uri) return undefined;
+    revealControls();
+    return undefined;
+  }, [accessAllowed, uri, playerEpoch, revealControls]);
 
   // STATUS
   const onStatusUpdate = (status) => {
@@ -599,7 +637,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setIsBuffering(playing ? false : nativeBuffering);
     setIsPlaying(playing);
     setPlaybackError('');
-    if (status.isPlaying) startHideTimer();
+    if (status.isPlaying) scheduleAutoHide();
   };
 
   const onEmbedLoadStart = () => {
@@ -609,7 +647,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const onEmbedLoadEnd = () => {
     setIsBuffering(false);
     setPlaybackError('');
-    startHideTimer();
+    if (useEmbedWebView) {
+      embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'request-tracks' }));
+    }
+    if (useHlsWebView) {
+      hlsWebRef.current?.injectJavaScript(buildHlsCmdScript({ type: 'request-tracks' }));
+    }
+    scheduleAutoHide();
   };
 
   const onEmbedHttpError = (ev) => {
@@ -683,6 +727,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       setIsBuffering(false);
       setIsPlaying(true);
       setPlaybackError('');
+      scheduleAutoHide();
       console.log('[player][debug] hls.js: playing');
       return;
     }
@@ -755,6 +800,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (kind === 'embed_controls_detected') {
       setEmbedControls(payload || null);
       setEmbedHasControls(Boolean(payload));
+      embedWebRef.current?.injectJavaScript(buildEmbedSuppressNativeUiJs());
       return;
     }
     if (kind === 'embed_no_controls') {
@@ -795,7 +841,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       embedWebRef.current?.injectJavaScript(`(function(){try{var v=document.querySelector('video');if(v){if(v.paused)v.play().catch(function(){});else v.pause();}}catch(e){}})();true;`);
       setIsPlaying((v) => !v);
     }
-    showControls();
+    revealControls();
   };
 
   useEffect(() => {
@@ -859,6 +905,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, [useHlsWebView, useEmbedWebView, hlsAudioTracks, hlsCurrentAudioTrack, embedControls]);
 
   const openQualityPicker = useCallback(() => {
+    revealControls();
     if (useNativePlayer) {
       Alert.alert('Quality', 'Auto (default) — native player itachagua ubora yenyewe.');
       return;
@@ -872,9 +919,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return;
     }
     setPickerKind('quality');
-  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, qualityModel.available]);
+  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, qualityModel.available, revealControls]);
 
   const openLanguagePicker = useCallback(() => {
+    revealControls();
     if (useNativePlayer) {
       Alert.alert('Lugha', 'Native player haitumii audio tracks za ziada.');
       return;
@@ -888,7 +936,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return;
     }
     setPickerKind('language');
-  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, languageModel.available]);
+  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, languageModel.available, revealControls]);
 
   const onPickOption = useCallback(
     (option) => {
@@ -916,67 +964,79 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         }
       }
       setPickerKind(null);
-      showControlsAnimated();
-      startHideTimer();
+      revealControls();
     },
-    [pickerKind, useHlsWebView, useEmbedWebView, showControlsAnimated, startHideTimer],
+    [pickerKind, useHlsWebView, useEmbedWebView, revealControls],
   );
 
   const closePicker = useCallback(() => {
     setPickerKind(null);
-    showControlsAnimated();
-    startHideTimer();
-  }, [showControlsAnimated, startHideTimer]);
+    revealControls();
+  }, [revealControls]);
 
   const activePickerModel = pickerKind === 'quality' ? qualityModel : pickerKind === 'language' ? languageModel : null;
   const activePickerTitle = pickerKind === 'quality' ? 'Chagua Ubora' : 'Chagua Lugha / Audio';
 
-  const bottomActions = [
-    {
-      key: 'pause',
-      icon: isPlaying ? 'pause' : 'play',
-      label: isPlaying ? 'Pause' : 'Play',
-      onPress: () => {
-        void onPlayPause();
+  const bottomActions = useMemo(
+    () => [
+      {
+        key: 'pause',
+        icon: isPlaying ? 'pause' : 'play',
+        label: isPlaying ? 'Pause' : 'Play',
+        onPress: () => {
+          void onPlayPause();
+        },
       },
-    },
-    {
-      key: 'language',
-      icon: 'language',
-      label: languageModel.available ? languageModel.currentLabel : 'Lugha',
-      onPress: openLanguagePicker,
-    },
-    {
-      key: 'quality',
-      icon: 'speedometer',
-      label: qualityModel.available ? qualityModel.currentLabel : 'Quality',
-      onPress: openQualityPicker,
-    },
-    {
-      key: 'fill',
-      icon: resizeMode === 'cover' ? 'scan' : 'expand',
-      label: 'Fill',
-      onPress: () =>
-        setResizeMode((m) => {
-          const next = m === 'contain' ? 'cover' : 'contain';
-          if (useHlsWebView) {
-            const fit = next === 'cover' ? 'cover' : 'contain';
-            hlsWebRef.current?.injectJavaScript(
-              `(function(){try{var v=document.getElementById('v');if(v)v.style.objectFit=${JSON.stringify(fit)};}catch(e){}})();true;`,
-            );
-          }
-          return next;
-        }),
-    },
-    {
-      key: 'fullscreen',
-      icon: 'resize',
-      label: 'Full Screen',
-      onPress: async () => {
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      {
+        key: 'language',
+        icon: 'language',
+        label: languageModel.available ? languageModel.currentLabel : 'Lugha',
+        onPress: openLanguagePicker,
       },
-    },
-  ];
+      {
+        key: 'quality',
+        icon: 'speedometer',
+        label: qualityModel.available ? qualityModel.currentLabel : 'Quality',
+        onPress: openQualityPicker,
+      },
+      {
+        key: 'fill',
+        icon: resizeMode === 'cover' ? 'scan' : 'expand',
+        label: 'Fill',
+        onPress: () =>
+          setResizeMode((m) => {
+            const next = m === 'contain' ? 'cover' : 'contain';
+            if (useHlsWebView) {
+              const fit = next === 'cover' ? 'cover' : 'contain';
+              hlsWebRef.current?.injectJavaScript(
+                `(function(){try{var v=document.getElementById('v');if(v)v.style.objectFit=${JSON.stringify(fit)};}catch(e){}})();true;`,
+              );
+            }
+            return next;
+          }),
+      },
+      {
+        key: 'fullscreen',
+        icon: 'resize',
+        label: 'Full Screen',
+        onPress: async () => {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        },
+      },
+    ],
+    [
+      isPlaying,
+      languageModel.available,
+      languageModel.currentLabel,
+      qualityModel.available,
+      qualityModel.currentLabel,
+      resizeMode,
+      useHlsWebView,
+      onPlayPause,
+      openLanguagePicker,
+      openQualityPicker,
+    ],
+  );
 
   if (channelIsPremium && !freeMode && (!accessChecked || !accessAllowed)) {
     return (
@@ -998,7 +1058,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           - .mp4 / .ts ... → expo-av native
           - everything else (player.php, embed pages, iframe HTML) → plain WebView
       */}
-      <Pressable style={{ flex: 1 }} onPress={showControls}>
+      <Pressable style={{ flex: 1 }} onPress={revealControls}>
         <View pointerEvents="none" style={styles.videoUnderlay} />
 
         {useNativePlayer && nativeVideoSource ? (
@@ -1093,7 +1153,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
             <View style={[styles.bottom, { paddingBottom: Math.max(12, insets.bottom + 4) }]}>
               {bottomActions.map((action) => (
-                <Pressable key={action.key} style={styles.actionBtn} onPress={action.onPress}>
+                <Pressable
+                  key={action.key}
+                  style={styles.actionBtn}
+                  onPress={() => {
+                    action.onPress();
+                    revealControls();
+                  }}
+                >
                   <Ionicons name={action.icon} size={18} color="#E5E7EB" />
                   <Text style={styles.actionLabel} numberOfLines={1}>{action.label}</Text>
                 </Pressable>
