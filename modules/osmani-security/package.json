@@ -1,0 +1,9 @@
+{
+  "name": "osmani-security",
+  "version": "1.0.0",
+  "description": "Android secure window + runtime security audit for Osmani TV.",
+  "main": "index.ts",
+  "private": true,
+  "platforms": ["android"],
+  "keywords": ["expo", "security", "android"]
+}

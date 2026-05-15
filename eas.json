@@ -9,7 +9,9 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_ONESIGNAL_APP_ID": "6a3f9dc9-96e9-402a-90e9-9dd829b212b2",
-        "EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS": "1"
+        "EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS": "1",
+        "EXPO_PUBLIC_SECURITY_ENFORCEMENT": "warn",
+        "EXPO_PUBLIC_SECURITY_STARTUP_LOGS": "1"
       }
     },
     "preview": {
@@ -19,7 +21,9 @@
       },
       "env": {
         "EXPO_PUBLIC_ONESIGNAL_APP_ID": "6a3f9dc9-96e9-402a-90e9-9dd829b212b2",
-        "EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS": "1"
+        "EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS": "1",
+        "EXPO_PUBLIC_SECURITY_ENFORCEMENT": "warn",
+        "EXPO_PUBLIC_SECURITY_STARTUP_LOGS": "1"
       }
     },
     "production": {
@@ -29,7 +33,9 @@
       },
       "env": {
         "EXPO_PUBLIC_ONESIGNAL_APP_ID": "6a3f9dc9-96e9-402a-90e9-9dd829b212b2",
-        "EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS": "0"
+        "EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS": "0",
+        "EXPO_PUBLIC_SECURITY_ENFORCEMENT": "enforce",
+        "EXPO_PUBLIC_SECURITY_STARTUP_LOGS": "0"
       }
     }
   },

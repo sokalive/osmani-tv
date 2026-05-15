@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Pressable,
   ScrollView,
@@ -7,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { assertPlaybackAllowed, useSecurity } from '../context/SecurityContext';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -170,6 +172,7 @@ function BannerCarousel({
   verifySubscriptionBeforePlay,
   resetKey = 0,
 }) {
+  const security = useSecurity();
   const scrollRef = useRef(null);
   const indexRef = useRef(0);
   const userDraggingRef = useRef(false);
@@ -278,6 +281,11 @@ function BannerCarousel({
           return;
         }
       }
+      const secGate = assertPlaybackAllowed(security);
+      if (!secGate.ok) {
+        Alert.alert('Usalama', secGate.message);
+        return;
+      }
       navigation.navigate('ChannelPlayer', { channel: playerChannel });
     },
     [
@@ -290,6 +298,7 @@ function BannerCarousel({
       onEmergency,
       onPremiumRequired,
       verifySubscriptionBeforePlay,
+      security,
     ],
   );
 

@@ -26,6 +26,12 @@ import { normalizePlayerType } from '../lib/channelStream';
 import { buildHlsProxyUrl, STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
 import { buildEmbedBridgeJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
+import { useSecureScreenOnFocus } from '../lib/security/useSecureScreenOnFocus';
+import {
+  SecurityPlaybackBlock,
+  SecurityPlayerBanner,
+} from '../components/SecurityPlaybackGate';
+import { usePlaybackSecurityGate } from '../context/SecurityContext';
 
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
@@ -104,6 +110,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     reverifySubscription,
     emergencyMode,
   } = useOsmaniApp();
+  const playbackSecurity = usePlaybackSecurityGate();
+  useSecureScreenOnFocus();
   const channel = liveChannel ?? initialChannel;
   const channelIsPremium = Boolean(
     channel?.isPremium ||
@@ -1058,6 +1066,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     ],
   );
 
+  if (!playbackSecurity.allowed) {
+    return (
+      <View style={[styles.root, styles.gateScreen]}>
+        <SecurityPlaybackBlock onBack={() => navigation.goBack()} />
+      </View>
+    );
+  }
+
   if (channelIsPremium && !freeMode && (!accessChecked || !accessAllowed)) {
     return (
       <View style={[styles.root, styles.gateScreen]}>
@@ -1071,6 +1087,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   return (
     <View style={styles.root}>
+      <SecurityPlayerBanner />
 
       {/*
         Routing:

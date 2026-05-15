@@ -43,6 +43,7 @@ import WhatsAppFloatingButtonGate from './components/WhatsAppFloatingButtonGate'
 import AkauntiYanguScreen from './screens/AkauntiYanguScreen';
 import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
+import { SecurityProvider, assertPlaybackAllowed, useSecurity } from './context/SecurityContext';
 import {
   ModalSheetCoordinatorProvider,
   useModalSheetCoordinator,
@@ -271,6 +272,7 @@ function ChannelCatalogScreen({
     verifySubscriptionBeforePlay,
     requestEmergencyModal,
   } = useOsmaniApp();
+  const security = useSecurity();
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [expiryReminderVisible, setExpiryReminderVisible] = useState(false);
@@ -777,6 +779,11 @@ function ChannelCatalogScreen({
           return;
         }
       }
+      const secGate = assertPlaybackAllowed(security);
+      if (!secGate.ok) {
+        Alert.alert('Usalama', secGate.message);
+        return;
+      }
       navigation.navigate('ChannelPlayer', {
         channel: item.playerChannel,
       });
@@ -789,6 +796,7 @@ function ChannelCatalogScreen({
       verifySubscriptionBeforePlay,
       navigation,
       requestEmergencyModal,
+      security,
     ],
   );
 
@@ -1363,6 +1371,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <OsmaniAppProvider>
+        <SecurityProvider>
         <ModalSheetCoordinatorProvider>
           <NavigationContainer
             ref={navigationRef}
@@ -1398,6 +1407,7 @@ export default function App() {
           <OtaDebugOverlay />
           <SubscriptionLifecycleGates />
         </ModalSheetCoordinatorProvider>
+        </SecurityProvider>
       </OsmaniAppProvider>
     </SafeAreaProvider>
   );

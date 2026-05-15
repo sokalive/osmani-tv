@@ -109,12 +109,27 @@ module.exports = {
       oneSignalAppId,
       /** EAS: set EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS=1 to log push id / permission / opt-in at startup (logcat). */
       oneSignalStartupLogs: process.env.EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS === '1',
+      /** `enforce` | `warn` | `off` — preview builds default to warn via eas.json */
+      securityEnforcement: process.env.EXPO_PUBLIC_SECURITY_ENFORCEMENT || 'enforce',
+      /** Optional SHA-256 signing cert (hex, lowercase) for resign detection on Android */
+      expectedSigningCertSha256:
+        process.env.EXPO_PUBLIC_ANDROID_SIGNING_CERT_SHA256?.trim?.() || '',
     },
     plugins: [
       [
         'onesignal-expo-plugin',
         {
           mode: oneSignalMode,
+        },
+      ],
+      [
+        'expo-build-properties',
+        {
+          android: {
+            enableMinifyInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+            extraProguardRules: './android-proguard-rules.pro',
+          },
         },
       ],
       'expo-video',
