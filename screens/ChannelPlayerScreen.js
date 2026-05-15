@@ -192,6 +192,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const hideTimer = useRef(null);
   const pickerKindRef = useRef(null);
   const playbackErrorRef = useRef('');
+  /** One auto-hide arm per player mount (epoch); playback/message spam must not reset the timer. */
+  const playbackHideArmedRef = useRef(false);
   const AUTO_HIDE_MS = 4000;
   const lastStatusRef = useRef({
     isLoaded: null,
@@ -245,6 +247,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setEmbedControls(null);
     setEmbedHasControls(null);
     setPickerKind(null);
+    playbackHideArmedRef.current = false;
   }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
 
   useEffect(() => {
@@ -568,7 +571,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     playbackErrorRef.current = playbackError;
   }, [playbackError]);
 
-  const scheduleAutoHide = useCallback(() => {
+  /** (Re)start the 4s hide countdown — user interactions and first-playback arm only. */
+  const bumpAutoHideTimer = useCallback(() => {
     if (pickerKindRef.current || playbackErrorRef.current) return;
     clearHideTimer();
     hideTimer.current = setTimeout(() => {
@@ -577,20 +581,28 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }, AUTO_HIDE_MS);
   }, [clearHideTimer, hideControls]);
 
-  const revealControls = useCallback(() => {
+  /** First confirmed playback per mount: arm hide once (not on every progress/status/message). */
+  const markPlaybackStartedForHide = useCallback(() => {
+    if (playbackHideArmedRef.current) return;
+    playbackHideArmedRef.current = true;
+    bumpAutoHideTimer();
+  }, [bumpAutoHideTimer]);
+
+  /** Explicit user intent: tap surface or press a control button. */
+  const revealControlsUser = useCallback(() => {
     showControlsAnimated();
-    scheduleAutoHide();
-  }, [showControlsAnimated, scheduleAutoHide]);
+    bumpAutoHideTimer();
+  }, [showControlsAnimated, bumpAutoHideTimer]);
 
   useEffect(() => {
     pickerKindRef.current = pickerKind;
     if (pickerKind) {
       clearHideTimer();
       showControlsAnimated();
-    } else if (!playbackError && isPlaying) {
-      scheduleAutoHide();
+    } else if (!playbackErrorRef.current) {
+      bumpAutoHideTimer();
     }
-  }, [pickerKind, playbackError, isPlaying, clearHideTimer, showControlsAnimated, scheduleAutoHide]);
+  }, [pickerKind, clearHideTimer, showControlsAnimated, bumpAutoHideTimer]);
 
   useEffect(() => {
     return () => clearHideTimer();
@@ -598,9 +610,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!accessAllowed || !uri) return undefined;
-    revealControls();
+    playbackHideArmedRef.current = false;
+    setControlsVisible(true);
+    controlsOpacity.setValue(1);
     return undefined;
-  }, [accessAllowed, uri, playerEpoch, revealControls]);
+  }, [accessAllowed, uri, playerEpoch, controlsOpacity]);
 
   // STATUS
   const onStatusUpdate = (status) => {
@@ -630,6 +644,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       });
       lastStatusRef.current = nextState;
     }
+    const prevPlaying = lastStatusRef.current.isPlaying === true;
     const playing = Boolean(status.isPlaying);
     const nativeBuffering = Boolean(status.isBuffering);
     // Exo/HLS often keeps isBuffering true briefly (or stuck) while isPlaying is
@@ -637,7 +652,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setIsBuffering(playing ? false : nativeBuffering);
     setIsPlaying(playing);
     setPlaybackError('');
-    if (status.isPlaying) scheduleAutoHide();
+    if (playing && !prevPlaying) {
+      markPlaybackStartedForHide();
+    }
   };
 
   const onEmbedLoadStart = () => {
@@ -653,7 +670,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (useHlsWebView) {
       hlsWebRef.current?.injectJavaScript(buildHlsCmdScript({ type: 'request-tracks' }));
     }
-    scheduleAutoHide();
+    // Embed pages may never post a playing event; arm hide once after load (not on every message).
+    if (useEmbedWebView) {
+      markPlaybackStartedForHide();
+    }
   };
 
   const onEmbedHttpError = (ev) => {
@@ -727,7 +747,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       setIsBuffering(false);
       setIsPlaying(true);
       setPlaybackError('');
-      scheduleAutoHide();
+      markPlaybackStartedForHide();
       console.log('[player][debug] hls.js: playing');
       return;
     }
@@ -841,7 +861,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       embedWebRef.current?.injectJavaScript(`(function(){try{var v=document.querySelector('video');if(v){if(v.paused)v.play().catch(function(){});else v.pause();}}catch(e){}})();true;`);
       setIsPlaying((v) => !v);
     }
-    revealControls();
+    revealControlsUser();
   };
 
   useEffect(() => {
@@ -905,7 +925,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, [useHlsWebView, useEmbedWebView, hlsAudioTracks, hlsCurrentAudioTrack, embedControls]);
 
   const openQualityPicker = useCallback(() => {
-    revealControls();
+    revealControlsUser();
     if (useNativePlayer) {
       Alert.alert('Quality', 'Auto (default) — native player itachagua ubora yenyewe.');
       return;
@@ -919,10 +939,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return;
     }
     setPickerKind('quality');
-  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, qualityModel.available, revealControls]);
+  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, qualityModel.available, revealControlsUser]);
 
   const openLanguagePicker = useCallback(() => {
-    revealControls();
+    revealControlsUser();
     if (useNativePlayer) {
       Alert.alert('Lugha', 'Native player haitumii audio tracks za ziada.');
       return;
@@ -936,7 +956,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return;
     }
     setPickerKind('language');
-  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, languageModel.available, revealControls]);
+  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, languageModel.available, revealControlsUser]);
 
   const onPickOption = useCallback(
     (option) => {
@@ -964,15 +984,15 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         }
       }
       setPickerKind(null);
-      revealControls();
+      bumpAutoHideTimer();
     },
-    [pickerKind, useHlsWebView, useEmbedWebView, revealControls],
+    [pickerKind, useHlsWebView, useEmbedWebView, bumpAutoHideTimer],
   );
 
   const closePicker = useCallback(() => {
     setPickerKind(null);
-    revealControls();
-  }, [revealControls]);
+    bumpAutoHideTimer();
+  }, [bumpAutoHideTimer]);
 
   const activePickerModel = pickerKind === 'quality' ? qualityModel : pickerKind === 'language' ? languageModel : null;
   const activePickerTitle = pickerKind === 'quality' ? 'Chagua Ubora' : 'Chagua Lugha / Audio';
@@ -1058,7 +1078,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           - .mp4 / .ts ... → expo-av native
           - everything else (player.php, embed pages, iframe HTML) → plain WebView
       */}
-      <Pressable style={{ flex: 1 }} onPress={revealControls}>
+      <Pressable style={{ flex: 1 }} onPress={revealControlsUser}>
         <View pointerEvents="none" style={styles.videoUnderlay} />
 
         {useNativePlayer && nativeVideoSource ? (
@@ -1158,7 +1178,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
                   style={styles.actionBtn}
                   onPress={() => {
                     action.onPress();
-                    revealControls();
+                    revealControlsUser();
                   }}
                 >
                   <Ionicons name={action.icon} size={18} color="#E5E7EB" />
