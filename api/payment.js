@@ -178,6 +178,63 @@ export async function getPaymentProviders() {
 }
 
 /**
+ * Active checkout gateway from admin (zenopay | sonicpesa).
+ * GET /api/payments/checkout-providers
+ *
+ * @returns {Promise<{ payment_provider: 'zenopay'|'sonicpesa'; zenopay: boolean; sonicpesa: boolean }>}
+ */
+export async function getCheckoutPaymentProviders() {
+  const res = await fetch(`${P}/payments/checkout-providers`);
+  const body = await readJson(res);
+  if (!res.ok) {
+    const msg = body?.error != null ? String(body.error) : `HTTP ${res.status}`;
+    throw new Error(msg || 'Could not load checkout provider');
+  }
+  const provider = String(body?.payment_provider ?? 'zenopay').toLowerCase();
+  return {
+    payment_provider: provider === 'sonicpesa' ? 'sonicpesa' : 'zenopay',
+    zenopay: body?.zenopay !== false,
+    sonicpesa: Boolean(body?.sonicpesa),
+  };
+}
+
+/**
+ * SonicPesa STK — POST /api/payments/sonicpesa/create-order
+ * @param {{ phone: string; plan_id: string; amount: number; device_id: string; device_fingerprint?: string }} payload
+ * @returns {Promise<{ order_id: string; expiresInSeconds?: number }>}
+ */
+export async function createSonicpesaOrder(payload) {
+  const url = `${P}/payments/sonicpesa/create-order`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      phone: payload.phone,
+      plan_id: payload.plan_id,
+      amount: payload.amount,
+      device_id: payload.device_id,
+    }),
+  });
+  const body = await readJson(res);
+  if (!res.ok) {
+    const msg =
+      body?.error != null
+        ? String(body.error)
+        : body?.message != null
+          ? String(body.message)
+          : `HTTP ${res.status}`;
+    throw new Error(msg || 'SonicPesa payment could not be started');
+  }
+  const orderId = pickOrderId(body);
+  if (!orderId) throw new Error('Missing order_id from server');
+  const expiresInSeconds = Number(body.expires_in_seconds ?? body.expiresIn ?? body.timeout_seconds);
+  return {
+    order_id: orderId,
+    expiresInSeconds: Number.isFinite(expiresInSeconds) ? expiresInSeconds : undefined,
+  };
+}
+
+/**
  * @param {{ phone: string; plan_id: string; amount: number; device_id: string; device_fingerprint: string }} payload
  * @returns {Promise<{ order_id: string; expiresInSeconds?: number }>}
  */

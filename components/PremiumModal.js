@@ -23,7 +23,9 @@ import { Ionicons } from '@expo/vector-icons';
 import EventSource from 'react-native-sse';
 import {
   createPayment,
+  createSonicpesaOrder,
   fetchSubscription,
+  getCheckoutPaymentProviders,
   getPaymentProviders,
   getPaymentStatus,
   getPlans,
@@ -162,6 +164,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [finalizingSuccess, setFinalizingSuccess] = useState(false);
   const [providers, setProviders] = useState(FALLBACK_NETWORKS);
   const [logoErrors, setLogoErrors] = useState({});
+  const [checkoutProvider, setCheckoutProvider] = useState('zenopay');
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -279,6 +282,24 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         if (!cancelled) setPlansError(e?.message ?? 'Imeshindwa kupakia mipango');
       } finally {
         if (!cancelled) setPlansLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
+  /** Load active checkout gateway (zenopay | sonicpesa) when modal opens. */
+  useEffect(() => {
+    if (!visible) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cfg = await getCheckoutPaymentProviders();
+        if (cancelled) return;
+        setCheckoutProvider(cfg.payment_provider === 'sonicpesa' ? 'sonicpesa' : 'zenopay');
+      } catch {
+        if (!cancelled) setCheckoutProvider('zenopay');
       }
     })();
     return () => {
@@ -500,13 +521,16 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setSubmitting(true);
     try {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-      const { order_id: oid, expiresInSeconds } = await createPayment({
+      const payPayload = {
         phone: phoneNumber.replace(/\s/g, ''),
         plan_id: selectedPlan.id,
         amount: selectedPlan.price,
         device_id: deviceId,
         device_fingerprint: deviceFingerprint,
-      });
+      };
+      const startPayment =
+        checkoutProvider === 'sonicpesa' ? createSonicpesaOrder : createPayment;
+      const { order_id: oid, expiresInSeconds } = await startPayment(payPayload);
       doneRef.current = false;
       setWaitingDeviceId(deviceId);
       setOrderId(oid);
