@@ -157,6 +157,8 @@ module.exports = {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#000000',
       },
+      /** Must exceed Play Store latest (currently 8). Next release: 9. */
+      versionCode: 9,
       /** Cold-start window color before React (pairs with native splash theme). */
       backgroundColor: '#FFFFFF',
       edgeToEdgeEnabled: true,
