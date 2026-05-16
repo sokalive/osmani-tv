@@ -107,7 +107,13 @@ function pickSourceDeviceId(payload) {
 
 export default function HamishaKifurushiModal({ visible, onClose }) {
   const { height: windowHeight } = useWindowDimensions();
-  const { reverifySubscription, pendingTransfer, triggerPendingTransfer } = useOsmaniApp();
+  const {
+    reverifySubscription,
+    pendingTransfer,
+    triggerPendingTransfer,
+    markSourceTransferSession,
+    clearSourceTransferSession,
+  } = useOsmaniApp();
 
   const [step, setStep] = useState(STEPS.INTRO);
   const [phone, setPhone] = useState('');
@@ -150,6 +156,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
 
   useEffect(() => {
     if (visible) {
+      clearSourceTransferSession?.();
       setStep(STEPS.INTRO);
       setPhone('');
       setCode('');
@@ -161,7 +168,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       setRejectionReason('');
       runEnterAnim();
     }
-  }, [visible, runEnterAnim]);
+  }, [visible, runEnterAnim, clearSourceTransferSession]);
 
   const close = useCallback(() => {
     onClose?.();
@@ -196,7 +203,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
    * device is the only one in this state.
    */
   useEffect(() => {
-    if (!visible) return undefined;
+    if (!visible || step !== STEPS.GENERATED || !generatedCode) return undefined;
     let cancelled = false;
     const onConfirmationRequired = (eventName) => async (payload) => {
       if (cancelled) return;
@@ -208,18 +215,9 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       if (cancelled) return;
       const sourceDeviceId = pickSourceDeviceId(payload);
       const eventCode = pickEventCode(payload);
-      const codeMatches = Boolean(generatedCode) && bareCode(generatedCode) === bareCode(eventCode);
+      const codeMatches = bareCode(generatedCode) === bareCode(eventCode);
       const sourceMatches = Boolean(sourceDeviceId && currentDeviceId && sourceDeviceId === currentDeviceId);
-      // While we are showing the GENERATED step, this device is the
-      // ONLY device in source-of-transfer state — accept the event as
-      // ours unless it is *explicitly* tagged for another device.
-      const inSourceFlow = step === STEPS.GENERATED && Boolean(generatedCode);
-      const explicitlyOtherDevice =
-        Boolean(sourceDeviceId && currentDeviceId && sourceDeviceId !== currentDeviceId);
-      const shouldClose =
-        codeMatches ||
-        sourceMatches ||
-        (inSourceFlow && !explicitlyOtherDevice);
+      const shouldClose = codeMatches || sourceMatches;
       console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'hamisha_modal_event', {
         eventName,
         payload,
@@ -228,8 +226,6 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
         eventCode,
         codeMatches,
         sourceMatches,
-        inSourceFlow,
-        explicitlyOtherDevice,
         shouldClose,
         modalStep: step,
       });
@@ -275,7 +271,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       offRequested();
       offPending();
     };
-  }, [visible, step, generatedCode, waitingCode, redeemCode, close, triggerPendingTransfer]);
+  }, [visible, step, generatedCode, close, triggerPendingTransfer]);
 
   /**
    * Auto-close fail-safe. If the global context decides a pending
@@ -358,6 +354,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
       const r = await initiateTransfer(deviceId, deviceFingerprint, phone);
       setGeneratedCode(r.code);
+      markSourceTransferSession?.(r.code);
       setRemainingSeconds(TRANSFER_CODE_SECONDS);
       setStep(STEPS.GENERATED);
     } catch (e) {
@@ -366,7 +363,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     } finally {
       setBusy(false);
     }
-  }, [isPhoneValid, phone]);
+  }, [isPhoneValid, phone, markSourceTransferSession]);
 
   const handleRedeem = useCallback(async () => {
     if (!isRedeemCodeValid) {
