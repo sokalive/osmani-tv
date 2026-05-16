@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { getBanners, getChannels, getServerHealth } from '../api';
+import { sortChannelsByAdminOrder } from '../lib/channelOrder';
 import { parseAppSettingsRealtimePatch, tryGetViewerAppSettings } from '../api/settings';
 import {
   clearSubscriptionCache,
@@ -294,7 +295,7 @@ export function OsmaniAppProvider({ children }) {
       if (flags && !skipSettingsFromHttp) {
         setSettings((prev) => ({ ...prev, ...flags }));
       }
-      setRawChannels(Array.isArray(list) ? list : []);
+      setRawChannels(sortChannelsByAdminOrder(Array.isArray(list) ? list : []));
       const nextBanners = Array.isArray(bannersResult) ? bannersResult : null;
       setRawBanners((prev) => (nextBanners != null ? nextBanners : prev));
       if (nextBanners != null) {

@@ -79,7 +79,6 @@ import {
   channelAppearsOnNavigatorTab,
   channelIsFeatured,
   channelIsPopular,
-  compareHomeMixChannels,
   getChannelTabKeys,
   matchesHomePillFilter,
 } from './lib/channelTabVisibility';
@@ -837,12 +836,6 @@ function ChannelCatalogScreen({
       rows = rows.filter((r) => Boolean(r.isLive ?? r.live));
     } else if (selectedFilter === 'Sports' || selectedFilter === 'Tamthilia') {
       rows = rows.filter((r) => matchesHomePillFilter(r, selectedFilter));
-    }
-    if (
-      navigatorTabKey === 'home' &&
-      (selectedFilter === 'Zote' || selectedFilter === 'Trending')
-    ) {
-      rows = [...rows].sort(compareHomeMixChannels);
     }
     return rows.map((raw, i) => mapApiChannelToCard(raw, i, freeMode, serverHealth));
   }, [
