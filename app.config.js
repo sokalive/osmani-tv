@@ -129,8 +129,8 @@ module.exports = {
     newArchEnabled: true,
     splash: {
       image: BRAND_ASSETS.splash,
-      resizeMode: 'contain',
-      backgroundColor: '#000000',
+      resizeMode: 'cover',
+      backgroundColor: '#FFFFFF',
     },
     androidStatusBar: {
       backgroundColor: '#000000',
@@ -157,8 +157,8 @@ module.exports = {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#000000',
       },
-      /** Ensures cold-start window is black before React (pairs with splash theme). */
-      backgroundColor: '#000000',
+      /** Cold-start window color before React (pairs with native splash theme). */
+      backgroundColor: '#FFFFFF',
       edgeToEdgeEnabled: true,
       package: 'com.burudanitv.app',
       usesCleartextTraffic: true,
@@ -186,22 +186,22 @@ module.exports = {
       [
         'expo-splash-screen',
         {
-          backgroundColor: '#000000',
+          backgroundColor: '#FFFFFF',
           image: BRAND_ASSETS.splash,
-          resizeMode: 'contain',
+          resizeMode: 'cover',
           /** Expo Android canvas max (288dp) — largest centered logo for API 31+ splash. */
           imageWidth: 288,
           android: {
-            backgroundColor: '#000000',
+            backgroundColor: '#FFFFFF',
             image: BRAND_ASSETS.splash,
-            resizeMode: 'contain',
+            resizeMode: 'cover',
             imageWidth: 288,
           },
           ios: {
-            backgroundColor: '#000000',
+            backgroundColor: '#FFFFFF',
             image: BRAND_ASSETS.splash,
-            resizeMode: 'contain',
-            imageWidth: 260,
+            resizeMode: 'cover',
+            imageWidth: 280,
           },
         },
       ],
