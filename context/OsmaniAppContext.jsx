@@ -59,6 +59,13 @@ function pickTransferCode(payload) {
   ]);
 }
 
+function bareTransferCode(raw) {
+  return String(raw || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .replace(/^TR/, '');
+}
+
 export function OsmaniAppProvider({ children }) {
   const [settings, setSettings] = useState(defaultSettings);
   const [rawChannels, setRawChannels] = useState([]);
@@ -88,6 +95,8 @@ export function OsmaniAppProvider({ children }) {
 
   const verifyInFlightRef = useRef(false);
   const lastVerifyKeyRef = useRef(0);
+  /** Set after source POST /transfer/request succeeds; gates Kubali/Kataa popup. */
+  const sourceTransferSessionRef = useRef(null);
 
   /**
    * Single trust path. Always hits the backend and treats `active` as the
@@ -394,6 +403,7 @@ export function OsmaniAppProvider({ children }) {
       console.log('[TRANSFER_COMPLETED]', 'sse', payload);
       // The source device loses access; the destination gains it. Either
       // way, ask the backend who owns the subscription right now.
+      sourceTransferSessionRef.current = null;
       setPendingTransfer(null);
       void reverifySubscription('sse:transfer_completed').then((r) => {
         if (r?.active !== true) {
@@ -407,6 +417,7 @@ export function OsmaniAppProvider({ children }) {
     // refreshes and gains access.
     const offApproved = subscribeRealtimeEvent('transfer_approved', (payload) => {
       console.log('[TRANSFER_APPROVED]', 'sse', payload);
+      sourceTransferSessionRef.current = null;
       setPendingTransfer(null);
       void reverifySubscription('sse:transfer_approved');
     });
@@ -415,23 +426,29 @@ export function OsmaniAppProvider({ children }) {
     // alias `transfer_requested` is kept as a fallback for backward
     // compatibility.
     const handleSourceTransferRequest = (eventName) => async (payload) => {
+      const session = sourceTransferSessionRef.current;
+      if (!session?.code) {
+        console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'ignored_no_source_session', {
+          eventName,
+        });
+        return;
+      }
       let deviceId = '';
       try {
         const identity = await getDeviceIdentity();
         deviceId = identity?.deviceId ? String(identity.deviceId) : '';
       } catch {}
       const sourceDeviceId = pickSourceDeviceId(payload);
-      // Permissive matching: only DROP an event when we have a confirmed
-      // mismatch between two known device ids. Missing values are treated
-      // as a match — the source device is the only one in this state, so
-      // erring on the side of showing the approve/reject popup is safer.
-      const sourceMatches = !sourceDeviceId || !deviceId || sourceDeviceId === deviceId;
+      const sourceMatches = Boolean(
+        sourceDeviceId && deviceId && sourceDeviceId === deviceId,
+      );
       console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'event_received', {
         eventName,
         payload,
         currentDeviceId: deviceId,
         sourceDeviceId,
         sourceMatches,
+        sessionCode: session.code,
       });
       if (!sourceMatches) {
         console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'ignored_non_source_device', {
@@ -441,11 +458,20 @@ export function OsmaniAppProvider({ children }) {
         return;
       }
       const code = pickTransferCode(payload);
+      const eventBare = bareTransferCode(code);
+      const sessionBare = bareTransferCode(session.code);
+      if (eventBare && sessionBare && eventBare !== sessionBare) {
+        console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'ignored_code_mismatch', {
+          eventCode: code,
+          sessionCode: session.code,
+        });
+        return;
+      }
       console.log('[transfer-ui]', 'pending transfer detected', { eventName, code, source: 'sse' });
       if (payload && typeof payload === 'object') {
-        setPendingTransfer({ ...payload, code });
+        setPendingTransfer({ ...payload, code: code || session.code });
       } else {
-        setPendingTransfer({ code, raw: payload });
+        setPendingTransfer({ code: code || session.code, raw: payload });
       }
       console.log('[transfer-ui]', 'source approval state entered', { code, source: 'sse' });
     };
@@ -550,7 +576,20 @@ export function OsmaniAppProvider({ children }) {
     setRevokedReason(null);
   }, []);
 
+  const clearSourceTransferSession = useCallback(() => {
+    sourceTransferSessionRef.current = null;
+    setPendingTransfer(null);
+  }, []);
+
+  const markSourceTransferSession = useCallback((code) => {
+    const trimmed = String(code ?? '').trim();
+    if (!trimmed) return;
+    sourceTransferSessionRef.current = { code: trimmed, startedAt: Date.now() };
+    console.log('[transfer-ui]', 'source transfer session started', { code: trimmed });
+  }, []);
+
   const dismissPendingTransfer = useCallback(() => {
+    sourceTransferSessionRef.current = null;
     setPendingTransfer(null);
   }, []);
 
@@ -565,12 +604,27 @@ export function OsmaniAppProvider({ children }) {
    * always traceable in the device console.
    */
   const triggerPendingTransfer = useCallback((payload, reason = 'external') => {
+    const session = sourceTransferSessionRef.current;
+    if (!session?.code) {
+      console.log('[transfer-ui]', 'ignored pending transfer — no source session', { reason });
+      return;
+    }
     if (!payload || typeof payload !== 'object') {
-      setPendingTransfer({ code: '', raw: payload, source: reason });
+      setPendingTransfer({ code: session.code, raw: payload, source: reason });
       console.log('[transfer-ui]', 'source approval state entered', { reason, payloadType: typeof payload });
       return;
     }
-    const code = pickTransferCode(payload) || (typeof payload.code === 'string' ? payload.code : '');
+    const code = pickTransferCode(payload) || session.code;
+    const eventBare = bareTransferCode(code);
+    const sessionBare = bareTransferCode(session.code);
+    if (eventBare && sessionBare && eventBare !== sessionBare) {
+      console.log('[transfer-ui]', 'ignored pending transfer — code mismatch', {
+        reason,
+        eventCode: code,
+        sessionCode: session.code,
+      });
+      return;
+    }
     console.log('[transfer-ui]', 'pending transfer detected', { reason, code });
     setPendingTransfer({ ...payload, code });
     console.log('[transfer-ui]', 'source approval state entered', { reason, code });
@@ -608,6 +662,8 @@ export function OsmaniAppProvider({ children }) {
       pendingTransfer,
       dismissPendingTransfer,
       triggerPendingTransfer,
+      markSourceTransferSession,
+      clearSourceTransferSession,
       emergencyModalRequestVersion,
       requestEmergencyModal,
     }),
@@ -633,6 +689,8 @@ export function OsmaniAppProvider({ children }) {
       pendingTransfer,
       dismissPendingTransfer,
       triggerPendingTransfer,
+      markSourceTransferSession,
+      clearSourceTransferSession,
       emergencyModalRequestVersion,
       requestEmergencyModal,
     ],
