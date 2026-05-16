@@ -1500,7 +1500,10 @@ export default function App() {
 
   return (
     <SafeAreaProvider style={styles.appRoot}>
-      <StatusBar style="light" backgroundColor="#000000" />
+      <StatusBar
+        style={splashHidden ? 'light' : 'dark'}
+        backgroundColor={splashHidden ? '#000000' : '#FFFFFF'}
+      />
       <OsmaniAppProvider>
         <SecurityProvider>
           {splashHidden ? (
@@ -1626,7 +1629,7 @@ const styles = StyleSheet.create({
   },
   startupSplashPlaceholder: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#FFFFFF',
   },
   listContent: {
     paddingHorizontal: HORIZONTAL_PADDING,
