@@ -157,6 +157,8 @@ module.exports = {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#000000',
       },
+      /** Ensures cold-start window is black before React (pairs with splash theme). */
+      backgroundColor: '#000000',
       edgeToEdgeEnabled: true,
       package: 'com.burudanitv.app',
       usesCleartextTraffic: true,
@@ -179,13 +181,28 @@ module.exports = {
         process.env.EXPO_PUBLIC_ANDROID_SIGNING_CERT_SHA256?.trim?.() || '',
     },
     plugins: [
+      /** Register before expo-splash-screen so style mods run after Expo's (mod chain order). */
+      './plugins/withAndroidLargeSplash.js',
       [
         'expo-splash-screen',
         {
           backgroundColor: '#000000',
           image: BRAND_ASSETS.splash,
           resizeMode: 'contain',
-          imageWidth: 240,
+          /** Expo Android canvas max (288dp) — largest centered logo for API 31+ splash. */
+          imageWidth: 288,
+          android: {
+            backgroundColor: '#000000',
+            image: BRAND_ASSETS.splash,
+            resizeMode: 'contain',
+            imageWidth: 288,
+          },
+          ios: {
+            backgroundColor: '#000000',
+            image: BRAND_ASSETS.splash,
+            resizeMode: 'contain',
+            imageWidth: 260,
+          },
         },
       ],
       [
