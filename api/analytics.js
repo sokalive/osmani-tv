@@ -116,17 +116,20 @@ async function postJson(path, body, { retries = RETRY_DELAYS_MS } = {}) {
 
 export async function trackInstallOnce() {
   try {
+    const { deviceId, installInstanceId } = await getDeviceIdentity();
     const already = await AsyncStorage.getItem(INSTALL_TRACKED_KEY);
     if (ANALYTICS_DEBUG) {
-      console.log('[analytics] install dedupe flag:', already);
+      console.log('[analytics] install dedupe flag:', already, 'current instance:', installInstanceId);
     }
-    if (already === '1') {
+    // Dedupe per install *instance* (osmani:install_uuid), not per device.
+    // Legacy value "1" never matches a UUID → allows POST after reinstall when backup
+    // restores osmani:install_tracked_v1 but app data was otherwise reset.
+    if (already && already === installInstanceId) {
       if (ANALYTICS_DEBUG) {
-        console.log('[analytics] install skipped: already tracked');
+        console.log('[analytics] install skipped: instance already tracked');
       }
       return;
     }
-    const { deviceId, installInstanceId } = await getDeviceIdentity();
     if (ANALYTICS_DEBUG) {
       console.log('[analytics] install device_id:', deviceId, 'install_instance_id:', installInstanceId);
     }
@@ -139,9 +142,9 @@ export async function trackInstallOnce() {
       device_model: detectDeviceModel(),
     });
     if (ok) {
-      await AsyncStorage.setItem(INSTALL_TRACKED_KEY, '1');
+      await AsyncStorage.setItem(INSTALL_TRACKED_KEY, installInstanceId);
       if (ANALYTICS_DEBUG) {
-        console.log('[analytics] install marked as tracked');
+        console.log('[analytics] install marked as tracked for instance:', installInstanceId);
       }
     } else if (ANALYTICS_DEBUG) {
       console.log('[analytics] install not marked tracked due to failed request');
