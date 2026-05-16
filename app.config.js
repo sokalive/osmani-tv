@@ -157,11 +157,6 @@ module.exports = {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#000000',
       },
-      splash: {
-        image: BRAND_ASSETS.splash,
-        resizeMode: 'contain',
-        backgroundColor: '#000000',
-      },
       edgeToEdgeEnabled: true,
       package: 'com.burudanitv.app',
       usesCleartextTraffic: true,

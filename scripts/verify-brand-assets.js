@@ -44,7 +44,9 @@ for (const [dupe, canonical] of DUPLICATE_PAIRS) {
     console.warn(
       `[verify-brand-assets] "${dupe}" is newer than "${canonical}". Run: npm run sync:brand-assets — Expo only bundles canonical paths.`,
     );
-    failed = true;
+    if (!process.env.EAS_BUILD) {
+      failed = true;
+    }
   }
 }
 

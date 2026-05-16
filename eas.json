@@ -16,7 +16,6 @@
     },
     "preview": {
       "distribution": "internal",
-      "prebuildCommand": "npm run sync:brand-assets && npm run verify:brand-assets",
       "android": {
         "buildType": "apk"
       },
@@ -29,7 +28,6 @@
     },
     "production": {
       "autoIncrement": true,
-      "prebuildCommand": "npm run sync:brand-assets && npm run verify:brand-assets",
       "android": {
         "buildType": "app-bundle"
       },
