@@ -157,13 +157,26 @@ module.exports = {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#000000',
       },
-      /** Must exceed Play Console latest upload (currently 9). */
-      versionCode: 10,
+      /** Must exceed Play Console latest upload (currently 10). */
+      versionCode: 11,
       /** Cold-start window color before React (pairs with native splash theme). */
       backgroundColor: '#FFFFFF',
       edgeToEdgeEnabled: true,
       package: 'com.burudanitv.app',
       usesCleartextTraffic: true,
+      /**
+       * Strip gallery/storage permissions merged from legacy Expo/RN modules.
+       * App only streams remote HLS/MP4 and loads remote banner/channel images (expo-image).
+       */
+      blockedPermissions: [
+        'android.permission.READ_MEDIA_IMAGES',
+        'android.permission.READ_MEDIA_VIDEO',
+        'android.permission.READ_MEDIA_AUDIO',
+        'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
+        'android.permission.READ_EXTERNAL_STORAGE',
+        'android.permission.WRITE_EXTERNAL_STORAGE',
+        'android.permission.REQUEST_INSTALL_PACKAGES',
+      ],
       ...(googleServicesFile ? { googleServicesFile } : {}),
     },
     web: {
@@ -225,6 +238,7 @@ module.exports = {
       ],
       'expo-video',
       './plugins/withOsmaniUpdate.js',
+      './plugins/withStripMediaPermissions.js',
       './plugins/withGlobalSecureScreen.js',
     ],
   },
