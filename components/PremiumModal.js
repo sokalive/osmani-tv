@@ -31,6 +31,7 @@ import {
   getPlans,
 } from '../api/payment';
 import { BASE_URL } from '../api';
+import { verifySubscription } from '../api/subscription';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { formatSubscriptionExpiry } from '../lib/formatExpiry';
@@ -337,10 +338,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
-  /** After ZenoPay reports SUCCESS: verify immediately, then show success UI. */
+  /** After payment gateway / verify confirms active: apply context + success UI only when verify succeeds. */
   const moveToSuccessStep = useCallback(async () => {
     if (doneRef.current) return;
-    doneRef.current = true;
     clearTimers();
     closeSse();
     let verified = null;
@@ -355,6 +355,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         // optional enrichment only
       }
       if (verified && isSubscriptionActive(verified)) {
+        doneRef.current = true;
         const mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
         unlockChannels({
           ...verified,
@@ -362,14 +363,18 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           isActive: true,
           expiresAt: mergedExpires ?? verified?.expiresAt ?? null,
         });
+        const mergedForUi = latestExpiryIso(verified?.expiresAt, fetchExpires);
+        setSuccessExpiresAt(mergedForUi ?? verified?.expiresAt ?? null);
+        setStep(4);
+        return;
       }
-      const mergedForUi = latestExpiryIso(verified?.expiresAt, fetchExpires);
-      setSuccessExpiresAt(mergedForUi ?? verified?.expiresAt ?? null);
     } catch (e) {
       console.log('[PAYMENT_SUCCESS_VERIFY]', 'refresh_failed', e?.message ?? e);
-      setSuccessExpiresAt(verified?.expiresAt ?? null);
     }
-    setStep(4);
+    console.log('[PAYMENT_SUCCESS_VERIFY]', 'verify_not_active_stay_waiting', {
+      active: verified?.active,
+      isActive: verified?.isActive,
+    });
   }, [clearTimers, closeSse, refreshSubscription, unlockChannels]);
 
   /** ENDELEA: always await fresh API via context; branch only on returned object (never stale context). */
@@ -410,26 +415,34 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     async (oid) => {
       if (doneRef.current) return;
       try {
-        const latestSubscription = await refreshSubscription();
-        if (isSubscriptionActive(latestSubscription)) {
+        const { status, reason } = await getPaymentStatus(oid);
+        if (doneRef.current) return;
+        if (status === 'FAILED') {
+          handleFailed(reason);
+          return;
+        }
+
+        let peek = null;
+        try {
+          const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+          peek = await verifySubscription(deviceId, deviceFingerprint);
+        } catch {
+          peek = null;
+        }
+        if (doneRef.current) return;
+        if (peek && isSubscriptionActive(peek)) {
           await moveToSuccessStep();
           return;
         }
 
-        const { status, reason } = await getPaymentStatus(oid);
-        if (doneRef.current) return;
         if (status === 'SUCCESS') {
           await moveToSuccessStep();
-          return;
-        }
-        if (status === 'FAILED') {
-          handleFailed(reason);
         }
       } catch {
         // transient network — keep polling
       }
     },
-    [moveToSuccessStep, handleFailed, refreshSubscription],
+    [moveToSuccessStep, handleFailed],
   );
 
   useEffect(() => {
@@ -462,17 +475,21 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
     const onMessage = (event) => {
       if (doneRef.current) return;
-      try {
-        const payload = JSON.parse(event?.data ?? '{}');
-        const isActive = payload?.isActive === true || payload?.active === true;
-        const expiresAt = payload?.expiresAt ?? payload?.expires_at ?? null;
-        if (isActive) {
-          unlockChannels({ active: true, isActive: true, expiresAt: expiresAt ? String(expiresAt) : null });
-          void moveToSuccessStep();
+      void (async () => {
+        try {
+          const payload = JSON.parse(event?.data ?? '{}');
+          const payloadActive = payload?.isActive === true || payload?.active === true;
+          if (!payloadActive) return;
+          const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+          const verified = await verifySubscription(deviceId, deviceFingerprint);
+          if (doneRef.current) return;
+          if (verified && isSubscriptionActive(verified)) {
+            void moveToSuccessStep();
+          }
+        } catch {
+          // ignore malformed stream payloads / transient verify errors
         }
-      } catch {
-        // ignore malformed stream payloads
-      }
+      })();
     };
 
     stream.addEventListener('message', onMessage);
@@ -488,7 +505,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       }
       closeSse();
     };
-  }, [visible, step, waitingDeviceId, closeSse, unlockChannels, moveToSuccessStep]);
+  }, [visible, step, waitingDeviceId, closeSse, moveToSuccessStep]);
 
   const handleCancel = () => {
     clearTimers();
