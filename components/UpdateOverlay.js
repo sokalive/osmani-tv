@@ -1,98 +1,138 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
+  Dimensions,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   cancelDownload,
   dismissSoft,
   getUpdateAction,
   isNativeAvailable,
+  launchInstaller,
   openPlayStoreFromInfo,
-  quitForForceCancel,
   startDownload,
   subscribe,
 } from '../lib/updateClient';
 
-const COLORS = {
-  bg: '#0F1115',
-  card: '#1A1D23',
-  gold: '#FFCB3D',
-  goldDeep: '#E5A722',
-  white: '#FFFFFF',
-  muted: '#A1A8B5',
-  danger: '#FF6B6B',
-  border: 'rgba(255,255,255,0.08)',
-};
+const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
+const SHEET_BG = '#0F1115';
+const TEXT_MUTED = '#9CA3AF';
+
+const WINDOW_HEIGHT = Dimensions.get('window').height;
+const MAX_SHEET_H = Math.min(480, Math.round(WINDOW_HEIGHT * 0.82));
 
 function formatMB(bytes) {
   if (!bytes || bytes <= 0) return '';
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function defaultTitle(decision) {
+  if (decision === 'FORCE') return 'Update Required';
+  if (decision === 'PLAY_STORE') return 'Update Available';
+  return 'Update Available';
+}
+
+function defaultMessage(decision) {
+  if (decision === 'FORCE') {
+    return 'A new version is required to continue using Osmani TV. Please download and install the update.';
+  }
+  return 'A new version of Osmani TV is ready. Download and install to get the latest features and fixes.';
+}
+
+/**
+ * Derives UI phase for button labels and progress display.
+ * @returns {'checking'|'idle'|'downloading'|'verifying'|'downloaded'|'installing'|'failed'|'needs_permission'}
+ */
+function derivePhase(ui) {
+  if (ui.checking) return 'checking';
+  if (ui.failedReason) return 'failed';
+  if (ui.needsUnknownSourcesPermission) return 'needs_permission';
+  if (ui.installing) return 'installing';
+  if (ui.downloaded) return 'downloaded';
+  if (ui.verifying) return 'verifying';
+  if (ui.downloading) return 'downloading';
+  return 'idle';
+}
+
 export default function UpdateOverlay() {
+  const insets = useSafeAreaInsets();
   const [ui, setUi] = useState(null);
 
   useEffect(() => {
     if (Platform.OS !== 'android' || !isNativeAvailable()) return undefined;
     const unsub = subscribe(setUi);
     return () => {
-      try { unsub(); } catch {}
+      try {
+        unsub();
+      } catch {
+        /* ignore */
+      }
     };
   }, []);
 
+  const phase = useMemo(() => (ui ? derivePhase(ui) : 'idle'), [ui]);
+
+  const isForce = ui?.decision === 'FORCE';
+  const isPlayStore = ui?.decision === 'PLAY_STORE';
+
   useEffect(() => {
-    if (!ui) return;
-    try {
-      console.log('[update] overlay render state', {
-        decision: ui.decision,
-        visible: ui.visible,
-        notice: ui.info?.notice,
-        source: ui.info?.source,
-        apkUrl: ui.info?.apkUrl,
-        playStoreUrl: ui.info?.playStoreUrl,
-        failedReason: ui.failedReason,
-      });
-    } catch {}
-  }, [ui]);
+    if (!ui?.visible) return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (ui?.decision === 'FORCE') return true;
+      if (phase === 'downloading' || phase === 'verifying') {
+        cancelDownload();
+      }
+      dismissSoft();
+      return true;
+    });
+    return () => sub.remove();
+  }, [ui?.visible, ui?.decision, phase]);
 
   if (Platform.OS !== 'android' || !isNativeAvailable()) return null;
   if (!ui || !ui.visible) return null;
 
-  const isForce = ui.decision === 'FORCE';
-  const isPlayStore = ui.decision === 'PLAY_STORE';
   const info = ui.info ?? {};
   const action = getUpdateAction(info);
+
+  const title = String(info.title ?? '').trim() || defaultTitle(ui.decision);
+  const message =
+    String(info.notice ?? '').trim() ||
+    String(info.releaseNotes ?? '').trim() ||
+    defaultMessage(ui.decision);
+
   const installedName = info.installedVersionName || '';
   const latestName = info.latestVersionName || '';
   const sizeText = formatMB(info.apkSizeBytes);
 
-  const inProgress =
-    ui.downloading || ui.verifying || ui.installing;
-
   const percent =
-    ui.progress && typeof ui.progress.percent === 'number'
-      ? ui.progress.percent
-      : -1;
+    ui.progress && typeof ui.progress.percent === 'number' ? ui.progress.percent : -1;
 
-  const headline = isForce
-    ? 'Sasisho la lazima'
-    : isPlayStore
-      ? 'Sasisho linapatikana'
-      : 'Sasisho linapatikana';
-
-  const subtitle = isForce
-    ? (info.notice || 'Toleo jipya ni la lazima ili kuendelea kutumia Osmani TV.')
-    : (info.notice || 'Toleo jipya la Osmani TV liko tayari kupakuliwa.');
+  const busy =
+    phase === 'checking' ||
+    phase === 'downloading' ||
+    phase === 'verifying' ||
+    phase === 'installing';
 
   const onPrimary = () => {
+    if (phase === 'failed') {
+      void startDownload();
+      return;
+    }
+    if (phase === 'downloaded' || phase === 'needs_permission') {
+      void launchInstaller();
+      return;
+    }
     if (isPlayStore || (!action.canDownload && action.canOpenStore)) {
       void openPlayStoreFromInfo();
       return;
@@ -101,27 +141,33 @@ export default function UpdateOverlay() {
   };
 
   const onCancel = () => {
-    if (isForce) {
-      quitForForceCancel();
-      return;
+    if (isForce) return;
+    if (phase === 'downloading' || phase === 'verifying') {
+      cancelDownload();
     }
-    cancelDownload();
     dismissSoft();
   };
 
   const primaryLabel = (() => {
-    if (ui.installing) return 'Inafungua msakinishaji…';
-    if (ui.verifying) return 'Inathibitisha…';
-    if (ui.downloading) {
-      return percent >= 0
-        ? `Inapakua… ${percent}%`
-        : 'Inapakua…';
+    if (phase === 'checking') return 'CHECKING…';
+    if (phase === 'installing') return 'OPENING INSTALLER…';
+    if (phase === 'verifying') return 'VERIFYING…';
+    if (phase === 'downloading') {
+      return percent >= 0 ? `DOWNLOADING… ${percent}%` : 'DOWNLOADING…';
     }
-    if (ui.needsUnknownSourcesPermission) return 'Ruhusu kisha ujaribu tena';
-    if (isPlayStore || (!action.canDownload && action.canOpenStore)) return 'Fungua Play Store';
-    if (!action.canDownload) return 'Hakuna APK ya kupakua';
-    return 'Pakua na Sakinisha';
+    if (phase === 'downloaded') return 'OPEN INSTALLER';
+    if (phase === 'needs_permission') return 'OPEN INSTALLER';
+    if (phase === 'failed') return 'RETRY';
+    if (isPlayStore || (!action.canDownload && action.canOpenStore)) return 'OPEN PLAY STORE';
+    if (!action.canDownload) return 'NO APK AVAILABLE';
+    return isForce ? 'DOWNLOAD NOW' : 'UPDATE NOW';
   })();
+
+  const primaryDisabled =
+    busy ||
+    (phase === 'idle' && !action.canDownload && !action.canOpenStore);
+
+  const showCancel = !isForce && phase !== 'installing';
 
   return (
     <Modal
@@ -130,107 +176,101 @@ export default function UpdateOverlay() {
       animationType="fade"
       statusBarTranslucent
       onRequestClose={() => {
-        if (!isForce) {
-          dismissSoft();
-        }
+        if (!isForce) onCancel();
       }}
     >
-      <View style={styles.scrim}>
-        <View style={styles.card}>
-          <View style={styles.iconWrap}>
-            <LinearGradient
-              colors={[COLORS.gold, COLORS.goldDeep]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.iconBg}
-            >
-              <Ionicons
-                name={isForce ? 'shield-checkmark' : 'cloud-download'}
-                size={28}
-                color="#000"
-              />
-            </LinearGradient>
-          </View>
-
-          <Text style={styles.title}>{headline}</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
-
-          <View style={styles.versionRow}>
-            {installedName ? (
-              <Text style={styles.versionMuted}>{installedName}</Text>
-            ) : null}
-            <Ionicons
-              name="arrow-forward"
-              size={14}
-              color={COLORS.muted}
-              style={{ marginHorizontal: 6 }}
+      <View style={[styles.overlay, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 12 }]}>
+        {!isForce ? (
+          <Pressable style={StyleSheet.absoluteFill} onPress={onCancel}>
+            <BlurView
+              intensity={Platform.OS === 'ios' ? 38 : 50}
+              tint="dark"
+              experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
+              style={StyleSheet.absoluteFill}
             />
-            <Text style={styles.versionGold}>{latestName || '—'}</Text>
-            {sizeText ? (
-              <Text style={styles.versionMuted}> · {sizeText}</Text>
-            ) : null}
-          </View>
+          </Pressable>
+        ) : (
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 38 : 50}
+            tint="dark"
+            experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
+            style={StyleSheet.absoluteFill}
+          />
+        )}
 
-          {info.releaseNotes ? (
-            <Text style={styles.notes} numberOfLines={6}>
-              {info.releaseNotes}
-            </Text>
-          ) : null}
-
-          {ui.downloading ? (
-            <View style={styles.progressBarTrack}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  {
-                    width:
-                      percent >= 0 ? `${Math.max(2, percent)}%` : '20%',
-                  },
-                ]}
-              />
-            </View>
-          ) : null}
-
-          {ui.failedReason ? (
-            <Text style={styles.error}>
-              Imeshindikana: {String(ui.failedReason)}
-            </Text>
-          ) : null}
-
-          {ui.needsUnknownSourcesPermission ? (
-            <Text style={styles.warn}>
-              Ruhusu Osmani TV kusakinisha kutoka chanzo hiki, kisha
-              gusa "{primaryLabel}" tena.
-            </Text>
-          ) : null}
-
-          <View style={styles.actions}>
-            <Pressable
-              onPress={onPrimary}
-              disabled={inProgress || (!action.canDownload && !action.canOpenStore)}
-              style={({ pressed }) => [
-                styles.primaryBtn,
-                pressed && { opacity: 0.85 },
-                inProgress && { opacity: 0.7 },
-              ]}
+        <View style={styles.centeredWrap} pointerEvents="box-none">
+          <View style={[styles.sheet, { maxHeight: MAX_SHEET_H }]}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              contentContainerStyle={styles.scrollInner}
             >
-              {ui.downloading || ui.verifying || ui.installing ? (
-                <ActivityIndicator color="#000" />
-              ) : null}
-              <Text style={styles.primaryBtnText}>{primaryLabel}</Text>
-            </Pressable>
+              <View style={styles.handleBar} />
+              <Text style={styles.title}>{title}</Text>
+              <Text style={styles.body}>{message}</Text>
 
-            {isForce ? (
-              <Pressable onPress={onCancel} style={styles.linkBtn}>
-                <Text style={styles.linkBtnTextDanger}>Funga programu</Text>
-              </Pressable>
-            ) : (
-              <Pressable onPress={onCancel} style={styles.linkBtn}>
-                <Text style={styles.linkBtnText}>
-                  {ui.downloading ? 'Sitisha' : 'Baadaye'}
+              {installedName || latestName ? (
+                <View style={styles.versionRow}>
+                  {installedName ? <Text style={styles.versionMuted}>{installedName}</Text> : null}
+                  {installedName && latestName ? (
+                    <Text style={styles.versionArrow}> → </Text>
+                  ) : null}
+                  {latestName ? <Text style={styles.versionGold}>{latestName}</Text> : null}
+                  {sizeText ? <Text style={styles.versionMuted}> · {sizeText}</Text> : null}
+                </View>
+              ) : null}
+
+              {phase === 'downloading' || phase === 'verifying' ? (
+                <View style={styles.progressBlock}>
+                  <View style={styles.progressTrack}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        { width: percent >= 0 ? `${Math.max(4, percent)}%` : '12%' },
+                      ]}
+                    />
+                  </View>
+                  {percent >= 0 ? (
+                    <Text style={styles.progressPct}>{percent}%</Text>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {phase === 'failed' && ui.failedReason ? (
+                <Text style={styles.errorText}>Download failed: {String(ui.failedReason)}</Text>
+              ) : null}
+
+              {phase === 'needs_permission' ? (
+                <Text style={styles.warnText}>
+                  Allow Osmani TV to install from this source, then tap OPEN INSTALLER again.
                 </Text>
+              ) : null}
+
+              <Pressable
+                style={[styles.ctaWrap, primaryDisabled && styles.ctaDisabled]}
+                onPress={onPrimary}
+                disabled={primaryDisabled}
+              >
+                <LinearGradient
+                  colors={ACCENT_GRADIENT}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.ctaGradient}
+                >
+                  {busy ? <ActivityIndicator color="#111827" style={styles.ctaSpinner} /> : null}
+                  <Text style={styles.ctaText}>{primaryLabel}</Text>
+                </LinearGradient>
               </Pressable>
-            )}
+
+              {showCancel ? (
+                <Pressable style={styles.secondaryBtn} onPress={onCancel}>
+                  <Text style={styles.secondaryBtnText}>
+                    {phase === 'downloading' || phase === 'verifying' ? 'CANCEL' : 'CANCEL'}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </ScrollView>
           </View>
         </View>
       </View>
@@ -239,139 +279,166 @@ export default function UpdateOverlay() {
 }
 
 const styles = StyleSheet.create({
-  scrim: {
+  overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.78)',
-    alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    alignItems: 'center',
+    paddingHorizontal: 16,
   },
-  card: {
+  centeredWrap: {
     width: '100%',
-    maxWidth: 420,
-    backgroundColor: COLORS.card,
+    maxWidth: 520,
+    alignSelf: 'center',
+  },
+  sheet: {
+    width: '100%',
+    overflow: 'hidden',
+    backgroundColor: SHEET_BG,
     borderRadius: 22,
-    paddingHorizontal: 22,
-    paddingTop: 24,
-    paddingBottom: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  iconWrap: {
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  iconBg: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: COLORS.gold,
+    borderColor: 'rgba(250,204,21,0.18)',
+    elevation: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.45,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 0 },
+    shadowRadius: 22,
+  },
+  scrollInner: {
+    paddingBottom: Platform.OS === 'ios' ? 4 : 8,
+  },
+  handleBar: {
+    alignSelf: 'center',
+    width: 44,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(250,204,21,0.30)',
+    marginBottom: 14,
   },
   title: {
-    color: COLORS.white,
-    fontSize: 20,
-    fontWeight: '700',
+    color: '#F9FAFB',
+    fontSize: 18,
+    fontWeight: '800',
     textAlign: 'center',
+    letterSpacing: 0.6,
+    marginBottom: 12,
   },
-  subtitle: {
-    color: COLORS.muted,
-    fontSize: 14,
+  body: {
+    color: TEXT_MUTED,
+    fontSize: 15,
+    lineHeight: 22,
     textAlign: 'center',
-    marginTop: 6,
-    lineHeight: 20,
+    marginBottom: 14,
+    paddingHorizontal: 2,
   },
   versionRow: {
-    marginTop: 14,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'center',
-    flexWrap: 'wrap',
+    marginBottom: 14,
   },
   versionMuted: {
-    color: COLORS.muted,
+    color: TEXT_MUTED,
     fontSize: 13,
     fontWeight: '600',
   },
+  versionArrow: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+  },
   versionGold: {
-    color: COLORS.gold,
+    color: '#FFCB3D',
     fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.3,
   },
-  notes: {
-    marginTop: 14,
-    color: COLORS.muted,
-    fontSize: 13,
-    lineHeight: 19,
-    textAlign: 'left',
+  progressBlock: {
+    marginBottom: 16,
   },
-  progressBarTrack: {
-    marginTop: 16,
-    height: 6,
+  progressTrack: {
+    height: 8,
     borderRadius: 4,
     backgroundColor: 'rgba(255,255,255,0.08)',
     overflow: 'hidden',
   },
-  progressBarFill: {
+  progressFill: {
     height: '100%',
-    backgroundColor: COLORS.gold,
+    backgroundColor: '#FFCB3D',
     borderRadius: 4,
   },
-  error: {
-    marginTop: 12,
-    color: COLORS.danger,
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  warn: {
-    marginTop: 12,
-    color: COLORS.gold,
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-  actions: {
-    marginTop: 18,
-  },
-  primaryBtn: {
-    backgroundColor: COLORS.gold,
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-    shadowColor: COLORS.gold,
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 4,
-  },
-  primaryBtnText: {
-    color: '#000',
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  linkBtn: {
-    marginTop: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  linkBtnText: {
-    color: COLORS.muted,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  linkBtnTextDanger: {
-    color: COLORS.danger,
+  progressPct: {
+    marginTop: 8,
+    color: '#FFCB3D',
     fontSize: 14,
     fontWeight: '700',
+    textAlign: 'center',
+  },
+  errorText: {
+    color: '#F87171',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  warnText: {
+    color: '#FFCB3D',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  ctaWrap: {
+    width: '100%',
+    minHeight: 58,
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: 12,
+    elevation: 14,
+    shadowColor: '#FACC15',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.55,
+    shadowRadius: 18,
+  },
+  ctaDisabled: {
+    opacity: 0.65,
+  },
+  ctaGradient: {
+    minHeight: 58,
+    paddingVertical: 17,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    borderRadius: 18,
+  },
+  ctaSpinner: {
+    marginRight: 10,
+  },
+  ctaText: {
+    color: '#111827',
+    fontSize: 17,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  secondaryBtn: {
+    width: '100%',
+    minHeight: 52,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.02)',
+  },
+  secondaryBtnText: {
+    color: '#E5E7EB',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 0.4,
   },
 });

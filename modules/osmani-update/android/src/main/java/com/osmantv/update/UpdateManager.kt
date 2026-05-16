@@ -24,7 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Public JS API (called from `lib/updateClient.js`):
  *   - getInstalledVersion()                                  → Bundle  (sync)
  *   - checkForUpdate(apiBase, deviceId?)                     → Promise<Bundle>
- *   - downloadAndInstall(apkUrl, expectedSha256?)            → Promise<Bundle>
+ *   - downloadAndInstall(apkUrl, expectedSha256?)            → Promise<Bundle> (download + verify only)
+ *   - launchInstaller()                                     → Promise<Bundle>
  *   - cancelDownload()                                       → void
  *   - quitApp()                                              → void   (FORCE cancel)
  *
@@ -33,6 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   { state: "checking" }
  *   { state: "downloading", downloaded: Long, total: Long, percent: Int }
  *   { state: "verifying" }
+ *   { state: "downloaded", filePath: String }
  *   { state: "installing", filePath: String }
  *   { state: "needs_unknown_sources_permission" }
  *   { state: "failed", error: String }
@@ -48,6 +50,8 @@ class UpdateManager : Module() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val downloading = AtomicBoolean(false)
     private val cancelRequested = AtomicBoolean(false)
+    @Volatile
+    private var pendingApkFile: File? = null
 
     override fun definition() = ModuleDefinition {
         Name("OsmaniUpdate")
@@ -156,6 +160,44 @@ class UpdateManager : Module() {
                             null
                         }
 
+                    pendingApkFile = file
+                    emit(
+                        Bundle().apply {
+                            putString("state", "downloaded")
+                            putString("filePath", file.absolutePath)
+                        }
+                    )
+                    promise.resolve(
+                        Bundle().apply {
+                            putString("status", "downloaded")
+                            putString("filePath", file.absolutePath)
+                            putString("verifiedSha256", verify?.actual ?: "")
+                            putBoolean("sha256Verified", verify != null)
+                        }
+                    )
+                } catch (t: Throwable) {
+                    val msg = t.message ?: t.javaClass.simpleName
+                    emit(stateBundle("failed", error = msg))
+                    promise.reject("ERR_UPDATE_DOWNLOAD", msg, t)
+                } finally {
+                    downloading.set(false)
+                    cancelRequested.set(false)
+                }
+            }
+        }
+
+        AsyncFunction("launchInstaller") { promise: Promise ->
+            scope.launch {
+                try {
+                    val ctx = appContext.reactContext
+                        ?: throw IllegalStateException("react context unavailable")
+                    val file = pendingApkFile
+                        ?: throw IllegalStateException("no_downloaded_apk")
+                    if (!file.exists() || file.length() <= 0L) {
+                        pendingApkFile = null
+                        throw IllegalStateException("missing_apk_file")
+                    }
+
                     emit(
                         Bundle().apply {
                             putString("state", "installing")
@@ -170,8 +212,6 @@ class UpdateManager : Module() {
                                 Bundle().apply {
                                     putString("status", "installer_launched")
                                     putString("filePath", file.absolutePath)
-                                    putString("verifiedSha256", verify?.actual ?: "")
-                                    putBoolean("sha256Verified", verify != null)
                                 }
                             )
                         }
@@ -192,10 +232,7 @@ class UpdateManager : Module() {
                 } catch (t: Throwable) {
                     val msg = t.message ?: t.javaClass.simpleName
                     emit(stateBundle("failed", error = msg))
-                    promise.reject("ERR_UPDATE_DOWNLOAD", msg, t)
-                } finally {
-                    downloading.set(false)
-                    cancelRequested.set(false)
+                    promise.reject("ERR_UPDATE_INSTALL", msg, t)
                 }
             }
         }
@@ -204,6 +241,10 @@ class UpdateManager : Module() {
             if (downloading.get()) {
                 cancelRequested.set(true)
             }
+            pendingApkFile?.let {
+                try { it.delete() } catch (_: Throwable) {}
+            }
+            pendingApkFile = null
         }
 
         Function("quitApp") {
@@ -287,6 +328,7 @@ private fun UpdateInfo.toBundle(installedVersionCode: Int, installedVersionName:
         putString("playStoreUrl", playStoreUrl ?: "")
         putString("releaseNotes", releaseNotes ?: "")
         putString("notice", notice ?: "")
+        putString("title", title ?: "")
         putString("source", source ?: "")
         putInt("installedVersionCode", installedVersionCode)
         putString("installedVersionName", installedVersionName)

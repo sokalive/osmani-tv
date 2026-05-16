@@ -151,6 +151,7 @@ internal data class UpdateInfo(
     val playStoreUrl: String?,
     val releaseNotes: String?,
     val notice: String?,
+    val title: String?,
     val source: String?,
 ) {
     companion object {
@@ -171,7 +172,8 @@ internal data class UpdateInfo(
                 apkSizeBytes = pickLong(j, "apk_size_bytes", "apkSizeBytes") ?: 0L,
                 playStoreUrl = pickString(j, "play_store_url", "playStoreUrl", "playstore_url", "playstoreUrl"),
                 releaseNotes = pickString(j, "release_notes", "releaseNotes"),
-                notice = pickString(j, "notice", "message", "update_notice", "updateNotice"),
+                notice = pickString(j, "notice", "message", "update_notice", "updateNotice", "body"),
+                title = pickString(j, "title", "update_title", "updateTitle", "heading"),
                 source = pickString(j, "source", "update_source", "updateSource"),
             )
         }

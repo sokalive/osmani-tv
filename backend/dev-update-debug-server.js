@@ -115,6 +115,7 @@ app.get('/api/update-check', (req, res) => {
     auto_download: !!currentSettings.auto_download,
     server_time: nowIso(),
     notice: currentSettings.notice || '',
+    title: currentSettings.title || '',
     latest_version_code: Number(currentSettings.latest_version_code || 0),
     latest_version_name: String(currentSettings.latest_version_name || ''),
     min_supported_version_code: Number(currentSettings.min_supported_version_code || 0),

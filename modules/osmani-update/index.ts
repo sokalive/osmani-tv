@@ -18,6 +18,7 @@ export interface UpdateInfo {
   playStoreUrl: string;
   releaseNotes: string;
   notice: string;
+  title: string;
   source: string;
   installedVersionCode: number;
   installedVersionName: string;
@@ -39,9 +40,17 @@ export type UpdateState =
       percent: number;
     }
   | { state: 'verifying' }
+  | { state: 'downloaded'; filePath: string }
   | { state: 'installing'; filePath: string }
   | { state: 'needs_unknown_sources_permission' }
   | { state: 'failed'; error: string };
+
+export interface DownloadResult {
+  status: 'downloaded';
+  filePath: string;
+  verifiedSha256?: string;
+  sha256Verified?: boolean;
+}
 
 export interface InstallResult {
   status: 'installer_launched' | 'needs_unknown_sources_permission';
@@ -69,11 +78,15 @@ export async function checkForUpdate(
 export async function downloadAndInstall(
   apkUrl: string,
   expectedSha256?: string | null,
-): Promise<InstallResult> {
+): Promise<DownloadResult> {
   return (await NativeModule.downloadAndInstall(
     apkUrl,
     expectedSha256 ?? null,
-  )) as InstallResult;
+  )) as DownloadResult;
+}
+
+export async function launchInstaller(): Promise<InstallResult> {
+  return (await NativeModule.launchInstaller()) as InstallResult;
 }
 
 export function cancelDownload(): void {
