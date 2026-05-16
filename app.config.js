@@ -132,6 +132,11 @@ module.exports = {
       resizeMode: 'contain',
       backgroundColor: '#000000',
     },
+    androidStatusBar: {
+      backgroundColor: '#000000',
+      barStyle: 'light-content',
+      translucent: false,
+    },
     ios: {
       bundleIdentifier: 'com.burudanitv.app',
       supportsTablet: true,
@@ -150,7 +155,12 @@ module.exports = {
       icon: BRAND_ASSETS.icon,
       adaptiveIcon: {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
-        backgroundColor: '#ffffff',
+        backgroundColor: '#000000',
+      },
+      splash: {
+        image: BRAND_ASSETS.splash,
+        resizeMode: 'contain',
+        backgroundColor: '#000000',
       },
       edgeToEdgeEnabled: true,
       package: 'com.burudanitv.app',
@@ -174,6 +184,15 @@ module.exports = {
         process.env.EXPO_PUBLIC_ANDROID_SIGNING_CERT_SHA256?.trim?.() || '',
     },
     plugins: [
+      [
+        'expo-splash-screen',
+        {
+          backgroundColor: '#000000',
+          image: BRAND_ASSETS.splash,
+          resizeMode: 'contain',
+          imageWidth: 240,
+        },
+      ],
       [
         'onesignal-expo-plugin',
         {

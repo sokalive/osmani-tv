@@ -1,4 +1,5 @@
 import 'react-native-gesture-handler';
+import './lib/startupSplashBoot';
 import './lib/oneSignalBoot';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
@@ -65,6 +66,7 @@ import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
 import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
+import { useStartupSplash } from './hooks/useStartupSplash';
 import {
   clearPendingManualGiftKey,
   readManualGiftAck,
@@ -1465,6 +1467,7 @@ function AppTabs() {
 
 export default function App() {
   const [navigationRevision, setNavigationRevision] = useState(0);
+  const splashHidden = useStartupSplash();
   useGlobalSecureScreen();
 
   useLayoutEffect(() => {
@@ -1503,44 +1506,49 @@ export default function App() {
   }, []);
 
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={styles.appRoot}>
+      <StatusBar style="light" backgroundColor="#000000" />
       <OsmaniAppProvider>
         <SecurityProvider>
-        <ModalSheetCoordinatorProvider>
-          <NavigationContainer
-            ref={navigationRef}
-            linking={osmaniLinking}
-            theme={{
-              ...DarkTheme,
-              colors: {
-                ...DarkTheme.colors,
-                background: COLORS.background,
-                card: COLORS.card,
-                border: 'rgba(255,255,255,0.06)',
-              },
-            }}
-            onReady={() => {
-              setNavigationRevision((n) => n + 1);
-              const pending = pendingOsmaniUrlRef.current;
-              if (pending) {
-                pendingOsmaniUrlRef.current = null;
-                openOsmaniUrlRef.current(pending);
-              }
-            }}
-            onStateChange={() => setNavigationRevision((n) => n + 1)}
-          >
-            <RootNavigator />
-          </NavigationContainer>
-          <GlobalEmergencyGate />
-          <WhatsAppFloatingButtonGate
-            navigationRef={navigationRef}
-            navigationRevision={navigationRevision}
-          />
-          <PopupSettingsModal />
-          <UpdateOverlay />
-          <OtaDebugOverlay />
-          <SubscriptionLifecycleGates />
-        </ModalSheetCoordinatorProvider>
+          {splashHidden ? (
+            <ModalSheetCoordinatorProvider>
+              <NavigationContainer
+                ref={navigationRef}
+                linking={osmaniLinking}
+                theme={{
+                  ...DarkTheme,
+                  colors: {
+                    ...DarkTheme.colors,
+                    background: COLORS.background,
+                    card: COLORS.card,
+                    border: 'rgba(255,255,255,0.06)',
+                  },
+                }}
+                onReady={() => {
+                  setNavigationRevision((n) => n + 1);
+                  const pending = pendingOsmaniUrlRef.current;
+                  if (pending) {
+                    pendingOsmaniUrlRef.current = null;
+                    openOsmaniUrlRef.current(pending);
+                  }
+                }}
+                onStateChange={() => setNavigationRevision((n) => n + 1)}
+              >
+                <RootNavigator />
+              </NavigationContainer>
+              <GlobalEmergencyGate />
+              <WhatsAppFloatingButtonGate
+                navigationRef={navigationRef}
+                navigationRevision={navigationRevision}
+              />
+              <PopupSettingsModal />
+              <UpdateOverlay />
+              <OtaDebugOverlay />
+              <SubscriptionLifecycleGates />
+            </ModalSheetCoordinatorProvider>
+          ) : (
+            <View style={styles.startupSplashPlaceholder} />
+          )}
         </SecurityProvider>
       </OsmaniAppProvider>
     </SafeAreaProvider>
@@ -1619,6 +1627,14 @@ function SubscriptionLifecycleGates() {
 }
 
 const styles = StyleSheet.create({
+  appRoot: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  startupSplashPlaceholder: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
   listContent: {
     paddingHorizontal: HORIZONTAL_PADDING,
     paddingTop: 12,
