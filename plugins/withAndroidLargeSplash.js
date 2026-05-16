@@ -14,7 +14,7 @@ const {
 const SPLASH_THEME_PARENT = { name: 'Theme.App.SplashScreen', parent: 'Theme.SplashScreen' };
 const SPLASH_LOGO_WIDTH_DP = 288;
 const SPLASH_CANVAS_DP = 288;
-const SPLASH_BG = '#000000';
+const SPLASH_BG = '#FFFFFF';
 
 const DENSITY_BUCKETS = {
   mdpi: { folder: 'drawable-mdpi', multiplier: 1 },
@@ -58,7 +58,7 @@ async function writeLargeSplashDrawables(projectRoot, imageRelativePath) {
         { projectRoot, cacheType: 'splash-android-large' },
         {
           src: imageRelativePath,
-          resizeMode: 'contain',
+          resizeMode: 'cover',
           width: logoPx,
           height: logoPx,
           backgroundColor: SPLASH_BG,
