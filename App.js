@@ -240,10 +240,8 @@ function mapApiChannelToCard(raw, index, freeMode = false, serverHealth = null) 
   };
 }
 
-/** First auto-attempt for near-expiry modal after Home gains focus (subscription context ready). */
-const HOME_EXPIRY_REMINDER_MS = 2000;
-/** After user taps CANCEL on expiry modal, suppress auto re-open for this session (resume uses same rule). */
-const EXPIRY_MODAL_DISMISS_COOLDOWN_MS = 30 * 60 * 1000;
+/** Staggered near-expiry modal attempts after Home focus (subscription context may load after mount). */
+const HOME_EXPIRY_REMINDER_DELAYS_MS = [0, 800, 2000, 5000];
 /** Home floating banner: hidden gap then visible window (repeats). */
 const HOME_EXPIRY_FLOATER_GAP_MS = 5 * 60 * 1000;
 const HOME_EXPIRY_FLOATER_SHOW_MS = 3 * 60 * 1000;
@@ -281,7 +279,7 @@ function ChannelCatalogScreen({
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [expiryReminderVisible, setExpiryReminderVisible] = useState(false);
-  const [expiryReminderDisplaySiku, setExpiryReminderDisplaySiku] = useState(1);
+  const [expiryReminderRemainingMs, setExpiryReminderRemainingMs] = useState(0);
   const [homeFloaterVisible, setHomeFloaterVisible] = useState(false);
   const [manualGiftVisible, setManualGiftVisible] = useState(false);
   const [manualGiftAckBusy, setManualGiftAckBusy] = useState(false);
@@ -313,7 +311,8 @@ function ChannelCatalogScreen({
   const subscriptionDetailsRef = useRef(subscriptionDetails);
   const subscriptionExpiresAtRef = useRef(subscriptionExpiresAt);
   const freeModeRef = useRef(freeMode);
-  const lastExpiryDismissAtRef = useRef(0);
+  /** CANCEL hides until next background or resume (not a long cooldown). */
+  const expiryDismissedUntilLeaveRef = useRef(false);
   const homeFloaterPhaseRef = useRef(/** @type {'gap'|'show'} */ ('gap'));
   const homeFloaterDeadlineRef = useRef(0);
   const homeFloaterBootRef = useRef(false);
@@ -493,13 +492,8 @@ function ChannelCatalogScreen({
         reminderCoordLog('defer', source, 'reason=manual_gift_blocking');
         return false;
       }
-      const dismissedAgo = Date.now() - (lastExpiryDismissAtRef.current || 0);
-      if (
-        source !== 'after_manual_gift_close' &&
-        lastExpiryDismissAtRef.current &&
-        dismissedAgo < EXPIRY_MODAL_DISMISS_COOLDOWN_MS
-      ) {
-        reminderCoordLog('skip', source, 'reason=dismiss_cooldown', { dismissedAgo });
+      if (expiryDismissedUntilLeaveRef.current && source !== 'after_manual_gift_close') {
+        reminderCoordLog('skip', source, 'reason=dismissed_until_leave');
         return false;
       }
       if (isBlockingSheetActive) {
@@ -527,10 +521,15 @@ function ChannelCatalogScreen({
         });
         return false;
       }
-      setExpiryReminderDisplaySiku(snap.displaySikuX);
+      setExpiryReminderRemainingMs(snap.remainingMs);
+      if (expiryReminderVisibleRef.current) {
+        reminderCoordLog('refresh', source, { remainingMs: snap.remainingMs });
+        return true;
+      }
       setExpiryReminderVisible(true);
       deferredReminderRef.current = false;
       reminderCoordLog('open', source, {
+        remainingMs: snap.remainingMs,
         displaySikuX: snap.displaySikuX,
         blockingSheetCount,
         premiumModalVisible,
@@ -546,17 +545,31 @@ function ChannelCatalogScreen({
     useCallback(() => {
       if (!enableHomeExpiryReminder) return undefined;
       let cancelled = false;
-      const tid = setTimeout(() => {
-        if (cancelled) return;
-        reminderCoordLog('timer_fire');
-        tryShowExpiryReminderRef.current('timer');
-      }, HOME_EXPIRY_REMINDER_MS);
+      const timers = HOME_EXPIRY_REMINDER_DELAYS_MS.map((delayMs, index) =>
+        setTimeout(() => {
+          if (cancelled) return;
+          reminderCoordLog('timer_fire', { delayMs, index });
+          tryShowExpiryReminderRef.current(index === 0 ? 'focus_immediate' : 'focus_retry');
+        }, delayMs),
+      );
       return () => {
         cancelled = true;
-        clearTimeout(tid);
+        timers.forEach(clearTimeout);
       };
-    }, [enableHomeExpiryReminder]),
+    }, [enableHomeExpiryReminder, subscriptionVersion]),
   );
+
+  useEffect(() => {
+    if (!enableHomeExpiryReminder) return;
+    tryShowExpiryReminderRef.current('subscription_ready');
+  }, [
+    enableHomeExpiryReminder,
+    subscriptionVersion,
+    subscriptionExpiresAt,
+    isSubscribed,
+    subscriptionDetails?.expiresAt,
+    subscriptionDetails?.serverTime,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -592,16 +605,51 @@ function ChannelCatalogScreen({
 
   useEffect(() => {
     if (!enableHomeExpiryReminder) return undefined;
+    let resumeTimers = [];
+    const clearResumeTimers = () => {
+      resumeTimers.forEach(clearTimeout);
+      resumeTimers = [];
+    };
     const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'background' || next === 'inactive') {
+        clearResumeTimers();
+        expiryDismissedUntilLeaveRef.current = false;
+        return;
+      }
       if (next === 'active') {
+        clearResumeTimers();
+        expiryDismissedUntilLeaveRef.current = false;
         void tryShowManualGiftRef.current('app_resume');
-        setTimeout(() => {
-          tryShowExpiryReminderRef.current('app_resume');
-        }, 900);
+        resumeTimers = [0, 600, 1500].map((delayMs) =>
+          setTimeout(() => {
+            tryShowExpiryReminderRef.current('app_resume');
+          }, delayMs),
+        );
       }
     });
-    return () => sub.remove();
+    return () => {
+      clearResumeTimers();
+      sub.remove();
+    };
   }, [enableHomeExpiryReminder]);
+
+  useEffect(() => {
+    if (!enableHomeExpiryReminder || !expiryReminderVisible) return undefined;
+    const id = setInterval(() => {
+      const snap = computeNearExpirySnapshot({
+        isSubscribed: isSubscribedRef.current,
+        freeMode: freeModeRef.current,
+        subscriptionDetails: subscriptionDetailsRef.current,
+        subscriptionExpiresAt: subscriptionExpiresAtRef.current,
+      });
+      if (!snap.eligible) {
+        setExpiryReminderVisible(false);
+        return;
+      }
+      setExpiryReminderRemainingMs(snap.remainingMs);
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [enableHomeExpiryReminder, expiryReminderVisible, subscriptionVersion]);
 
   useEffect(() => {
     if (!enableHomeExpiryReminder || navigatorTabKey !== 'home') {
@@ -700,7 +748,7 @@ function ChannelCatalogScreen({
   }, [expiryReminderVisible, enableHomeExpiryReminder]);
 
   const dismissExpiryReminder = useCallback(() => {
-    lastExpiryDismissAtRef.current = Date.now();
+    expiryDismissedUntilLeaveRef.current = true;
     setExpiryReminderVisible(false);
   }, []);
 
@@ -1216,7 +1264,7 @@ function ChannelCatalogScreen({
       {mountReminderModal ? (
         <SubscriptionExpiryReminderModal
           visible
-          displaySikuX={expiryReminderDisplaySiku}
+          remainingMs={expiryReminderRemainingMs}
           onRenew={onRenewFromExpiryReminder}
           onCancel={dismissExpiryReminder}
         />

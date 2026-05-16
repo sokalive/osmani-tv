@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { formatNearExpiryReminderPhrase } from '../lib/subscriptionNearExpiry';
 import {
   BackHandler,
   Dimensions,
@@ -25,19 +26,31 @@ const MAX_SHEET_H = Math.min(420, Math.round(WINDOW_HEIGHT * 0.78));
  * Near-expiry reminder — same visual language as PremiumModal / ManualSubscriptionGiftModal.
  * @param {{
  *   visible: boolean;
- *   displaySikuX: number;
+ *   remainingMs: number;
  *   onRenew: () => void;
  *   onCancel: () => void;
  * }} props
  */
 export default function SubscriptionExpiryReminderModal({
   visible,
-  displaySikuX,
+  remainingMs,
   onRenew,
   onCancel,
 }) {
   const insets = useSafeAreaInsets();
-  const x = Math.max(1, Math.min(99, Number(displaySikuX) || 1));
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!visible) return undefined;
+    setTick((t) => t + 1);
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, [visible, remainingMs]);
+
+  const phrase = useMemo(
+    () => formatNearExpiryReminderPhrase(remainingMs),
+    [remainingMs, tick],
+  );
 
   useEffect(() => {
     if (!visible) return undefined;
@@ -70,8 +83,8 @@ export default function SubscriptionExpiryReminderModal({
               <View style={styles.handleBar} />
               <Text style={styles.title}>KIFURUSHI 💰</Text>
               <Text style={styles.body}>
-                Habari! Kifurushi chako kimebakiza siku {x} kuisha. Tafadhali lipia mapema kabla ya kifurushi
-                chako kuisha kuepuka kukosa burudani.
+                Habari! Kifurushi chako {phrase} kuisha. Tafadhali lipia mapema kabla ya kifurushi chako kuisha
+                kuepuka kukosa burudani.
               </Text>
               <Pressable style={styles.ctaWrap} onPress={onRenew}>
                 <LinearGradient

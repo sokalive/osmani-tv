@@ -63,6 +63,47 @@ function loadAndroidProguardRules() {
 
 const androidProguardRules = loadAndroidProguardRules();
 
+/** Canonical Expo brand paths — only these are embedded in native builds. */
+const BRAND_ASSETS = {
+  icon: './assets/icon.png',
+  adaptiveIcon: './assets/adaptive-icon.png',
+  splash: './assets/splash-icon.png',
+  favicon: './assets/favicon.png',
+};
+
+function assertBrandAsset(relPath, label) {
+  const abs = path.join(__dirname, relPath.replace(/^\.\//, ''));
+  if (!fs.existsSync(abs)) {
+    throw new Error(`[app.config] Missing ${label}: ${relPath}`);
+  }
+  return relPath;
+}
+
+function warnIfDuplicateBrandAssetsNewer() {
+  const pairs = [
+    ['assets/icon (2).png', BRAND_ASSETS.icon],
+    ['assets/adaptive-icon (2).png', BRAND_ASSETS.adaptiveIcon],
+  ];
+  for (const [dupeRel, canonicalRel] of pairs) {
+    const dupe = path.join(__dirname, dupeRel);
+    const canonical = path.join(__dirname, canonicalRel.replace(/^\.\//, ''));
+    if (!fs.existsSync(dupe) || !fs.existsSync(canonical)) continue;
+    const dupeStat = fs.statSync(dupe);
+    const canStat = fs.statSync(canonical);
+    if (dupeStat.mtimeMs > canStat.mtimeMs + 1000 || dupeStat.size > canStat.size * 2) {
+      console.warn(
+        `[app.config] "${dupeRel}" is newer/larger than "${canonicalRel}". ` +
+          'Expo embeds only canonical paths — run: npm run sync:brand-assets',
+      );
+    }
+  }
+}
+
+for (const [key, rel] of Object.entries(BRAND_ASSETS)) {
+  assertBrandAsset(rel, key);
+}
+warnIfDuplicateBrandAssetsNewer();
+
 if (!googleServicesFile) {
   console.warn(
     '[app.config] Missing Android FCM config: add committed ./google-services.json or set GOOGLE_SERVICES_JSON (EAS file secret / JSON) for OneSignal + FCM on EAS builds.',
@@ -82,12 +123,12 @@ module.exports = {
     slug: 'osmani-tv',
     version: '1.0.0',
     orientation: 'portrait',
-    icon: './assets/icon.png',
+    icon: BRAND_ASSETS.icon,
     scheme: 'osmani',
     userInterfaceStyle: 'dark',
     newArchEnabled: true,
     splash: {
-      image: './assets/splash-icon.png',
+      image: BRAND_ASSETS.splash,
       resizeMode: 'contain',
       backgroundColor: '#000000',
     },
@@ -106,9 +147,9 @@ module.exports = {
       },
     },
     android: {
-      icon: './assets/icon.png',
+      icon: BRAND_ASSETS.icon,
       adaptiveIcon: {
-        foregroundImage: './assets/adaptive-icon.png',
+        foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#ffffff',
       },
       edgeToEdgeEnabled: true,
@@ -117,7 +158,7 @@ module.exports = {
       ...(googleServicesFile ? { googleServicesFile } : {}),
     },
     web: {
-      favicon: './assets/favicon.png',
+      favicon: BRAND_ASSETS.favicon,
     },
     extra: {
       eas: {
