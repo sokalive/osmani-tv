@@ -154,6 +154,24 @@ internal data class UpdateInfo(
     val title: String?,
     val source: String?,
 ) {
+    /**
+     * Server may broadcast FORCE/SOFT globally; only outdated installs should see update UI.
+     * When [installedVersionCode] meets or exceeds the published target, treat as satisfied.
+     */
+    fun effectiveDecision(installedVersionCode: Int): UpdateDecision {
+        if (decision == UpdateDecision.NONE) return UpdateDecision.NONE
+        val target = serverVersionCodeTarget()
+        if (target <= 0) return decision
+        return if (installedVersionCode >= target) UpdateDecision.NONE else decision
+    }
+
+    /** Primary: latest_version_code; fallback: min_supported_version_code when latest is unset. */
+    fun serverVersionCodeTarget(): Int = when {
+        latestVersionCode > 0 -> latestVersionCode
+        minSupportedVersionCode > 0 -> minSupportedVersionCode
+        else -> 0
+    }
+
     companion object {
         fun fromJson(j: JSONObject): UpdateInfo {
             val rawDecision = pickString(j, "decision", "update_decision", "updateDecision")

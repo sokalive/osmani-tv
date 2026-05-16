@@ -317,7 +317,14 @@ class UpdateManager : Module() {
 
 private fun UpdateInfo.toBundle(installedVersionCode: Int, installedVersionName: String): Bundle =
     Bundle().apply {
-        putString("decision", decision.name)
+        val effective = effectiveDecision(installedVersionCode)
+        val suppressed = effective != decision
+        putString("decision", effective.name)
+        putBoolean("updateSuppressed", suppressed)
+        if (suppressed) {
+            putString("rawDecision", decision.name)
+            putInt("serverVersionCodeTarget", serverVersionCodeTarget())
+        }
         putInt("latestVersionCode", latestVersionCode)
         putString("latestVersionName", latestVersionName)
         putInt("minSupportedVersionCode", minSupportedVersionCode)
