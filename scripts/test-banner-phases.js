@@ -88,4 +88,21 @@ const staticSlide = normalizeBanner({ id: 1, title: 'Static' }, 0);
 assert(getBannerRuntimeState(staticSlide, Date.now()) == null, 'static no runtime');
 assert(isBannerVisibleAt(staticSlide, Date.now()), 'static visible');
 
+const countdownOnlyDaily = normalizeBanner(
+  {
+    id: 11,
+    enableCountdown: true,
+    enable_countdown: true,
+    useTimer: false,
+    event_timer: false,
+    startTime: '22:00',
+    endTime: '22:53',
+  },
+  0,
+);
+assert(countdownOnlyDaily.hasDailyTimer, 'countdown ON + daily window = daily timer');
+assert(bannerShowsRuntimeUi(countdownOnlyDaily), 'countdown-only shows runtime UI');
+const countdownRuntime = getBannerRuntimeState(countdownOnlyDaily, atLocal(14, 0));
+assert(countdownRuntime?.statusLine.startsWith('COMING SOON'), 'countdown-only coming soon');
+
 console.log('banner phase smoke tests: OK');

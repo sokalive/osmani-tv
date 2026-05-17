@@ -13,6 +13,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   bannerNeedsRuntimeTick,
+  bannerShowsRuntimeUi,
   formatCountdownClock,
   getBannerRuntimeState,
 } from '../lib/normalizeBanner';
@@ -44,12 +45,7 @@ function RuntimePill({ variant, children }) {
         : styles.pillBlue;
   return (
     <View style={[styles.runtimePill, pillStyle]}>
-      <Text
-        style={styles.runtimePillText}
-        numberOfLines={2}
-        adjustsFontSizeToFit
-        minimumFontScale={0.82}
-      >
+      <Text style={styles.runtimePillText} numberOfLines={2}>
         {children}
       </Text>
     </View>
@@ -83,13 +79,14 @@ function useBadgePulse(enabled) {
   return opacity;
 }
 
-const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, runtimeTick, nowMs }) {
+const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const showRuntimeUi = bannerShowsRuntimeUi(slide);
 
   const runtime = useMemo(() => {
-    if (!runtimeTick) return null;
+    if (!showRuntimeUi) return null;
     return getBannerRuntimeState(slide, nowMs);
-  }, [slide, runtimeTick, nowMs]);
+  }, [slide, showRuntimeUi, nowMs]);
 
   const showAdminBadge =
     !runtime && slide.badgeEnabled && slide.badgeText.length > 0;
@@ -131,17 +128,17 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, runtime
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.overlay}>
-        {runtime ? (
-          <View style={styles.runtimeBlock}>
-            <RuntimePill variant="en">{runtime.statusLine}</RuntimePill>
-            {runtime.subtitleLine ? (
-              <RuntimePill variant="sw">{runtime.subtitleLine}</RuntimePill>
-            ) : null}
-            {countdownClock ? (
-              <RuntimePill variant="clock">{countdownClock}</RuntimePill>
-            ) : null}
-          </View>
+        {slide.description && !showRuntimeUi ? (
+          <Text style={styles.desc} numberOfLines={1}>
+            {slide.description}
+          </Text>
         ) : null}
+        <Text
+          style={[styles.title, showRuntimeUi ? styles.titleWithRuntime : null]}
+          numberOfLines={showRuntimeUi ? 1 : 2}
+        >
+          {slide.title}
+        </Text>
         {showAdminBadge ? (
           <Animated.View
             style={[
@@ -157,16 +154,16 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, runtime
             </Text>
           </Animated.View>
         ) : null}
-        <Text
-          style={[styles.title, runtime ? styles.titleWithRuntime : null]}
-          numberOfLines={runtime ? 1 : 2}
-        >
-          {slide.title}
-        </Text>
-        {slide.description && !runtime ? (
-          <Text style={styles.desc} numberOfLines={1}>
-            {slide.description}
-          </Text>
+        {runtime ? (
+          <View style={styles.runtimeBlock} pointerEvents="none">
+            <RuntimePill variant="en">{runtime.statusLine}</RuntimePill>
+            {runtime.subtitleLine ? (
+              <RuntimePill variant="sw">{runtime.subtitleLine}</RuntimePill>
+            ) : null}
+            {countdownClock ? (
+              <RuntimePill variant="clock">{countdownClock}</RuntimePill>
+            ) : null}
+          </View>
         ) : null}
       </View>
     </View>
@@ -362,7 +359,6 @@ function BannerCarousel({
             <BannerSlide
               slide={slide}
               slideWidth={slideWidth}
-              runtimeTick={needsRuntimeTick}
               nowMs={nowMs}
             />
           );
@@ -427,23 +423,25 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   runtimeBlock: {
-    alignSelf: 'stretch',
+    alignSelf: 'center',
     alignItems: 'center',
-    marginBottom: 8,
-    maxWidth: '100%',
+    width: '100%',
+    marginTop: 6,
+    marginBottom: 2,
+    zIndex: 4,
+    elevation: 6,
   },
   runtimePill: {
     alignSelf: 'center',
-    maxWidth: '96%',
-    minWidth: 120,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    maxWidth: '94%',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: 10,
-    marginBottom: 5,
-    elevation: 3,
+    marginBottom: 4,
+    elevation: 4,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.4,
     shadowRadius: 2,
   },
   pillRed: {
@@ -487,8 +485,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   titleWithRuntime: {
-    fontSize: 17,
-    marginTop: 2,
+    fontSize: 16,
+    marginBottom: 2,
   },
   desc: {
     marginTop: 6,
