@@ -11,7 +11,12 @@ import {
   writeSubscriptionCache,
 } from '../api/subscription';
 import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
-import { readBannersCache, writeBannersCache } from '../lib/bannersCache';
+import {
+  dropLegacyBannersCache,
+  readBannersCache,
+  writeBannersCache,
+} from '../lib/bannersCache';
+import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 
@@ -244,10 +249,13 @@ export function OsmaniAppProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false;
-    readBannersCache().then((cached) => {
+    (async () => {
+      await dropLegacyBannersCache();
+      const cached = await readBannersCache();
       if (cancelled || !cached?.banners?.length) return;
       setRawBanners(cached.banners);
-    });
+      logBannerRuntimeDiagnostics(cached.banners);
+    })();
     return () => {
       cancelled = true;
     };
@@ -308,7 +316,9 @@ export function OsmaniAppProvider({ children }) {
       const nextBanners = Array.isArray(bannersResult) ? bannersResult : null;
       setRawBanners((prev) => (nextBanners != null ? nextBanners : prev));
       if (nextBanners != null) {
-        writeBannersCache(nextBanners).catch(() => {});
+        await dropLegacyBannersCache();
+        await writeBannersCache(nextBanners);
+        logBannerRuntimeDiagnostics(nextBanners);
       }
     } catch (e) {
       setError(e?.message ?? 'Failed to load');

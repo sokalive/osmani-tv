@@ -13,7 +13,6 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   bannerNeedsRuntimeTick,
-  bannerShowsRuntimeUi,
   formatCountdownClock,
   getBannerRuntimeState,
 } from '../lib/normalizeBanner';
@@ -81,12 +80,11 @@ function useBadgePulse(enabled) {
 
 const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const showRuntimeUi = bannerShowsRuntimeUi(slide);
-
-  const runtime = useMemo(() => {
-    if (!showRuntimeUi) return null;
-    return getBannerRuntimeState(slide, nowMs);
-  }, [slide, showRuntimeUi, nowMs]);
+  const runtime = useMemo(
+    () => getBannerRuntimeState(slide, nowMs),
+    [slide, nowMs],
+  );
+  const showRuntimeUi = runtime != null;
 
   const showAdminBadge =
     !runtime && slide.badgeEnabled && slide.badgeText.length > 0;
