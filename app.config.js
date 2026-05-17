@@ -121,7 +121,8 @@ module.exports = {
   expo: {
     name: 'Osmani TV',
     slug: 'osmani-tv',
-    version: '1.0.0',
+    /** User-visible version (Android versionName / iOS CFBundleShortVersionString). */
+    version: 'v13',
     orientation: 'portrait',
     icon: BRAND_ASSETS.icon,
     scheme: 'osmani',
@@ -157,8 +158,8 @@ module.exports = {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#000000',
       },
-      /** Must exceed Play Console latest upload (currently 11). */
-      versionCode: 12,
+      /** Must exceed Play Console latest upload (currently 12). */
+      versionCode: 13,
       /** Cold-start window color before React (pairs with native splash theme). */
       backgroundColor: '#FFFFFF',
       edgeToEdgeEnabled: true,
