@@ -12,8 +12,9 @@ import { assertPlaybackAllowed, useSecurity } from '../context/SecurityContext';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
+  bannerNeedsRuntimeTick,
   formatCountdownClock,
-  getCountdownState,
+  getBannerRuntimeState,
 } from '../lib/normalizeBanner';
 import {
   buildPlayerChannelFromRow,
@@ -57,24 +58,24 @@ function useBadgePulse(enabled) {
   return opacity;
 }
 
-const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, showCountdown, nowMs }) {
+const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, runtimeTick, nowMs }) {
   const [imageFailed, setImageFailed] = useState(false);
-  const badgeOpacity = useBadgePulse(
-    slide.badgeBlink && slide.badgeEnabled && slide.badgeText.length > 0,
-  );
+
+  const runtime = useMemo(() => {
+    if (!runtimeTick) return null;
+    return getBannerRuntimeState(slide, nowMs);
+  }, [slide, runtimeTick, nowMs]);
+
+  const showAdminBadge =
+    !runtime && slide.badgeEnabled && slide.badgeText.length > 0;
+  const badgeOpacity = useBadgePulse(showAdminBadge && slide.badgeBlink);
+  const countdownClock = runtime
+    ? formatCountdownClock(runtime.remainingSec)
+    : null;
 
   useEffect(() => {
     setImageFailed(false);
   }, [slide.imageUrl, slide.id]);
-
-  const countdown = useMemo(() => {
-    if (!showCountdown) return null;
-    return getCountdownState(slide, nowMs);
-  }, [slide, showCountdown, nowMs]);
-
-  const countdownLabel = countdown
-    ? `${countdown.prefix} ${formatCountdownClock(countdown.remainingSec)}`
-    : null;
 
   return (
     <View style={[styles.slide, { width: slideWidth }]}>
@@ -101,12 +102,19 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, showCou
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.overlay}>
-        {countdownLabel ? (
-          <Text style={styles.countdown} numberOfLines={1}>
-            {countdownLabel}
-          </Text>
+        {runtime ? (
+          <View style={styles.runtimeBlock}>
+            <Text style={styles.runtimeStatus} numberOfLines={2}>
+              {runtime.statusLine}
+            </Text>
+            {countdownClock ? (
+              <Text style={styles.countdown} numberOfLines={1}>
+                {countdownClock}
+              </Text>
+            ) : null}
+          </View>
         ) : null}
-        {slide.badgeEnabled && slide.badgeText.length > 0 ? (
+        {showAdminBadge ? (
           <Animated.View
             style={[
               styles.badge,
@@ -178,17 +186,17 @@ function BannerCarousel({
   const userDraggingRef = useRef(false);
   const [activeSlide, setActiveSlide] = useState(0);
 
-  const needsGlobalTick = useMemo(
-    () => slides.some((s) => s.enableCountdown),
+  const needsRuntimeTick = useMemo(
+    () => slides.some((s) => bannerNeedsRuntimeTick(s)),
     [slides],
   );
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
-    if (!needsGlobalTick) return undefined;
+    if (!needsRuntimeTick) return undefined;
     setNowMs(Date.now());
     const id = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [needsGlobalTick]);
+  }, [needsRuntimeTick]);
 
   const n = slides.length;
 
@@ -323,7 +331,7 @@ function BannerCarousel({
             <BannerSlide
               slide={slide}
               slideWidth={slideWidth}
-              showCountdown={needsGlobalTick}
+              runtimeTick={needsRuntimeTick}
               nowMs={nowMs}
             />
           );
@@ -387,11 +395,20 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     justifyContent: 'flex-end',
   },
+  runtimeBlock: {
+    marginBottom: 8,
+  },
+  runtimeStatus: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    marginBottom: 4,
+  },
   countdown: {
     color: COLORS.greenButton,
     fontSize: 12,
     fontWeight: '700',
-    marginBottom: 8,
     letterSpacing: 0.5,
   },
   badge: {
