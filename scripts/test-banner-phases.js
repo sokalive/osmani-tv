@@ -48,6 +48,17 @@ assert(
 const at11pm = getBannerRuntimeState(slide, atLocal(23, 0));
 assert(at11pm?.statusLine.startsWith('NEXT COMING SOON'), '11pm NEXT COMING SOON');
 assert(at11pm?.subtitleLine.startsWith('Kesho saa'), '11pm kesho line');
+assert(at11pm?.subtitleLine.includes('Usiku'), '11pm kesho usiku');
+
+function wallAt(h, min) {
+  const d = new Date();
+  d.setHours(h, min, 0, 0);
+  return d.getTime();
+}
+assert(formatSwahiliSaaWallTime(wallAt(22, 0)) === 'saa 4 Usiku', '10pm swahili');
+assert(formatSwahiliSaaWallTime(wallAt(16, 0)) === 'saa 10 Mchana', '4pm swahili');
+assert(formatSwahiliSaaWallTime(wallAt(8, 0)) === 'saa 2 Asubuhi', '8am swahili');
+assert(formatSwahiliKeshoTime(wallAt(22, 0)).includes('Usiku'), 'kesho usiku');
 
 assert(formatSwahiliRemaining(7200, 'kuanza') === 'Bado masaa 2 kuanza', '2 hours swahili');
 assert(
@@ -58,6 +69,7 @@ assert(formatSwahiliRemaining(180, 'kuanza') === 'Bado dakika 3 kuanza', '3 min 
 assert(formatSwahiliRemaining(45, 'kuanza').includes('sekunde'), '45 sec swahili');
 assert(formatSwahiliLiveSubtitle(3180).includes('dakika 53'), '53 min kuisha');
 assert(formatSwahiliLiveSubtitle(60) === 'Inaendelea sasa hivi', 'live sasa hivi');
+assert(formatCountdownClock(22 * 3600 + 51 * 60) === '22:51:00', 'padded hms countdown');
 
 const eventRaw = {
   id: 99,

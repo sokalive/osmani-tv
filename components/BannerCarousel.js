@@ -25,11 +25,36 @@ const COLORS = {
   white: '#FFFFFF',
   mutedText: '#A1A8B5',
   greenButton: '#1EC967',
+  pillRed: '#DC2626',
+  pillGreen: '#16A34A',
+  pillBlue: '#1D4ED8',
 };
 
 const AUTO_MS = 5000;
 const SLIDE_HEIGHT = 210;
 const RADIUS = 18;
+
+/** @param {{ variant: 'en' | 'sw' | 'clock'; children: string }} props */
+function RuntimePill({ variant, children }) {
+  const pillStyle =
+    variant === 'en'
+      ? styles.pillRed
+      : variant === 'sw'
+        ? styles.pillGreen
+        : styles.pillBlue;
+  return (
+    <View style={[styles.runtimePill, pillStyle]}>
+      <Text
+        style={styles.runtimePillText}
+        numberOfLines={2}
+        adjustsFontSizeToFit
+        minimumFontScale={0.82}
+      >
+        {children}
+      </Text>
+    </View>
+  );
+}
 
 function useBadgePulse(enabled) {
   const opacity = useRef(new Animated.Value(1)).current;
@@ -96,26 +121,24 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, runtime
         />
       )}
       <LinearGradient
-        colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.68)']}
-        start={{ x: 0.5, y: 0.3 }}
+        colors={
+          runtime
+            ? ['rgba(0,0,0,0)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.85)']
+            : ['rgba(0,0,0,0)', 'rgba(0,0,0,0.68)']
+        }
+        start={{ x: 0.5, y: 0.25 }}
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.overlay}>
         {runtime ? (
           <View style={styles.runtimeBlock}>
-            <Text style={styles.runtimeStatus} numberOfLines={1} adjustsFontSizeToFit>
-              {runtime.statusLine}
-            </Text>
+            <RuntimePill variant="en">{runtime.statusLine}</RuntimePill>
             {runtime.subtitleLine ? (
-              <Text style={styles.runtimeSubtitle} numberOfLines={2}>
-                {runtime.subtitleLine}
-              </Text>
+              <RuntimePill variant="sw">{runtime.subtitleLine}</RuntimePill>
             ) : null}
             {countdownClock ? (
-              <Text style={styles.countdown} numberOfLines={1}>
-                {countdownClock}
-              </Text>
+              <RuntimePill variant="clock">{countdownClock}</RuntimePill>
             ) : null}
           </View>
         ) : null}
@@ -134,7 +157,10 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, runtime
             </Text>
           </Animated.View>
         ) : null}
-        <Text style={styles.title} numberOfLines={runtime ? 1 : 2}>
+        <Text
+          style={[styles.title, runtime ? styles.titleWithRuntime : null]}
+          numberOfLines={runtime ? 1 : 2}
+        >
           {slide.title}
         </Text>
         {slide.description && !runtime ? (
@@ -401,28 +427,40 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   runtimeBlock: {
-    marginBottom: 6,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    marginBottom: 8,
     maxWidth: '100%',
   },
-  runtimeStatus: {
+  runtimePill: {
+    alignSelf: 'center',
+    maxWidth: '96%',
+    minWidth: 120,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 10,
+    marginBottom: 5,
+    elevation: 3,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.35,
+    shadowRadius: 2,
+  },
+  pillRed: {
+    backgroundColor: COLORS.pillRed,
+  },
+  pillGreen: {
+    backgroundColor: COLORS.pillGreen,
+  },
+  pillBlue: {
+    backgroundColor: COLORS.pillBlue,
+  },
+  runtimePillText: {
     color: COLORS.white,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
+    textAlign: 'center',
     letterSpacing: 0.35,
-    marginBottom: 2,
-  },
-  runtimeSubtitle: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 11,
-    fontWeight: '600',
-    lineHeight: 15,
-    marginBottom: 3,
-  },
-  countdown: {
-    color: COLORS.greenButton,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.4,
   },
   badge: {
     alignSelf: 'flex-start',
@@ -447,6 +485,10 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 20,
     fontWeight: '600',
+  },
+  titleWithRuntime: {
+    fontSize: 17,
+    marginTop: 2,
   },
   desc: {
     marginTop: 6,
