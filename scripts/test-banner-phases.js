@@ -106,6 +106,17 @@ const countdownOnlyDaily = normalizeBanner(
 assert(countdownOnlyDaily.hasDailyTimer, 'countdown ON + daily window');
 assert(getBannerRuntimeState(countdownOnlyDaily, atLocal(14, 0)) != null, 'countdown-only runtime');
 
+assert(parseRuntimePosition({ runtime_position: 'bottom_left' }) === 'bottom_left');
+assert(parseRuntimePosition({ runtimePosition: 'top-right' }) === 'top_right');
+assert(parseRuntimePosition({ runtime_position: 'invalid' }) === 'center');
+assert(parseRuntimePosition({}) === 'center', 'default runtime position');
+
+const positioned = normalizeBanner(
+  { id: 12, useTimer: true, startTime: '22:00', endTime: '22:53', runtime_position: 'top_right' },
+  0,
+);
+assert(positioned.runtimePosition === 'top_right', 'runtime_position normalized');
+
 async function inspectLiveApi() {
   const res = await fetch('https://osmani-admin-api.onrender.com/api/banners');
   const banners = await res.json();

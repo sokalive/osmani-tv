@@ -33,6 +33,60 @@ const COLORS = {
 const AUTO_MS = 5000;
 const SLIDE_HEIGHT = 210;
 const RADIUS = 18;
+const RUNTIME_SAFE_SIDE = 12;
+const RUNTIME_SAFE_TOP = 12;
+/** Space above title / carousel dots inside the slide safe area. */
+const RUNTIME_SAFE_BOTTOM = 40;
+
+/** @typedef {'center' | 'bottom_center' | 'bottom_left' | 'bottom_right' | 'top_left' | 'top_right'} RuntimePositionPreset */
+
+/** @type {Record<RuntimePositionPreset, import('react-native').ViewStyle>} */
+const RUNTIME_OVERLAY_PRESETS = {
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bottom_center: {
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: RUNTIME_SAFE_BOTTOM,
+  },
+  bottom_left: {
+    justifyContent: 'flex-end',
+    alignItems: 'flex-start',
+    paddingBottom: RUNTIME_SAFE_BOTTOM,
+    paddingLeft: RUNTIME_SAFE_SIDE,
+  },
+  bottom_right: {
+    justifyContent: 'flex-end',
+    alignItems: 'flex-end',
+    paddingBottom: RUNTIME_SAFE_BOTTOM,
+    paddingRight: RUNTIME_SAFE_SIDE,
+  },
+  top_left: {
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
+    paddingTop: RUNTIME_SAFE_TOP,
+    paddingLeft: RUNTIME_SAFE_SIDE,
+  },
+  top_right: {
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: RUNTIME_SAFE_TOP,
+    paddingRight: RUNTIME_SAFE_SIDE,
+  },
+};
+
+/** @param {RuntimePositionPreset} position */
+function runtimeBlockAlignStyle(position) {
+  if (position === 'bottom_left' || position === 'top_left') {
+    return styles.runtimeBlockAlignStart;
+  }
+  if (position === 'bottom_right' || position === 'top_right') {
+    return styles.runtimeBlockAlignEnd;
+  }
+  return styles.runtimeBlockAlignCenter;
+}
 
 /** @param {{ variant: 'en' | 'sw' | 'clock'; children: string }} props */
 function RuntimePill({ variant, children }) {
@@ -92,6 +146,26 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
   const countdownClock = runtime
     ? formatCountdownClock(runtime.remainingSec)
     : null;
+  const runtimePosition = slide.runtimePosition ?? 'center';
+  const useCenterStack = runtimePosition === 'center';
+  const usesBottomRuntime =
+    showRuntimeUi &&
+    (runtimePosition === 'bottom_center' ||
+      runtimePosition === 'bottom_left' ||
+      runtimePosition === 'bottom_right');
+
+  const runtimePills = runtime ? (
+    <View
+      style={[styles.runtimeBlock, runtimeBlockAlignStyle(runtimePosition)]}
+      pointerEvents="none"
+    >
+      <RuntimePill variant="en">{runtime.statusLine}</RuntimePill>
+      {runtime.subtitleLine ? (
+        <RuntimePill variant="sw">{runtime.subtitleLine}</RuntimePill>
+      ) : null}
+      {countdownClock ? <RuntimePill variant="clock">{countdownClock}</RuntimePill> : null}
+    </View>
+  ) : null;
 
   useEffect(() => {
     setImageFailed(false);
@@ -125,7 +199,7 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, usesBottomRuntime ? styles.overlayRaisedTitle : null]}>
         {slide.description && !showRuntimeUi ? (
           <Text style={styles.desc} numberOfLines={1}>
             {slide.description}
@@ -152,18 +226,16 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
             </Text>
           </Animated.View>
         ) : null}
-        {runtime ? (
-          <View style={styles.runtimeBlock} pointerEvents="none">
-            <RuntimePill variant="en">{runtime.statusLine}</RuntimePill>
-            {runtime.subtitleLine ? (
-              <RuntimePill variant="sw">{runtime.subtitleLine}</RuntimePill>
-            ) : null}
-            {countdownClock ? (
-              <RuntimePill variant="clock">{countdownClock}</RuntimePill>
-            ) : null}
-          </View>
-        ) : null}
+        {useCenterStack ? runtimePills : null}
       </View>
+      {runtime && !useCenterStack ? (
+        <View
+          style={[styles.runtimeOverlay, RUNTIME_OVERLAY_PRESETS[runtimePosition]]}
+          pointerEvents="none"
+        >
+          {runtimePills}
+        </View>
+      ) : null}
     </View>
   );
 });
@@ -420,14 +492,33 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     justifyContent: 'flex-end',
   },
+  overlayRaisedTitle: {
+    paddingBottom: 88,
+  },
+  runtimeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 5,
+    elevation: 7,
+  },
   runtimeBlock: {
-    alignSelf: 'center',
-    alignItems: 'center',
-    width: '100%',
+    maxWidth: '94%',
     marginTop: 6,
     marginBottom: 2,
     zIndex: 4,
     elevation: 6,
+  },
+  runtimeBlockAlignCenter: {
+    alignSelf: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
+  runtimeBlockAlignStart: {
+    alignSelf: 'flex-start',
+    alignItems: 'flex-start',
+  },
+  runtimeBlockAlignEnd: {
+    alignSelf: 'flex-end',
+    alignItems: 'flex-end',
   },
   runtimePill: {
     alignSelf: 'center',
