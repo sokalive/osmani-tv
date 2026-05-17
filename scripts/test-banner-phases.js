@@ -35,15 +35,29 @@ assert(isBannerVisibleAt(slide, atLocal(14, 0)), 'visible at 2pm');
 const at2pm = getBannerRuntimeState(slide, atLocal(14, 0));
 assert(at2pm?.statusLine.startsWith('COMING SOON'), '2pm COMING SOON');
 assert(at2pm?.statusLine.includes('10:00 PM'), '2pm shows 10pm wall time');
+assert(at2pm?.subtitleLine.includes('kuanza'), '2pm swahili kuanza');
 assert(at2pm.remainingSec > 0, '2pm countdown positive');
 
 const at10pm = getBannerRuntimeState(slide, atLocal(22, 0));
-assert(at2pm?.statusLine !== at10pm?.statusLine, 'phase changes');
 assert(at10pm?.statusLine === 'LIVE NOW', '10pm LIVE NOW');
+assert(
+  at10pm?.subtitleLine.includes('kuisha') || at10pm?.subtitleLine.includes('sasa hivi'),
+  '10pm live swahili',
+);
 
 const at11pm = getBannerRuntimeState(slide, atLocal(23, 0));
 assert(at11pm?.statusLine.startsWith('NEXT COMING SOON'), '11pm NEXT COMING SOON');
-assert(at11pm?.statusLine.includes('10:00 PM'), '11pm next 10pm');
+assert(at11pm?.subtitleLine.startsWith('Kesho saa'), '11pm kesho line');
+
+assert(formatSwahiliRemaining(7200, 'kuanza') === 'Bado masaa 2 kuanza', '2 hours swahili');
+assert(
+  formatSwahiliRemaining(5400, 'kuanza') === 'Bado saa 1 na dakika 30 kuanza',
+  '1h30 swahili',
+);
+assert(formatSwahiliRemaining(180, 'kuanza') === 'Bado dakika 3 kuanza', '3 min swahili');
+assert(formatSwahiliRemaining(45, 'kuanza').includes('sekunde'), '45 sec swahili');
+assert(formatSwahiliLiveSubtitle(3180).includes('dakika 53'), '53 min kuisha');
+assert(formatSwahiliLiveSubtitle(60) === 'Inaendelea sasa hivi', 'live sasa hivi');
 
 const eventRaw = {
   id: 99,
@@ -55,6 +69,7 @@ const eventSlide = normalizeBanner(eventRaw, 0);
 assert(eventSlide.hasEventSchedule, 'event schedule');
 const before = getBannerRuntimeState(eventSlide, atLocal(14, 0, 1));
 assert(before?.statusLine.startsWith('COMING SOON'), 'event before');
+assert(before?.subtitleLine.includes('kuanza'), 'event before swahili');
 assert(!isBannerVisibleAt(eventSlide, atLocal(23, 30, 1)), 'hidden after event end');
 
 const staticSlide = normalizeBanner({ id: 1, title: 'Static' }, 0);

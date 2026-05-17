@@ -104,9 +104,14 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, runtime
       <View style={styles.overlay}>
         {runtime ? (
           <View style={styles.runtimeBlock}>
-            <Text style={styles.runtimeStatus} numberOfLines={2}>
+            <Text style={styles.runtimeStatus} numberOfLines={1} adjustsFontSizeToFit>
               {runtime.statusLine}
             </Text>
+            {runtime.subtitleLine ? (
+              <Text style={styles.runtimeSubtitle} numberOfLines={2}>
+                {runtime.subtitleLine}
+              </Text>
+            ) : null}
             {countdownClock ? (
               <Text style={styles.countdown} numberOfLines={1}>
                 {countdownClock}
@@ -129,10 +134,10 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, runtime
             </Text>
           </Animated.View>
         ) : null}
-        <Text style={styles.title} numberOfLines={2}>
+        <Text style={styles.title} numberOfLines={runtime ? 1 : 2}>
           {slide.title}
         </Text>
-        {slide.description ? (
+        {slide.description && !runtime ? (
           <Text style={styles.desc} numberOfLines={1}>
             {slide.description}
           </Text>
@@ -396,20 +401,28 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   runtimeBlock: {
-    marginBottom: 8,
+    marginBottom: 6,
+    maxWidth: '100%',
   },
   runtimeStatus: {
     color: COLORS.white,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
-    letterSpacing: 0.4,
-    marginBottom: 4,
+    letterSpacing: 0.35,
+    marginBottom: 2,
+  },
+  runtimeSubtitle: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 15,
+    marginBottom: 3,
   },
   countdown: {
     color: COLORS.greenButton,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
   badge: {
     alignSelf: 'flex-start',
