@@ -122,7 +122,7 @@ module.exports = {
     name: 'Osmani TV',
     slug: 'osmani-tv',
     /** User-visible version (Android versionName / iOS CFBundleShortVersionString). */
-    version: 'v13',
+    version: 'v14',
     orientation: 'portrait',
     icon: BRAND_ASSETS.icon,
     scheme: 'osmani',
@@ -158,8 +158,8 @@ module.exports = {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#000000',
       },
-      /** Must exceed Play Console latest upload (currently 12). */
-      versionCode: 13,
+      /** Must exceed Play Console latest upload (currently 13). */
+      versionCode: 14,
       /** Cold-start window color before React (pairs with native splash theme). */
       backgroundColor: '#FFFFFF',
       edgeToEdgeEnabled: true,
