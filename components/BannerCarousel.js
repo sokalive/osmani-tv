@@ -15,6 +15,7 @@ import {
   bannerNeedsRuntimeTick,
   formatCountdownClock,
   getBannerRuntimeState,
+  getSlideRuntimePosition,
 } from '../lib/normalizeBanner';
 import {
   buildPlayerChannelFromRow,
@@ -76,6 +77,14 @@ const RUNTIME_OVERLAY_PRESETS = {
     paddingRight: RUNTIME_SAFE_SIDE,
   },
 };
+
+/** @param {RuntimePositionPreset} position */
+function getRuntimeOverlayStyle(position) {
+  if (Object.prototype.hasOwnProperty.call(RUNTIME_OVERLAY_PRESETS, position)) {
+    return RUNTIME_OVERLAY_PRESETS[position];
+  }
+  return null;
+}
 
 /** @param {RuntimePositionPreset} position */
 function runtimeBlockAlignStyle(position) {
@@ -146,13 +155,43 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
   const countdownClock = runtime
     ? formatCountdownClock(runtime.remainingSec)
     : null;
-  const runtimePosition = slide.runtimePosition ?? 'center';
+  const runtimePosition = getSlideRuntimePosition(slide);
+  const overlayStyle = getRuntimeOverlayStyle(runtimePosition);
   const useCenterStack = runtimePosition === 'center';
   const usesBottomRuntime =
     showRuntimeUi &&
     (runtimePosition === 'bottom_center' ||
       runtimePosition === 'bottom_left' ||
       runtimePosition === 'bottom_right');
+
+  useEffect(() => {
+    if (!runtime) return;
+    console.warn(
+      '[BANNER_POSITION]',
+      JSON.stringify({
+        id: slide.id,
+        title: slide.title,
+        raw: {
+          runtime_position: slide.runtimePositionRaw ?? null,
+          field: slide.runtimePositionField ?? null,
+        },
+        normalized: slide.runtimePosition,
+        appliedStyle: runtimePosition,
+        useCenterStack,
+        overlayStyle: overlayStyle ? runtimePosition : null,
+      }),
+    );
+  }, [
+    runtime,
+    slide.id,
+    slide.title,
+    slide.runtimePosition,
+    slide.runtimePositionRaw,
+    slide.runtimePositionField,
+    runtimePosition,
+    useCenterStack,
+    overlayStyle,
+  ]);
 
   const runtimePills = runtime ? (
     <View
@@ -228,11 +267,8 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
         ) : null}
         {useCenterStack ? runtimePills : null}
       </View>
-      {runtime && !useCenterStack ? (
-        <View
-          style={[styles.runtimeOverlay, RUNTIME_OVERLAY_PRESETS[runtimePosition]]}
-          pointerEvents="none"
-        >
+      {runtime && !useCenterStack && overlayStyle ? (
+        <View style={[styles.runtimeOverlay, overlayStyle]} pointerEvents="none">
           {runtimePills}
         </View>
       ) : null}

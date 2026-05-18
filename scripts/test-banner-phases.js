@@ -108,8 +108,13 @@ assert(getBannerRuntimeState(countdownOnlyDaily, atLocal(14, 0)) != null, 'count
 
 assert(parseRuntimePosition({ runtime_position: 'bottom_left' }) === 'bottom_left');
 assert(parseRuntimePosition({ runtimePosition: 'top-right' }) === 'top_right');
+assert(parseRuntimePosition({ runtime_position: 'top left' }) === 'top_left', 'space separated');
 assert(parseRuntimePosition({ runtime_position: 'invalid' }) === 'center');
 assert(parseRuntimePosition({}) === 'center', 'default runtime position');
+assert(
+  parseRuntimePosition({ runtime_position: '' }) === 'center',
+  'empty string uses center',
+);
 
 const positioned = normalizeBanner(
   { id: 12, useTimer: true, startTime: '22:00', endTime: '22:53', runtime_position: 'top_right' },
