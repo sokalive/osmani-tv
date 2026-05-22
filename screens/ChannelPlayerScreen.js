@@ -12,7 +12,9 @@ import {
   Animated,
   ScrollView,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Video } from 'expo-av';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Ionicons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
@@ -97,6 +99,9 @@ function playbackFailureMessage(reasonText) {
   const short = r.length > 120 ? `${r.slice(0, 117)}...` : r;
   return short ? `Playback: ${short}` : 'Playback imeshindikana.';
 }
+
+/** Stable tag for expo-keep-awake (Android FLAG_KEEP_SCREEN_ON while watching). */
+const PLAYER_KEEP_AWAKE_TAG = 'osmani-channel-player';
 
 export default function ChannelPlayerScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
@@ -476,6 +481,46 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       StatusBar.setHidden(false);
     };
   }, []);
+
+  /**
+   * Prevent Android display sleep while this screen is focused and the app is
+   * foreground. Unrelated to overlay auto-hide (opacity only). Released on blur,
+   * background, and unmount so battery optimization is not fought while away.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      const tag = PLAYER_KEEP_AWAKE_TAG;
+      const enable = () => {
+        void activateKeepAwakeAsync(tag).catch((e) => {
+          console.log('[player][keep-awake]', 'activate_failed', e?.message ?? e);
+        });
+      };
+      const disable = () => {
+        try {
+          deactivateKeepAwake(tag);
+        } catch (e) {
+          console.log('[player][keep-awake]', 'deactivate_failed', e?.message ?? e);
+        }
+      };
+
+      if (AppState.currentState === 'active') {
+        enable();
+      }
+
+      const appSub = AppState.addEventListener('change', (next) => {
+        if (next === 'active') {
+          enable();
+        } else {
+          disable();
+        }
+      });
+
+      return () => {
+        appSub.remove();
+        disable();
+      };
+    }, []),
+  );
 
   // BACK
   useEffect(() => {
