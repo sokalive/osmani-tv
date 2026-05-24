@@ -29,7 +29,11 @@ assert(Number(expo.updates?.fallbackToCacheTimeout) >= 0, 'fallbackToCacheTimeou
 
 assert(eas.build?.production?.channel === 'production', 'production build channel missing');
 assert(eas.build?.preview?.channel === 'preview', 'preview build channel missing');
-assert(eas.update?.production?.channel === 'production', 'production update channel missing');
+assert(eas.build?.development?.channel === 'development', 'development build channel missing');
+assert(
+  eas.update === undefined,
+  'eas.json must not define top-level "update" (use build.channel + eas update --channel)',
+);
 
 assert(
   expo.plugins?.includes('expo-updates'),
