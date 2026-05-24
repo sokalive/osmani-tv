@@ -1,5 +1,6 @@
 /**
- * Production Render API host for the mobile app.
+ * Production Render API host for the mobile app (JSON / SSE / payments only).
+ * Public media (uploads, stream-proxy) uses {@link ./lib/mediaDelivery} → BunnyCDN.
  * All HTTP modules (`api.js`, `api/payment.js`, `api/settings.js`, etc.) must use this `BASE_URL`.
  */
 const DEFAULT_API_URL = "https://osmani-admin-api.onrender.com";
@@ -73,22 +74,7 @@ export async function getBanners() {
   return body;
 }
 
-export async function getWhatsappSettings() {
-  const res = await fetch(`${BASE_URL}/api/whatsapp-settings`);
-  let body;
-  try {
-    body = await res.json();
-  } catch {
-    body = null;
-  }
-  if (!res.ok) {
-    throw new Error(`Could not load WhatsApp settings (${res.status})`);
-  }
-  if (!body || typeof body !== 'object') {
-    throw new Error('Could not load WhatsApp settings (invalid response)');
-  }
-  return body;
-}
+export { getWhatsappSettingsForViewer as getWhatsappSettings } from './api/whatsappSettings';
 
 export async function getPopupSettings() {
   const res = await fetch(`${BASE_URL}/api/popup-settings`);

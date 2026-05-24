@@ -51,7 +51,7 @@ import {
   useModalSheetCoordinator,
   useRegisterBlockingSheet,
 } from './context/ModalSheetCoordinatorContext';
-import { BASE_URL } from './api';
+import { resolveMediaAssetUrl } from './lib/mediaDelivery';
 import { acknowledgeManualGift } from './api/subscription';
 import { trackInstallOnce } from './api/analytics';
 import { startPresence, stopPresence } from './lib/presenceTracker';
@@ -153,10 +153,10 @@ function resolveChannelThumbnailUri(raw) {
         ? String(raw.thumbnail_url).trim()
         : '';
   const abs = raw?.thumbnailUrl != null ? String(raw.thumbnailUrl).trim() : '';
-  if (abs.startsWith('http')) return abs;
-  if (rel.startsWith('http')) return rel;
-  if (rel.startsWith('/')) return `${BASE_URL}${rel}`;
-  if (rel.length > 0) return `${BASE_URL}/${rel}`;
+  if (abs.startsWith('http')) return resolveMediaAssetUrl(abs);
+  if (rel.startsWith('http')) return resolveMediaAssetUrl(rel);
+  if (rel.startsWith('/')) return resolveMediaAssetUrl(rel);
+  if (rel.length > 0) return resolveMediaAssetUrl(rel);
   return null;
 }
 

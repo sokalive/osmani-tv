@@ -1,4 +1,5 @@
 import { BASE_URL } from '../api';
+import { resolveMediaAssetUrl } from '../lib/mediaDelivery';
 
 /**
  * Payment + subscription HTTP API (ZenoPay STK push).
@@ -145,10 +146,11 @@ function normalizeProviderRow(raw) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '-');
+  const logo = pickProviderLogoUrl(raw);
   return {
     id: id || name.toLowerCase(),
     name,
-    logoUrl: pickProviderLogoUrl(raw),
+    logoUrl: logo ? resolveMediaAssetUrl(logo) : null,
     active: pickProviderActive(raw),
   };
 }

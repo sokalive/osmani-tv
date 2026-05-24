@@ -5,7 +5,7 @@ const {
   handleStreamProxy,
   handleStreamProxyTest,
 } = require("./routes/streamProxy");
-const cors = require("cors");
+import { rewriteMediaUrlsInJson, mediaCdnBase } from "./lib/mediaUrlSerializer";
 
 const app = express();
 app.use(express.json());
@@ -53,6 +53,12 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
+
+// Legacy Render /uploads/* → BunnyCDN (301). Helps clients that still prefix API host on relative paths.
+app.get("/uploads/*", (req, res) => {
+  const target = `${mediaCdnBase()}${req.path}`;
+  res.redirect(301, target);
+});
 
 const PORT = process.env.PORT || 10000;
 
@@ -157,7 +163,7 @@ app.get("/api/channels", async (req, res) => {
     const result = await pool.query(
       "SELECT * FROM channels ORDER BY id DESC"
     );
-    res.json(result.rows);
+    res.json(rewriteMediaUrlsInJson(result.rows));
   } catch (err) {
     console.error("ERROR /channels:", err);
     res.status(500).json({ error: "Failed to fetch channels" });
