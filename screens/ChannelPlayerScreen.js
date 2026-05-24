@@ -37,7 +37,10 @@ import {
   SecurityPlaybackBlock,
   SecurityPlayerBanner,
 } from '../components/SecurityPlaybackGate';
+import TrialWatchOverlay from '../components/TrialWatchOverlay';
 import { usePlaybackSecurityGate } from '../context/SecurityContext';
+import { useTrialWatchSession } from '../hooks/useTrialWatchSession';
+import { shouldApplyTrialWatch } from '../lib/trialWatchSettings.shared';
 
 /**
  * Pick a playback engine:
@@ -111,12 +114,15 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const {
     rawChannels,
     freeMode,
+    isSubscribed,
     gateForPlayback,
     reverifySubscription,
     emergencyMode,
     subscriptionDetails,
     subscriptionExpiresAt,
     subscriptionVersion,
+    trialWatchSettings,
+    requestPaymentModal,
   } = useOsmaniApp();
   const playbackSecurity = usePlaybackSecurityGate();
   const channel = liveChannel ?? initialChannel;
@@ -748,6 +754,58 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
   }, [clearHideTimer, navigation, reverifySubscription]);
 
+  const stopTrialPlayback = useCallback(async () => {
+    clearHideTimer();
+    setPickerKind(null);
+    setPlaybackSuppressed(true);
+    setIsPlaying(false);
+    setIsBuffering(false);
+    try {
+      await videoRef.current?.pauseAsync?.();
+      await videoRef.current?.unloadAsync?.();
+    } catch {
+      /* ignore */
+    }
+    try {
+      hlsWebRef.current?.injectJavaScript(
+        `(function(){try{var v=document.getElementById('v');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
+      );
+    } catch {
+      /* ignore */
+    }
+    try {
+      embedWebRef.current?.injectJavaScript(
+        `(function(){try{var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
+      );
+    } catch {
+      /* ignore */
+    }
+    setPlayerEpoch((e) => e + 1);
+    try {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
+      StatusBar.setHidden(false);
+    } catch {
+      /* ignore */
+    }
+  }, [clearHideTimer]);
+
+  const trialWatchApplies = useMemo(
+    () => shouldApplyTrialWatch({ isSubscribed, freeMode, trialWatchSettings }),
+    [isSubscribed, freeMode, trialWatchSettings],
+  );
+
+  const trialWatch = useTrialWatchSession({
+    enabled: trialWatchApplies && accessAllowed && !playbackSuppressed,
+    isSubscribed,
+    freeMode,
+    trialWatchSettings,
+    isPlaybackActive:
+      isPlaying && accessAllowed && Boolean(uri) && !playbackError && !playbackSuppressed,
+    stopPlayback: stopTrialPlayback,
+    onExpired: () => requestPaymentModal(),
+    navigation,
+  });
+
   useEffect(() => {
     if (!channelIsPremium || freeMode || !accessAllowed || playbackSuppressed) {
       if (premiumExpiryTickRef.current) {
@@ -1297,9 +1355,26 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     );
   }
 
+  if (trialWatchApplies && trialWatch.active && !trialWatch.ready) {
+    return (
+      <View style={[styles.root, styles.gateScreen]}>
+        <ActivityIndicator color="#FBBF24" size="large" />
+        <Text style={styles.gateText}>Inaandaa uangalizi…</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.root}>
       <SecurityPlayerBanner />
+
+      {trialWatch.visible && trialWatch.phase ? (
+        <TrialWatchOverlay
+          phase={trialWatch.phase}
+          remainingMs={trialWatch.remainingMs}
+          topInset={insets.top + 52}
+        />
+      ) : null}
 
       {channelIsPremium && !freeMode && expiryOverlay.visible ? (
         <View

@@ -42,6 +42,7 @@ import TransferredAwayModal from './components/TransferredAwayModal';
 import UpdateOverlay from './components/UpdateOverlay';
 import OtaDebugOverlay, { OtaDebugTitleTap } from './components/OtaDebugOverlay';
 import WhatsAppFloatingButtonGate from './components/WhatsAppFloatingButtonGate';
+import GlobalPaymentModalGate from './components/GlobalPaymentModalGate';
 import AkauntiYanguScreen from './screens/AkauntiYanguScreen';
 import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
@@ -1541,6 +1542,7 @@ export default function App() {
               <UpdateOverlay />
               <OtaDebugOverlay />
               <SubscriptionLifecycleGates />
+              <GlobalPaymentModalGate />
             </ModalSheetCoordinatorProvider>
           ) : (
             <View style={styles.startupSplashPlaceholder} />

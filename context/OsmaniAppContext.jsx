@@ -3,6 +3,11 @@ import { AppState } from 'react-native';
 import { getBanners, getChannels, getServerHealth } from '../api';
 import { sortChannelsByAdminOrder } from '../lib/channelOrder';
 import { parseAppSettingsRealtimePatch, tryGetViewerAppSettings } from '../api/settings';
+import { tryGetViewerTrialWatchSettings } from '../api/trialWatchSettings';
+import {
+  DEFAULT_TRIAL_WATCH_SETTINGS,
+  parseTrialWatchSettings,
+} from '../lib/trialWatchSettings.shared';
 import {
   clearSubscriptionCache,
   readSubscriptionCache,
@@ -97,6 +102,9 @@ export function OsmaniAppProvider({ children }) {
   const [pendingTransfer, setPendingTransfer] = useState(null);
   /** Bumped to re-open global emergency modal (banner / channel tap while emergency). */
   const [emergencyModalRequestVersion, setEmergencyModalRequestVersion] = useState(0);
+  const [trialWatchSettings, setTrialWatchSettings] = useState(DEFAULT_TRIAL_WATCH_SETTINGS);
+  /** Incremented to open PremiumModal from any screen (trial / preview expiry). */
+  const [paymentModalRequest, setPaymentModalRequest] = useState(0);
 
   const verifyInFlightRef = useRef(false);
   const lastVerifyKeyRef = useRef(0);
@@ -285,17 +293,24 @@ export function OsmaniAppProvider({ children }) {
   /**
    * Lightweight: viewer-safe app flags via GET /api/public/app-settings only.
    */
+  const refreshTrialWatchSettings = useCallback(async (reason = 'poll') => {
+    const s = await tryGetViewerTrialWatchSettings();
+    if (s) {
+      setTrialWatchSettings(s);
+      console.log('[TRIAL_WATCH_SYNC]', reason, s);
+    }
+  }, []);
+
   const refreshSettingsOnly = useCallback(async (reason = 'poll') => {
     const s = await tryGetViewerAppSettings();
-    if (!s) {
-      if (__DEV__) {
-        console.log('[SETTINGS_SYNC]', reason, 'skip_no_public_flags');
-      }
-      return;
+    if (s) {
+      setSettings((prev) => ({ ...prev, ...s }));
+      console.log('[SETTINGS_SYNC]', reason, s);
+    } else if (__DEV__) {
+      console.log('[SETTINGS_SYNC]', reason, 'skip_no_public_flags');
     }
-    setSettings((prev) => ({ ...prev, ...s }));
-    console.log('[SETTINGS_SYNC]', reason, s);
-  }, []);
+    await refreshTrialWatchSettings(reason);
+  }, [refreshTrialWatchSettings]);
 
   const refresh = useCallback(async (opts = {}) => {
     const showGlobalLoading = opts.showGlobalLoading !== false;
@@ -304,13 +319,17 @@ export function OsmaniAppProvider({ children }) {
     if (showGlobalLoading) setLoading(true);
     setError(null);
     try {
-      const [list, bannersResult, flags] = await Promise.all([
+      const [list, bannersResult, flags, trialFlags] = await Promise.all([
         getChannels(),
         getBanners().catch(() => null),
         tryGetViewerAppSettings(),
+        tryGetViewerTrialWatchSettings(),
       ]);
       if (flags && !skipSettingsFromHttp) {
         setSettings((prev) => ({ ...prev, ...flags }));
+      }
+      if (trialFlags) {
+        setTrialWatchSettings(trialFlags);
       }
       setRawChannels(sortChannelsByAdminOrder(Array.isArray(list) ? list : []));
       const nextBanners = Array.isArray(bannersResult) ? bannersResult : null;
@@ -503,6 +522,10 @@ export function OsmaniAppProvider({ children }) {
         } else {
           console.log('[SETTINGS_SYNC]', ev, 'no_mode_keys_in_payload');
         }
+        setTrialWatchSettings((prev) => ({
+          ...prev,
+          ...parseTrialWatchSettings(payload),
+        }));
         void reverifySubscription(`sse:${ev}`);
       }),
     );
@@ -607,6 +630,10 @@ export function OsmaniAppProvider({ children }) {
     setEmergencyModalRequestVersion((v) => v + 1);
   }, []);
 
+  const requestPaymentModal = useCallback(() => {
+    setPaymentModalRequest((v) => v + 1);
+  }, []);
+
   /**
    * Force-set the pending transfer payload from an external code path
    * (polling fallback, optimistic local transition, etc). Logs the
@@ -676,6 +703,9 @@ export function OsmaniAppProvider({ children }) {
       clearSourceTransferSession,
       emergencyModalRequestVersion,
       requestEmergencyModal,
+      trialWatchSettings,
+      paymentModalRequest,
+      requestPaymentModal,
     }),
     [
       settings,
@@ -703,6 +733,9 @@ export function OsmaniAppProvider({ children }) {
       clearSourceTransferSession,
       emergencyModalRequestVersion,
       requestEmergencyModal,
+      trialWatchSettings,
+      paymentModalRequest,
+      requestPaymentModal,
     ],
   );
 
