@@ -7,9 +7,10 @@ const { AndroidConfig, withAndroidManifest } = require('@expo/config-plugins');
  */
 const withOsmaniUpdate = (config) =>
   withAndroidManifest(config, (cfg) => {
-    const manifest = cfg.modResults;
-    const app = AndroidConfig.Manifest.getMainApplicationOrThrow(manifest);
-    AndroidConfig.Manifest.addUsesPermission(manifest, 'android.permission.REQUEST_INSTALL_PACKAGES');
+    AndroidConfig.Permissions.addPermission(
+      cfg.modResults,
+      'android.permission.REQUEST_INSTALL_PACKAGES',
+    );
     return cfg;
   });
 
