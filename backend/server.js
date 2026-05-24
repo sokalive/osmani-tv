@@ -5,7 +5,8 @@ const {
   handleStreamProxy,
   handleStreamProxyTest,
 } = require("./routes/streamProxy");
-import { rewriteMediaUrlsInJson, mediaCdnBase } from "./lib/mediaUrlSerializer";
+const cors = require("cors");
+const { rewriteMediaUrlsInJson, mediaCdnBase } = require("./lib/mediaUrlSerializer.js");
 
 const app = express();
 app.use(express.json());
