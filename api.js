@@ -1,3 +1,5 @@
+import { rewriteMediaUrlsInJson } from './lib/mediaDelivery';
+
 /**
  * Production Render API host for the mobile app (JSON / SSE / payments only).
  * Public media (uploads, stream-proxy) uses {@link ./lib/mediaDelivery} → BunnyCDN.
@@ -50,7 +52,7 @@ export async function getChannels() {
   if (!Array.isArray(body)) {
     throw new Error('Could not load channels (invalid response)');
   }
-  return body;
+  return rewriteMediaUrlsInJson(body);
 }
 
 export async function getBanners() {
@@ -71,7 +73,7 @@ export async function getBanners() {
   if (!Array.isArray(body)) {
     throw new Error('Could not load banners (invalid response)');
   }
-  return body;
+  return rewriteMediaUrlsInJson(body);
 }
 
 export async function getWhatsappSettings() {

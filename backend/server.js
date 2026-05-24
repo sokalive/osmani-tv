@@ -6,7 +6,7 @@ const {
   handleStreamProxyTest,
 } = require("./routes/streamProxy");
 const cors = require("cors");
-const { rewriteMediaUrlsInJson, mediaCdnBase } = require("./lib/mediaUrlSerializer.js");
+const { rewriteMediaUrlsInJson, mediaCdnBase, enrichChannelForViewer } = require("./lib/mediaUrlSerializer.js");
 
 const app = express();
 app.use(express.json());
@@ -164,7 +164,9 @@ app.get("/api/channels", async (req, res) => {
     const result = await pool.query(
       "SELECT * FROM channels ORDER BY id DESC"
     );
-    res.json(rewriteMediaUrlsInJson(result.rows));
+    res.json(
+      rewriteMediaUrlsInJson(result.rows.map((row) => enrichChannelForViewer(row))),
+    );
   } catch (err) {
     console.error("ERROR /channels:", err);
     res.status(500).json({ error: "Failed to fetch channels" });

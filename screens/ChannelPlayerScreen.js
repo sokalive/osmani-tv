@@ -25,7 +25,11 @@ import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
-import { buildHlsProxyUrl, STREAM_PROXY_BASE } from '../lib/streamProxy';
+import {
+  looksLikeHlsPlaybackUri,
+  resolveHlsProxiedManifestUrl,
+} from '../lib/hlsPlayback';
+import { STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
 import { buildEmbedBridgeJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
 import { getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
@@ -34,10 +38,6 @@ import {
   SecurityPlayerBanner,
 } from '../components/SecurityPlaybackGate';
 import { usePlaybackSecurityGate } from '../context/SecurityContext';
-
-function looksLikeHlsUrl(url) {
-  return /\.m3u8(?:$|\?)/i.test(String(url ?? ''));
-}
 
 /**
  * Pick a playback engine:
@@ -50,7 +50,7 @@ function pickPlaybackRoute(url, playerTypeNorm) {
   const s = String(url ?? '');
   if (!s.trim()) return 'embed-webview';
   const lower = s.split(/[#?]/)[0].toLowerCase();
-  if (looksLikeHlsUrl(s)) {
+  if (looksLikeHlsPlaybackUri(s)) {
     if (playerTypeNorm === 'webview') return 'hls-webview';
     return 'native';
   }
@@ -154,12 +154,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const useHlsWebView = playbackRoute === 'hls-webview';
   const useEmbedWebView = playbackRoute === 'embed-webview';
 
-  const isHlsManifest = Boolean(uri && looksLikeHlsUrl(uri));
+  const isHlsManifest = Boolean(uri && looksLikeHlsPlaybackUri(uri));
 
   /** Tokenized IPTV-safe proxy URL for HLS (native Exo + optional hls.js webview). */
   const proxiedHlsUrl = useMemo(() => {
-    if (!isHlsManifest) return '';
-    return buildHlsProxyUrl(uri, {
+    if (!uri || !isHlsManifest) return '';
+    return resolveHlsProxiedManifestUrl(uri, {
       referer: channel?.referer,
       origin: channel?.origin,
       userAgent: channel?.userAgent,
@@ -169,7 +169,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   /** expo-av source: HLS plays through proxy URL so Exo gets a stable manifest; override extension when URI has no .m3u8 suffix. */
   const nativeVideoSource = useMemo(() => {
     if (!useNativePlayer || !uri) return null;
-    if (looksLikeHlsUrl(uri)) {
+    if (looksLikeHlsPlaybackUri(uri)) {
       const u = proxiedHlsUrl || uri;
       return {
         uri: u,

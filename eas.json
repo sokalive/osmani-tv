@@ -11,7 +11,9 @@
         "EXPO_PUBLIC_ONESIGNAL_APP_ID": "6a3f9dc9-96e9-402a-90e9-9dd829b212b2",
         "EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS": "1",
         "EXPO_PUBLIC_SECURITY_ENFORCEMENT": "warn",
-        "EXPO_PUBLIC_SECURITY_STARTUP_LOGS": "1"
+        "EXPO_PUBLIC_SECURITY_STARTUP_LOGS": "1",
+        "EXPO_PUBLIC_MEDIA_CDN_BASE": "https://osmanitv.b-cdn.net",
+        "EXPO_PUBLIC_STREAM_PROXY_URL": "https://osmanitv.b-cdn.net/stream-proxy"
       }
     },
     "preview": {
@@ -23,7 +25,9 @@
         "EXPO_PUBLIC_ONESIGNAL_APP_ID": "6a3f9dc9-96e9-402a-90e9-9dd829b212b2",
         "EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS": "1",
         "EXPO_PUBLIC_SECURITY_ENFORCEMENT": "warn",
-        "EXPO_PUBLIC_SECURITY_STARTUP_LOGS": "1"
+        "EXPO_PUBLIC_SECURITY_STARTUP_LOGS": "1",
+        "EXPO_PUBLIC_MEDIA_CDN_BASE": "https://osmanitv.b-cdn.net",
+        "EXPO_PUBLIC_STREAM_PROXY_URL": "https://osmanitv.b-cdn.net/stream-proxy"
       }
     },
     "production": {

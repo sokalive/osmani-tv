@@ -46,6 +46,52 @@ function rewriteLegacyRenderMediaUrl(input) {
   }
 }
 
+function looksLikeHlsManifestPath(url) {
+  return /\.m3u8(?:$|[?#&])/i.test(String(url ?? ''));
+}
+
+function buildCdnStreamProxyUrl(rawUrl, headers = {}) {
+  if (!rawUrl || isStreamProxyUrl(rawUrl)) {
+    return rewriteLegacyRenderMediaUrl(rawUrl);
+  }
+  const base = `${mediaCdnBase()}/stream-proxy`;
+  const params = new URLSearchParams();
+  params.set("url", String(rawUrl));
+  if (headers.referer) params.set("referer", String(headers.referer));
+  if (headers.origin) params.set("origin", String(headers.origin));
+  if (headers.userAgent) params.set("ua", String(headers.userAgent));
+  return `${base}?${params.toString()}`;
+}
+
+function enrichChannelForViewer(row) {
+  if (!row || typeof row !== "object") return row;
+  const out = rewriteMediaUrlsInJson(row);
+  const rawUrl = String(out.url ?? out.stream_url ?? "").trim();
+  const referer = String(out.referer ?? out.referrer ?? "").trim();
+  const origin = String(out.origin ?? out.stream_origin ?? "").trim();
+  const userAgent = String(out.userAgent ?? out.user_agent ?? "").trim();
+  const headers = { referer, origin, userAgent };
+
+  if (rawUrl && looksLikeHlsManifestPath(rawUrl)) {
+    const playback = String(out.playbackUrl ?? out.playback_url ?? "").trim();
+    if (!playback) {
+      out.playbackUrl = buildCdnStreamProxyUrl(rawUrl, headers);
+      out.playback_url = out.playbackUrl;
+    }
+  }
+
+  if (out.streamProxy && typeof out.streamProxy === "object") {
+    const primary = out.streamProxy.primaryUrl ?? out.streamProxy.primary_url;
+    if (primary) {
+      const rewritten = rewriteLegacyRenderMediaUrl(primary);
+      out.streamProxy.primaryUrl = rewritten;
+      out.streamProxy.primary_url = rewritten;
+    }
+  }
+
+  return out;
+}
+
 function rewriteMediaUrlsInJson(value) {
   if (value == null) return value;
   if (typeof value === "string") {
@@ -74,4 +120,6 @@ module.exports = {
   isStreamProxyUrl,
   rewriteLegacyRenderMediaUrl,
   rewriteMediaUrlsInJson,
+  enrichChannelForViewer,
+  buildCdnStreamProxyUrl,
 };
