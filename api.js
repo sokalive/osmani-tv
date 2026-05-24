@@ -1,4 +1,5 @@
 import { rewriteMediaUrlsInJson } from './lib/mediaDelivery';
+import { enrichBannersForViewer } from './lib/bannerViewerSerializer';
 
 /**
  * Production Render API host for the mobile app (JSON / SSE / payments only).
@@ -73,7 +74,7 @@ export async function getBanners() {
   if (!Array.isArray(body)) {
     throw new Error('Could not load banners (invalid response)');
   }
-  return rewriteMediaUrlsInJson(body);
+  return enrichBannersForViewer(rewriteMediaUrlsInJson(body));
 }
 
 export async function getWhatsappSettings() {

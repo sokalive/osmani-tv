@@ -15,6 +15,7 @@ import {
   bannerNeedsRuntimeTick,
   formatCountdownClock,
   getBannerRuntimeState,
+  getSlideBadgePosition,
   getSlideRuntimePosition,
 } from '../lib/normalizeBanner';
 import {
@@ -152,6 +153,8 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
   const showAdminBadge =
     !runtime && slide.badgeEnabled && slide.badgeText.length > 0;
   const badgeOpacity = useBadgePulse(showAdminBadge && slide.badgeBlink);
+  const badgePosition = getSlideBadgePosition(slide);
+  const badgeOverlayStyle = getRuntimeOverlayStyle(badgePosition);
   const countdownClock = runtime
     ? formatCountdownClock(runtime.remainingSec)
     : null;
@@ -250,7 +253,10 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
         >
           {slide.title}
         </Text>
-        {showAdminBadge ? (
+        {useCenterStack ? runtimePills : null}
+      </View>
+      {showAdminBadge && badgeOverlayStyle ? (
+        <View style={[styles.badgeOverlay, badgeOverlayStyle]} pointerEvents="none">
           <Animated.View
             style={[
               styles.badge,
@@ -264,9 +270,8 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
               {slide.badgeText}
             </Text>
           </Animated.View>
-        ) : null}
-        {useCenterStack ? runtimePills : null}
-      </View>
+        </View>
+      ) : null}
       {runtime && !useCenterStack && overlayStyle ? (
         <View style={[styles.runtimeOverlay, overlayStyle]} pointerEvents="none">
           {runtimePills}
@@ -536,6 +541,11 @@ const styles = StyleSheet.create({
     zIndex: 5,
     elevation: 7,
   },
+  badgeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 8,
+    elevation: 9,
+  },
   runtimeBlock: {
     maxWidth: '94%',
     marginTop: 6,
@@ -587,22 +597,22 @@ const styles = StyleSheet.create({
   },
   badge: {
     alignSelf: 'flex-start',
-    maxWidth: '92%',
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 999,
-    marginBottom: 7,
-    elevation: 4,
+    maxWidth: '68%',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    marginBottom: 0,
+    elevation: 5,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.4,
     shadowRadius: 3,
   },
   badgeText: {
     color: COLORS.white,
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.25,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   title: {
     color: COLORS.white,

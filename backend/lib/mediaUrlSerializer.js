@@ -122,4 +122,6 @@ module.exports = {
   rewriteMediaUrlsInJson,
   enrichChannelForViewer,
   buildCdnStreamProxyUrl,
+  enrichBannerForViewer: require("./bannerViewerSerializer").enrichBannerForViewer,
+  enrichBannersForViewer: require("./bannerViewerSerializer").enrichBannersForViewer,
 };
