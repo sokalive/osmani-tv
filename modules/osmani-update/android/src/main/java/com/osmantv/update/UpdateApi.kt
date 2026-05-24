@@ -69,7 +69,11 @@ internal object UpdateApi {
             try {
                 val raw = httpGet(url)
                 val json = JSONObject(raw)
-                return UpdateInfo.fromJson(json)
+                return UpdateInfo.fromJson(
+                    json,
+                    installedVersionCode = currentVersionCode,
+                    requestVersionCode = currentVersionCode,
+                )
             } catch (t: Throwable) {
                 lastError = t
             }
@@ -173,27 +177,141 @@ internal data class UpdateInfo(
     }
 
     companion object {
-        fun fromJson(j: JSONObject): UpdateInfo {
-            val rawDecision = pickString(j, "decision", "update_decision", "updateDecision")
-            val decision = UpdateDecision.parse(rawDecision)
-            val apkUrl = pickString(j, "apk_url", "apkUrl")
+        fun fromJson(
+            j: JSONObject,
+            installedVersionCode: Int = 0,
+            requestVersionCode: Int = installedVersionCode,
+        ): UpdateInfo {
+            var latestVersionCode = pickInt(j, "latest_version_code", "latestVersionCode") ?: 0
+            val responseVersionCode = pickInt(j, "version_code", "versionCode") ?: 0
+            if (latestVersionCode <= 0 && responseVersionCode > 0) {
+                latestVersionCode = responseVersionCode
+            }
+
+            val minSupportedVersionCode =
+                pickInt(j, "min_supported_version_code", "minSupportedVersionCode") ?: 0
+
+            val apkUrl = pickString(j, "apk_url", "apkUrl", "download_url", "downloadUrl")
             val apkSha = pickString(j, "apk_sha256", "apkSha256", "sha256")
+            val playStoreUrl = pickString(
+                j,
+                "play_store_url",
+                "playStoreUrl",
+                "playstore_url",
+                "playstoreUrl",
+            )
+            val apkUrlIsStore = isPlayStoreUrl(apkUrl)
+            val effectiveApkUrl = if (apkUrlIsStore) null else apkUrl
+            val effectivePlayStoreUrl = when {
+                !playStoreUrl.isNullOrBlank() -> playStoreUrl
+                apkUrlIsStore -> apkUrl
+                else -> null
+            }
+
+            val notice = pickString(
+                j,
+                "notice",
+                "message",
+                "update_notice",
+                "updateNotice",
+                "update_message",
+                "updateMessage",
+                "body",
+            )
+            val title = pickString(j, "title", "update_title", "updateTitle", "heading")
+            val source = pickString(j, "source", "update_source", "updateSource")
+
+            val rawDecision = pickString(j, "decision", "update_decision", "updateDecision")
+            var decision = UpdateDecision.parse(rawDecision)
+            if (decision == UpdateDecision.NONE) {
+                decision = deriveDecision(
+                    j = j,
+                    installedVersionCode = installedVersionCode,
+                    requestVersionCode = requestVersionCode,
+                    latestVersionCode = latestVersionCode,
+                    minSupportedVersionCode = minSupportedVersionCode,
+                    hasApkDelivery = !effectiveApkUrl.isNullOrBlank(),
+                    hasStoreDelivery = !effectivePlayStoreUrl.isNullOrBlank(),
+                    source = source,
+                )
+            }
 
             return UpdateInfo(
                 decision = decision,
-                latestVersionCode = pickInt(j, "latest_version_code", "latestVersionCode") ?: 0,
-                latestVersionName = pickString(j, "latest_version_name", "latestVersionName") ?: "",
-                minSupportedVersionCode = pickInt(j, "min_supported_version_code", "minSupportedVersionCode") ?: 0,
+                latestVersionCode = latestVersionCode,
+                latestVersionName = pickString(
+                    j,
+                    "latest_version_name",
+                    "latestVersionName",
+                    "version_name",
+                    "versionName",
+                ) ?: "",
+                minSupportedVersionCode = minSupportedVersionCode,
                 autoDownload = pickBool(j, "auto_download", "autoDownload") ?: false,
-                apkUrl = apkUrl,
+                apkUrl = effectiveApkUrl,
                 apkSha256 = apkSha?.lowercase(),
                 apkSizeBytes = pickLong(j, "apk_size_bytes", "apkSizeBytes") ?: 0L,
-                playStoreUrl = pickString(j, "play_store_url", "playStoreUrl", "playstore_url", "playstoreUrl"),
+                playStoreUrl = effectivePlayStoreUrl,
                 releaseNotes = pickString(j, "release_notes", "releaseNotes"),
-                notice = pickString(j, "notice", "message", "update_notice", "updateNotice", "body"),
-                title = pickString(j, "title", "update_title", "updateTitle", "heading"),
-                source = pickString(j, "source", "update_source", "updateSource"),
+                notice = notice,
+                title = title,
+                source = source,
             )
+        }
+
+        private fun isPlayStoreUrl(url: String?): Boolean {
+            val s = url?.trim()?.lowercase() ?: return false
+            return s.contains("play.google.com/") || s.startsWith("market://")
+        }
+
+        private fun deriveDecision(
+            j: JSONObject,
+            installedVersionCode: Int,
+            requestVersionCode: Int,
+            latestVersionCode: Int,
+            minSupportedVersionCode: Int,
+            hasApkDelivery: Boolean,
+            hasStoreDelivery: Boolean,
+            source: String?,
+        ): UpdateDecision {
+            val installed = when {
+                installedVersionCode > 0 -> installedVersionCode
+                requestVersionCode > 0 -> requestVersionCode
+                else -> 0
+            }
+            val target = when {
+                latestVersionCode > 0 -> latestVersionCode
+                minSupportedVersionCode > 0 -> minSupportedVersionCode
+                else -> 0
+            }
+            val outdated = target > 0 && installed > 0 && installed < target
+            if (!outdated) return UpdateDecision.NONE
+
+            val forceFlag = pickBool(
+                j,
+                "force_update",
+                "forceUpdate",
+                "force_update_enabled",
+                "forceUpdateEnabled",
+            )
+            val softFlag = pickBool(
+                j,
+                "soft_update",
+                "softUpdate",
+                "soft_update_enabled",
+                "softUpdateEnabled",
+            )
+            val mode = pickString(j, "update_mode", "updateMode", "mode")?.lowercase()
+
+            if (forceFlag == true || mode == "force") return UpdateDecision.FORCE
+            if (softFlag == true || mode == "soft") return UpdateDecision.SOFT
+            if (source.equals("play", ignoreCase = true) && hasStoreDelivery) {
+                return UpdateDecision.PLAY_STORE
+            }
+            if (hasApkDelivery) return UpdateDecision.SOFT
+            if (hasStoreDelivery) return UpdateDecision.PLAY_STORE
+            if (source.equals("apk", ignoreCase = true)) return UpdateDecision.SOFT
+            return UpdateDecision.NONE
         }
 
         private fun pickString(j: JSONObject, vararg keys: String): String? {
