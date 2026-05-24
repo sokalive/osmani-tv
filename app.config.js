@@ -126,7 +126,7 @@ module.exports = {
     name: 'Osmani TV',
     slug: 'osmani-tv',
     /** User-visible version (Android versionName / iOS CFBundleShortVersionString). */
-    version: '1.6.0',
+    version: '1.7.0',
     /**
      * EAS Update runtime — OTA bundles only apply when this matches the native build
      * (policy: appVersion → uses `version` above). Bump `version` + versionCode for native changes.
@@ -177,8 +177,8 @@ module.exports = {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#000000',
       },
-      /** Must exceed Play Console latest upload. Current release: 1.6.0 (16). */
-      versionCode: 16,
+      /** Must exceed Play Console latest upload. Current release: 1.7.0 (17). */
+      versionCode: 17,
       /** Cold-start window color before React (pairs with native splash theme). */
       backgroundColor: '#FFFFFF',
       edgeToEdgeEnabled: true,
@@ -213,6 +213,8 @@ module.exports = {
       /** Optional SHA-256 signing cert (hex, lowercase) for resign detection on Android */
       expectedSigningCertSha256:
         process.env.EXPO_PUBLIC_ANDROID_SIGNING_CERT_SHA256?.trim?.() || '',
+      /** false when EXPO_PUBLIC_APK_INSTALLER_ENABLED=0 (Play Store builds). */
+      apkInstallerEnabled: process.env.EXPO_PUBLIC_APK_INSTALLER_ENABLED !== '0',
     },
     plugins: [
       /** Register before expo-splash-screen so style mods run after Expo's (mod chain order). */

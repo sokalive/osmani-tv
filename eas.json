@@ -43,7 +43,8 @@
         "EXPO_PUBLIC_SECURITY_ENFORCEMENT": "enforce",
         "EXPO_PUBLIC_SECURITY_STARTUP_LOGS": "0",
         "EXPO_PUBLIC_MEDIA_CDN_BASE": "https://osmanitv.b-cdn.net",
-        "EXPO_PUBLIC_STREAM_PROXY_URL": "https://osmanitv.b-cdn.net/stream-proxy"
+        "EXPO_PUBLIC_STREAM_PROXY_URL": "https://osmanitv.b-cdn.net/stream-proxy",
+        "EXPO_PUBLIC_APK_INSTALLER_ENABLED": "0"
       }
     }
   },

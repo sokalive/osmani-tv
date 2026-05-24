@@ -2,15 +2,18 @@ const { AndroidConfig, withAndroidManifest } = require('@expo/config-plugins');
 
 /**
  * Expo config plugin for the local osmani-update native module.
- * Merges FileProvider from the library manifest and ensures sideload APK
- * installs can prompt on Android 8+ (REQUEST_INSTALL_PACKAGES).
+ * Adds REQUEST_INSTALL_PACKAGES only when APK sideload is enabled (not Play Store).
+ * Set EXPO_PUBLIC_APK_INSTALLER_ENABLED=0 on production EAS profile to omit the permission.
  */
 const withOsmaniUpdate = (config) =>
   withAndroidManifest(config, (cfg) => {
-    AndroidConfig.Permissions.addPermission(
-      cfg.modResults,
-      'android.permission.REQUEST_INSTALL_PACKAGES',
-    );
+    const enabled = process.env.EXPO_PUBLIC_APK_INSTALLER_ENABLED !== '0';
+    if (enabled) {
+      AndroidConfig.Permissions.addPermission(
+        cfg.modResults,
+        'android.permission.REQUEST_INSTALL_PACKAGES',
+      );
+    }
     return cfg;
   });
 
