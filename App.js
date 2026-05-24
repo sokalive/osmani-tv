@@ -57,6 +57,7 @@ import { acknowledgeManualGift } from './api/subscription';
 import { trackInstallOnce } from './api/analytics';
 import { startPresence, stopPresence } from './lib/presenceTracker';
 import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
+import { startExpoUpdatesClient } from './lib/expoUpdatesClient';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
 import { setupOneSignal } from './lib/oneSignal';
 import { resolveMainTabFromOsmaniUrl } from './lib/osmaniDeepLink';
@@ -1482,6 +1483,7 @@ export default function App() {
     void startPresence();
     startRealtimeSync();
     startUpdateClient();
+    const stopExpoUpdates = startExpoUpdatesClient();
     const stopOneSignal = setupOneSignal({
       onOpenUrl: (url) => {
         openOsmaniUrlRef.current(url);
@@ -1491,6 +1493,11 @@ export default function App() {
       void stopPresence();
       stopRealtimeSync();
       stopUpdateClient();
+      try {
+        stopExpoUpdates();
+      } catch {
+        /* ignore */
+      }
       try {
         stopOneSignal();
       } catch {

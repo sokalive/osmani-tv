@@ -117,12 +117,31 @@ const oneSignalAppId =
   process.env.ONESIGNAL_APP_ID?.trim?.() ||
   DEFAULT_ONESIGNAL_APP_ID;
 
+/** EAS project — required for Expo Updates (JS OTA). */
+const EAS_PROJECT_ID = 'adf835d4-ad5d-425d-9e5b-de9a803066e0';
+const EXPO_UPDATES_URL = `https://u.expo.dev/${EAS_PROJECT_ID}`;
+
 module.exports = {
   expo: {
     name: 'Osmani TV',
     slug: 'osmani-tv',
     /** User-visible version (Android versionName / iOS CFBundleShortVersionString). */
     version: '1.6.0',
+    /**
+     * EAS Update runtime — OTA bundles only apply when this matches the native build
+     * (policy: appVersion → uses `version` above). Bump `version` + versionCode for native changes.
+     */
+    runtimeVersion: {
+      policy: 'appVersion',
+    },
+    updates: {
+      enabled: true,
+      url: EXPO_UPDATES_URL,
+      /** Expo rolls back to the embedded bundle after crash loops on a bad OTA. */
+      checkAutomatically: 'ON_ERROR_RECOVERY',
+      /** Wait up to 30s for an update on cold start before using the cached bundle. */
+      fallbackToCacheTimeout: 30000,
+    },
     orientation: 'portrait',
     icon: BRAND_ASSETS.icon,
     scheme: 'osmani',
@@ -184,7 +203,7 @@ module.exports = {
     },
     extra: {
       eas: {
-        projectId: 'adf835d4-ad5d-425d-9e5b-de9a803066e0',
+        projectId: EAS_PROJECT_ID,
       },
       oneSignalAppId,
       /** EAS: set EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS=1 to log push id / permission / opt-in at startup (logcat). */
@@ -240,6 +259,7 @@ module.exports = {
       './plugins/withOsmaniUpdate.js',
       './plugins/withStripMediaPermissions.js',
       './plugins/withGlobalSecureScreen.js',
+      'expo-updates',
     ],
   },
 };

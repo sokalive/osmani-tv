@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
+import { syncExpoUpdateBundle } from '../lib/expoUpdatesClient';
 import { STARTUP_SPLASH_MAX_MS, STARTUP_SPLASH_MIN_MS } from '../lib/startupSplashBoot';
 
 /**
@@ -14,6 +15,7 @@ export function useStartupSplash() {
 
     (async () => {
       const startedAt = Date.now();
+      const expoUpdateSync = syncExpoUpdateBundle('splash').catch(() => null);
       try {
         await SplashScreen.preventAutoHideAsync();
       } catch {
@@ -31,6 +33,12 @@ export function useStartupSplash() {
       );
       if (waitMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+
+      try {
+        await expoUpdateSync;
+      } catch {
+        /* embedded bundle remains active */
       }
 
       if (cancelled) return;
