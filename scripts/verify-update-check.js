@@ -2,15 +2,18 @@
 'use strict';
 
 /**
- * Verifies /api/update-check contract + client normalization against production
- * (or EXPO_PUBLIC_API_URL override).
+ * Verifies update-check normalization + strict latest_version_code gating.
  *
  * Usage:
  *   node scripts/verify-update-check.js
- *   node scripts/verify-update-check.js --installed=14
+ *   node scripts/verify-update-check.js --installed=16
  */
 
-const { parseUpdateCheckResponse, mergeUpdateInfo } = require('../lib/parseUpdateCheckResponse');
+const {
+  applyVersionGate,
+  isOutdated,
+  parseUpdateCheckResponse,
+} = require('../lib/parseUpdateCheckResponse');
 
 const BASE =
   (process.env.EXPO_PUBLIC_API_URL || 'https://osmani-admin-api.onrender.com').replace(/\/+$/, '');
@@ -20,12 +23,86 @@ function arg(name, fallback) {
   return hit ? hit.split('=').slice(1).join('=') : fallback;
 }
 
+function assert(label, cond) {
+  if (!cond) {
+    console.error('FAIL:', label);
+    process.exitCode = 1;
+    return false;
+  }
+  console.log('PASS:', label);
+  return true;
+}
+
+function unitTests() {
+  const latest = 16;
+  const basePayload = {
+    decision: 'FORCE',
+    source: 'apk',
+    latest_version_code: latest,
+    latest_version_name: '1.6.0',
+    force_update: true,
+    soft_update: true,
+    apk_url: 'https://osmanitv.b-cdn.net/builds/test.apk',
+  };
+
+  const v14 = parseUpdateCheckResponse(basePayload, { installedVersionCode: 14 });
+  assert('v14 outdated → FORCE', v14?.decision === 'FORCE');
+
+  const v15 = parseUpdateCheckResponse(basePayload, { installedVersionCode: 15 });
+  assert('v15 outdated → FORCE', v15?.decision === 'FORCE');
+
+  const v16 = parseUpdateCheckResponse(basePayload, { installedVersionCode: 16 });
+  assert('v16 on latest → NONE (admin FORCE ignored)', v16?.decision === 'NONE');
+
+  const v16Soft = parseUpdateCheckResponse(
+    { ...basePayload, decision: 'SOFT', force_update: false },
+    { installedVersionCode: 16 },
+  );
+  assert('v16 on latest → NONE (admin SOFT ignored)', v16Soft?.decision === 'NONE');
+
+  assert('isOutdated(14,16)', isOutdated(14, 16) === true);
+  assert('isOutdated(16,16)', isOutdated(16, 16) === false);
+  assert('isOutdated(17,16)', isOutdated(17, 16) === false);
+
+  const gated = applyVersionGate({
+    decision: 'FORCE',
+    installedVersionCode: 16,
+    latestVersionCode: 16,
+  });
+  assert('applyVersionGate suppresses FORCE on latest', gated.decision === 'NONE');
+
+  // Production-shaped body (version_code as latest alias)
+  const prodShape = parseUpdateCheckResponse(
+    {
+      decision: 'NONE',
+      source: 'apk',
+      version_code: 16,
+      version_name: '1.6.0',
+      soft_update: true,
+    },
+    { installedVersionCode: 14 },
+  );
+  assert('prod shape v14 → SOFT', prodShape?.decision === 'SOFT');
+  assert('prod shape latest parsed as 16', prodShape?.latestVersionCode === 16);
+
+  const prodV16 = parseUpdateCheckResponse(
+    {
+      decision: 'NONE',
+      source: 'apk',
+      version_code: 16,
+      force_update: true,
+    },
+    { installedVersionCode: 16 },
+  );
+  assert('prod shape v16 → NONE', prodV16?.decision === 'NONE');
+}
+
 async function fetchUpdateCheck(installed, pkg) {
   const qs = new URLSearchParams({
     platform: 'android',
     package: pkg,
     version_code: String(installed),
-    version_name: '1.0.0',
+    version_name: '1.6.0',
   });
   const url = `${BASE}/api/update-check?${qs.toString()}`;
   const res = await fetch(url);
@@ -33,60 +110,17 @@ async function fetchUpdateCheck(installed, pkg) {
   return { url, status: res.status, body };
 }
 
-function summarize(label, raw, installed) {
-  const normalized = parseUpdateCheckResponse(raw, {
-    installedVersionCode: installed,
-    requestVersionCode: installed,
-  });
-  const merged = mergeUpdateInfo(
-    { decision: raw?.decision ?? 'NONE', installedVersionCode: installed },
-    normalized,
-  );
-  console.log(`\n[${label}]`);
-  console.log('  raw.decision:', raw?.decision);
-  console.log('  raw.version_code:', raw?.version_code);
-  console.log('  raw.apk_url:', raw?.apk_url ? `${String(raw.apk_url).slice(0, 60)}…` : '(empty)');
-  console.log('  normalized.decision:', normalized?.decision);
-  console.log('  normalized.latestVersionCode:', normalized?.latestVersionCode);
-  console.log('  merged.decision:', merged?.decision);
-  console.log('  merged.decisionRecovered:', Boolean(merged?.decisionRecovered));
-  return merged;
-}
-
 async function main() {
+  console.log('[verify-update-check] strict latest_version_code gate\n');
+  unitTests();
+
   const installed = Number(arg('installed', '14'));
-  const packages = ['com.burudanitv.app', 'com.osmantv.app'];
-  console.log('[verify-update-check] base:', BASE);
-  console.log('[verify-update-check] installed version_code:', installed);
-
-  for (const pkg of packages) {
-    const { url, status, body } = await fetchUpdateCheck(installed, pkg);
-    console.log('\n---', pkg, 'HTTP', status);
-    console.log('URL:', url);
-    if (!body) {
-      console.error('  invalid JSON');
-      continue;
-    }
-    summarize(pkg, body, installed);
-  }
-
-  // Unit sanity: production-shaped payload with flags but decision NONE
-  const mock = {
-    decision: 'NONE',
-    source: 'apk',
-    version_code: 15,
-    apk_url: 'https://osmanitv.b-cdn.net/builds/test.apk',
-    soft_update: true,
-    update_title: 'Update ready',
-    update_message: 'Please install the latest version.',
-  };
-  const mockOut = parseUpdateCheckResponse(mock, { installedVersionCode: 14 });
-  console.log('\n[mock outdated soft] decision:', mockOut?.decision, 'target:', mockOut?.latestVersionCode);
-  if (mockOut?.decision !== 'SOFT') {
-    console.error('FAIL: expected SOFT from mock payload');
-    process.exitCode = 1;
-  } else {
-    console.log('PASS: mock normalization');
+  console.log('\n[live API] installed:', installed, 'base:', BASE);
+  for (const pkg of ['com.burudanitv.app']) {
+    const { status, body } = await fetchUpdateCheck(installed, pkg);
+    if (!body) continue;
+    const out = parseUpdateCheckResponse(body, { installedVersionCode: installed });
+    console.log(`  ${pkg} HTTP ${status} → decision=${out?.decision} latest=${out?.latestVersionCode}`);
   }
 }
 

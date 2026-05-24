@@ -159,22 +159,19 @@ internal data class UpdateInfo(
     val source: String?,
 ) {
     /**
-     * Server may broadcast FORCE/SOFT globally; only outdated installs should see update UI.
-     * When [installedVersionCode] meets or exceeds the published target, treat as satisfied.
+     * Popup / force lock ONLY when installed_version_code < latest_version_code.
+     * Admin SOFT/FORCE toggles never affect installs already on latest.
      */
     fun effectiveDecision(installedVersionCode: Int): UpdateDecision {
+        if (latestVersionCode > 0 && installedVersionCode >= latestVersionCode) {
+            return UpdateDecision.NONE
+        }
         if (decision == UpdateDecision.NONE) return UpdateDecision.NONE
-        val target = serverVersionCodeTarget()
-        if (target <= 0) return decision
-        return if (installedVersionCode >= target) UpdateDecision.NONE else decision
+        return decision
     }
 
-    /** Primary: latest_version_code; fallback: min_supported_version_code when latest is unset. */
-    fun serverVersionCodeTarget(): Int = when {
-        latestVersionCode > 0 -> latestVersionCode
-        minSupportedVersionCode > 0 -> minSupportedVersionCode
-        else -> 0
-    }
+    /** Published APK target (latest_version_code only). */
+    fun serverVersionCodeTarget(): Int = if (latestVersionCode > 0) latestVersionCode else 0
 
     companion object {
         fun fromJson(
@@ -223,13 +220,19 @@ internal data class UpdateInfo(
 
             val rawDecision = pickString(j, "decision", "update_decision", "updateDecision")
             var decision = UpdateDecision.parse(rawDecision)
-            if (decision == UpdateDecision.NONE) {
+
+            val installed = when {
+                installedVersionCode > 0 -> installedVersionCode
+                requestVersionCode > 0 -> requestVersionCode
+                else -> 0
+            }
+            val outdated = latestVersionCode > 0 && installed > 0 && installed < latestVersionCode
+
+            if (!outdated) {
+                decision = UpdateDecision.NONE
+            } else if (decision == UpdateDecision.NONE) {
                 decision = deriveDecision(
                     j = j,
-                    installedVersionCode = installedVersionCode,
-                    requestVersionCode = requestVersionCode,
-                    latestVersionCode = latestVersionCode,
-                    minSupportedVersionCode = minSupportedVersionCode,
                     hasApkDelivery = !effectiveApkUrl.isNullOrBlank(),
                     hasStoreDelivery = !effectivePlayStoreUrl.isNullOrBlank(),
                     source = source,
@@ -266,27 +269,10 @@ internal data class UpdateInfo(
 
         private fun deriveDecision(
             j: JSONObject,
-            installedVersionCode: Int,
-            requestVersionCode: Int,
-            latestVersionCode: Int,
-            minSupportedVersionCode: Int,
             hasApkDelivery: Boolean,
             hasStoreDelivery: Boolean,
             source: String?,
         ): UpdateDecision {
-            val installed = when {
-                installedVersionCode > 0 -> installedVersionCode
-                requestVersionCode > 0 -> requestVersionCode
-                else -> 0
-            }
-            val target = when {
-                latestVersionCode > 0 -> latestVersionCode
-                minSupportedVersionCode > 0 -> minSupportedVersionCode
-                else -> 0
-            }
-            val outdated = target > 0 && installed > 0 && installed < target
-            if (!outdated) return UpdateDecision.NONE
-
             val forceFlag = pickBool(
                 j,
                 "force_update",
