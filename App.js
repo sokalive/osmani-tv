@@ -860,6 +860,9 @@ function ChannelCatalogScreen({
     maintenanceMode,
   ]);
 
+  /** Spinner only while the first channel catalog fetch is pending (not during background refresh). */
+  const channelsPendingInitialLoad = loading && rawChannels.length === 0;
+
   const bannerSlides = useMemo(() => {
     if (!Array.isArray(rawBanners)) return [];
     return rawBanners
@@ -1127,13 +1130,15 @@ function ChannelCatalogScreen({
           })}
         </ScrollView>
 
-        {loading ? (
+        {channelsPendingInitialLoad ? (
           <View style={styles.channelsStatusRow}>
             <ActivityIndicator color={COLORS.greenButton} />
             <Text style={styles.channelsStatusText}>Inapakia chaneli…</Text>
           </View>
         ) : null}
-        {error && !loading ? <Text style={styles.channelsErrorText}>{error}</Text> : null}
+        {error && !channelsPendingInitialLoad ? (
+          <Text style={styles.channelsErrorText}>{error}</Text>
+        ) : null}
 
         {!maintenanceMode &&
         navigatorTabKey === 'home' &&
@@ -1195,7 +1200,7 @@ function ChannelCatalogScreen({
       handleRefresh,
       displayChannels.length,
       bannerSlides,
-      loading,
+      channelsPendingInitialLoad,
       error,
       refreshKey,
       rawChannels,
@@ -1214,7 +1219,7 @@ function ChannelCatalogScreen({
   );
 
   const catalogListEmpty = useMemo(() => {
-    if (loading) return null;
+    if (channelsPendingInitialLoad) return null;
     if (maintenanceMode) {
       return (
         <View style={styles.maintenanceChannelArea}>
@@ -1223,7 +1228,7 @@ function ChannelCatalogScreen({
       );
     }
     return <Text style={styles.channelsEmptyText}>Hakuna chaneli bado.</Text>;
-  }, [loading, maintenanceMode]);
+  }, [channelsPendingInitialLoad, maintenanceMode]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }} edges={['top']}>
@@ -1240,7 +1245,9 @@ function ChannelCatalogScreen({
         contentContainerStyle={[
           styles.listContent,
           { paddingBottom: listBottomPadding },
-          !loading && maintenanceMode && displayChannels.length === 0 ? { flexGrow: 1 } : null,
+          !channelsPendingInitialLoad && maintenanceMode && displayChannels.length === 0
+            ? { flexGrow: 1 }
+            : null,
         ]}
         columnWrapperStyle={displayChannels.length > 0 ? styles.gridRow : null}
         showsVerticalScrollIndicator={false}

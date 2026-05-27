@@ -84,7 +84,7 @@ export function OsmaniAppProvider({ children }) {
   const [settings, setSettings] = useState(defaultSettings);
   const [rawChannels, setRawChannels] = useState([]);
   const [rawBanners, setRawBanners] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [serverHealth, setServerHealth] = useState(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -130,12 +130,14 @@ export function OsmaniAppProvider({ children }) {
   const [paymentModalRequest, setPaymentModalRequest] = useState(0);
 
   const verifyInFlightRef = useRef(false);
+  const refreshInFlightRef = useRef(0);
   const verifyPromiseRef = useRef(null);
   const lastVerifyKeyRef = useRef(0);
   /** Authoritative subscription flag for playback gates (updated synchronously on verify). */
   const isSubscribedRef = useRef(false);
   const trialWatchSettingsRef = useRef(TRIAL_WATCH_FAIL_CLOSED);
   const settingsRef = useRef(defaultSettings);
+  const rawChannelsRef = useRef([]);
   /** Set after source POST /transfer/request succeeds; gates Kubali/Kataa popup. */
   const sourceTransferSessionRef = useRef(null);
 
@@ -322,6 +324,10 @@ export function OsmaniAppProvider({ children }) {
     isSubscribedRef.current = isSubscribed;
   }, [isSubscribed]);
 
+  useEffect(() => {
+    rawChannelsRef.current = rawChannels;
+  }, [rawChannels]);
+
   /**
    * Reload settings + channels.
    * @param {{ showGlobalLoading?: boolean }} [opts] — set showGlobalLoading: false for pull-to-refresh (no full-screen blocking load).
@@ -365,7 +371,10 @@ export function OsmaniAppProvider({ children }) {
     const showGlobalLoading = opts.showGlobalLoading !== false;
     const preserveDataOnError = opts.preserveDataOnError === true;
     const skipSettingsFromHttp = opts.skipSettingsFromHttp === true;
-    if (showGlobalLoading) setLoading(true);
+    refreshInFlightRef.current += 1;
+    const shouldShowLoading =
+      showGlobalLoading || rawChannelsRef.current.length === 0;
+    if (shouldShowLoading) setLoading(true);
     setError(null);
     try {
       const [list, bannersResult, flags, trialFlags] = await Promise.all([
@@ -404,12 +413,15 @@ export function OsmaniAppProvider({ children }) {
         setRawChannels([]);
       }
     } finally {
+      refreshInFlightRef.current = Math.max(0, refreshInFlightRef.current - 1);
       setTrialWatchSettingsLoaded(true);
       if (trialWatchReadyResolveRef.current) {
         trialWatchReadyResolveRef.current(true);
         trialWatchReadyResolveRef.current = null;
       }
-      if (showGlobalLoading) setLoading(false);
+      if (refreshInFlightRef.current === 0) {
+        setLoading(false);
+      }
     }
   }, []);
 
