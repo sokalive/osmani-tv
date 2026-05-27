@@ -319,6 +319,7 @@ function BannerCarousel({
   onPremiumRequired,
   verifySubscriptionBeforePlay,
   trialWatchSettings,
+  awaitPremiumGateReady,
   resetKey = 0,
 }) {
   const security = useSecurity();
@@ -418,6 +419,9 @@ function BannerCarousel({
         raw?.accessType === 'premium' ||
         Boolean(raw?.accessPremium === true || raw?.access_premium === true);
       const isPremium = freeMode ? false : isPremiumApi;
+      if (!freeMode && isPremium) {
+        await awaitPremiumGateReady?.();
+      }
       if (!freeMode && isPremium && !isSubscribed) {
         const trial = await getTrialChannelAccess(trialWatchSettings);
         if (trial.allowViaTrial && trial.bootstrap) {
@@ -460,6 +464,7 @@ function BannerCarousel({
       onPremiumRequired,
       verifySubscriptionBeforePlay,
       trialWatchSettings,
+      awaitPremiumGateReady,
       security,
     ],
   );

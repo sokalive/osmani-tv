@@ -279,6 +279,7 @@ function ChannelCatalogScreen({
     verifySubscriptionBeforePlay,
     requestEmergencyModal,
     trialWatchSettings,
+    awaitPremiumGateReady,
   } = useOsmaniApp();
   const security = useSecurity();
   const [selectedFilter, setSelectedFilter] = useState('Zote');
@@ -361,7 +362,10 @@ function ChannelCatalogScreen({
   useEffect(() => {
     if (!enableHomeExpiryReminder) return;
     if (route?.params?.openPremiumAfterExpiry === true) {
-      setPremiumModalVisible(true);
+      void (async () => {
+        await awaitPremiumGateReady?.();
+        setPremiumModalVisible(true);
+      })();
       navigation.setParams({ openPremiumAfterExpiry: false });
     }
   }, [enableHomeExpiryReminder, navigation, route?.params?.openPremiumAfterExpiry]);
@@ -794,10 +798,15 @@ function ChannelCatalogScreen({
     }
   }, [syncPendingGiftBlocking]);
 
+  const openPremiumModal = useCallback(async () => {
+    await awaitPremiumGateReady?.();
+    setPremiumModalVisible(true);
+  }, [awaitPremiumGateReady]);
+
   const onRenewFromExpiryReminder = useCallback(() => {
     setExpiryReminderVisible(false);
-    setPremiumModalVisible(true);
-  }, []);
+    void openPremiumModal();
+  }, [openPremiumModal]);
 
   const mountManualGiftModal = enableHomeExpiryReminder && manualGiftVisible;
 
@@ -881,6 +890,9 @@ function ChannelCatalogScreen({
     async (playerChannel, { isPremium = false } = {}) => {
       if (!playerChannel) return;
       const premiumContent = !freeMode && isPremium;
+      if (premiumContent) {
+        await awaitPremiumGateReady?.();
+      }
       if (premiumContent && !isSubscribed) {
         const trial = await getTrialChannelAccess(trialWatchSettings);
         if (trial.allowViaTrial && trial.bootstrap) {
@@ -890,7 +902,7 @@ function ChannelCatalogScreen({
           });
           return;
         }
-        setPremiumModalVisible(true);
+        await openPremiumModal();
         return;
       }
       if (premiumContent) {
@@ -900,7 +912,7 @@ function ChannelCatalogScreen({
             'Kifurushi',
             'Hakuna malipo halali au kifurushi kimekwisha. Lipa ili kuendelea.',
           );
-          setPremiumModalVisible(true);
+          await openPremiumModal();
           return;
         }
       }
@@ -915,15 +927,17 @@ function ChannelCatalogScreen({
       freeMode,
       isSubscribed,
       trialWatchSettings,
+      awaitPremiumGateReady,
       verifySubscriptionBeforePlay,
       navigation,
       security,
+      openPremiumModal,
     ],
   );
 
   const onBannerPremiumRequired = useCallback(() => {
-    setPremiumModalVisible(true);
-  }, []);
+    void openPremiumModal();
+  }, [openPremiumModal]);
 
   const handleCardPress = useCallback(
     async (item) => {
@@ -1101,6 +1115,7 @@ function ChannelCatalogScreen({
             onPremiumRequired={onBannerPremiumRequired}
             verifySubscriptionBeforePlay={verifySubscriptionBeforePlay}
             trialWatchSettings={trialWatchSettings}
+            awaitPremiumGateReady={awaitPremiumGateReady}
           />
         ) : null}
 
@@ -1256,7 +1271,9 @@ function ChannelCatalogScreen({
         <HomeExpiryFloatingBanner
           visible={homeFloaterVisible}
           detailLine={`Bado siku ~${homeNearExpirySnap.displaySikuX} (saa ~${homeNearExpirySnap.remainingHoursCeil}).`}
-          onPayPress={() => setPremiumModalVisible(true)}
+          onPayPress={() => {
+            void openPremiumModal();
+          }}
         />
       ) : null}
       <PremiumModal

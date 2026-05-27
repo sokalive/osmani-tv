@@ -104,6 +104,25 @@ export function OsmaniAppProvider({ children }) {
   /** Bumped to re-open global emergency modal (banner / channel tap while emergency). */
   const [emergencyModalRequestVersion, setEmergencyModalRequestVersion] = useState(0);
   const [trialWatchSettings, setTrialWatchSettings] = useState(DEFAULT_TRIAL_WATCH_SETTINGS);
+  /** True once we've attempted the initial viewer-safe trial-watch fetch (success or fail). */
+  const [trialWatchSettingsLoaded, setTrialWatchSettingsLoaded] = useState(false);
+  const trialWatchReadyResolveRef = useRef(null);
+  const trialWatchReadyPromiseRef = useRef(null);
+  if (!trialWatchReadyPromiseRef.current) {
+    trialWatchReadyPromiseRef.current = new Promise((resolve) => {
+      trialWatchReadyResolveRef.current = resolve;
+    });
+  }
+
+  /** True once cold-start subscription recover+verify has completed (success or fail). */
+  const [subscriptionSyncLoaded, setSubscriptionSyncLoaded] = useState(false);
+  const subscriptionReadyResolveRef = useRef(null);
+  const subscriptionReadyPromiseRef = useRef(null);
+  if (!subscriptionReadyPromiseRef.current) {
+    subscriptionReadyPromiseRef.current = new Promise((resolve) => {
+      subscriptionReadyResolveRef.current = resolve;
+    });
+  }
   /** Incremented to open PremiumModal from any screen (trial / preview expiry). */
   const [paymentModalRequest, setPaymentModalRequest] = useState(0);
 
@@ -296,10 +315,18 @@ export function OsmaniAppProvider({ children }) {
    * Lightweight: viewer-safe app flags via GET /api/public/app-settings only.
    */
   const refreshTrialWatchSettings = useCallback(async (reason = 'poll') => {
-    const s = await tryGetViewerTrialWatchSettings();
-    if (s) {
-      setTrialWatchSettings(s);
-      console.log('[TRIAL_WATCH_SYNC]', reason, s);
+    try {
+      const s = await tryGetViewerTrialWatchSettings();
+      if (s) {
+        setTrialWatchSettings(s);
+        console.log('[TRIAL_WATCH_SYNC]', reason, s);
+      }
+    } finally {
+      setTrialWatchSettingsLoaded(true);
+      if (trialWatchReadyResolveRef.current) {
+        trialWatchReadyResolveRef.current(true);
+        trialWatchReadyResolveRef.current = null;
+      }
     }
   }, []);
 
@@ -347,6 +374,11 @@ export function OsmaniAppProvider({ children }) {
         setRawChannels([]);
       }
     } finally {
+      setTrialWatchSettingsLoaded(true);
+      if (trialWatchReadyResolveRef.current) {
+        trialWatchReadyResolveRef.current(true);
+        trialWatchReadyResolveRef.current = null;
+      }
       if (showGlobalLoading) setLoading(false);
     }
   }, []);
@@ -384,8 +416,33 @@ export function OsmaniAppProvider({ children }) {
 
   // Cold-start: recover (in case of reinstall) and immediately verify.
   useEffect(() => {
-    void recoverAndVerify('cold-start');
+    (async () => {
+      try {
+        await recoverAndVerify('cold-start');
+      } finally {
+        setSubscriptionSyncLoaded(true);
+        if (subscriptionReadyResolveRef.current) {
+          subscriptionReadyResolveRef.current(true);
+          subscriptionReadyResolveRef.current = null;
+        }
+      }
+    })();
   }, [recoverAndVerify]);
+
+  const awaitTrialWatchSettingsReady = useCallback(async () => {
+    if (trialWatchSettingsLoaded) return true;
+    return trialWatchReadyPromiseRef.current;
+  }, [trialWatchSettingsLoaded]);
+
+  const awaitSubscriptionSyncReady = useCallback(async () => {
+    if (subscriptionSyncLoaded) return true;
+    return subscriptionReadyPromiseRef.current;
+  }, [subscriptionSyncLoaded]);
+
+  const awaitPremiumGateReady = useCallback(async () => {
+    await Promise.all([awaitTrialWatchSettingsReady(), awaitSubscriptionSyncReady()]);
+    return true;
+  }, [awaitSubscriptionSyncReady, awaitTrialWatchSettingsReady]);
 
   useEffect(() => {
     void refreshServerHealth('initial');
@@ -707,6 +764,11 @@ export function OsmaniAppProvider({ children }) {
       emergencyModalRequestVersion,
       requestEmergencyModal,
       trialWatchSettings,
+      trialWatchSettingsLoaded,
+      subscriptionSyncLoaded,
+      awaitTrialWatchSettingsReady,
+      awaitSubscriptionSyncReady,
+      awaitPremiumGateReady,
       paymentModalRequest,
       requestPaymentModal,
     }),
@@ -737,6 +799,11 @@ export function OsmaniAppProvider({ children }) {
       emergencyModalRequestVersion,
       requestEmergencyModal,
       trialWatchSettings,
+      trialWatchSettingsLoaded,
+      subscriptionSyncLoaded,
+      awaitTrialWatchSettingsReady,
+      awaitSubscriptionSyncReady,
+      awaitPremiumGateReady,
       paymentModalRequest,
       requestPaymentModal,
     ],
