@@ -21,6 +21,7 @@ import {
   readBannersCache,
   writeBannersCache,
 } from '../lib/bannersCache';
+import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
@@ -261,8 +262,9 @@ export function OsmaniAppProvider({ children }) {
       await dropLegacyBannersCache();
       const cached = await readBannersCache();
       if (cancelled || !cached?.banners?.length) return;
-      setRawBanners(cached.banners);
-      logBannerRuntimeDiagnostics(cached.banners);
+      const enriched = enrichBannersForViewer(cached.banners);
+      setRawBanners(enriched);
+      logBannerRuntimeDiagnostics(enriched);
     })();
     return () => {
       cancelled = true;
@@ -357,6 +359,7 @@ export function OsmaniAppProvider({ children }) {
       adminSoftSyncTimerRef.current = setTimeout(() => {
         adminSoftSyncTimerRef.current = null;
         console.log('[ADMIN_SYNC]', 'soft_refresh', reason);
+        void refreshTrialWatchSettings(reason);
         void refresh({
           showGlobalLoading: false,
           preserveDataOnError: true,
@@ -365,7 +368,7 @@ export function OsmaniAppProvider({ children }) {
         void reverifySubscription(reason);
       }, 320);
     },
-    [refresh, reverifySubscription],
+    [refresh, refreshTrialWatchSettings, reverifySubscription],
   );
 
   useEffect(

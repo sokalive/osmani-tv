@@ -104,7 +104,7 @@ export function useTrialWatchSession({
     const loaded = await loadTrialWatchState();
     stateRef.current = loaded;
     const allowance = resolveTrialWatchAllowance(loaded, trialWatchSettings);
-    if (allowance.phase === 'blocked' || allowance.remainingMs <= 0) {
+    if (allowance.phase === 'blocked') {
       setReady(true);
       setPhase(null);
       setRemainingMs(0);

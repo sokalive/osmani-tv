@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
+import { useRegisterBlockingSheet } from '../context/ModalSheetCoordinatorContext';
 import PremiumModal from './PremiumModal';
 
 /**
@@ -8,6 +9,7 @@ import PremiumModal from './PremiumModal';
 export default function GlobalPaymentModalGate() {
   const { paymentModalRequest, reverifySubscription } = useOsmaniApp();
   const [visible, setVisible] = useState(false);
+  useRegisterBlockingSheet('global-payment-modal', visible);
 
   useEffect(() => {
     if (!paymentModalRequest) return;

@@ -28,8 +28,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    zIndex: 40,
-    elevation: 12,
+    zIndex: 100,
+    elevation: 24,
     alignItems: 'flex-start',
   },
   pill: {
