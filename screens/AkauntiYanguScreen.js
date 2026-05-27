@@ -435,7 +435,7 @@ export default function AkauntiYanguScreen() {
               onPress={handleCopyDeviceId}
               disabled={!deviceIdFull}
             >
-              <Text style={styles.copyBtnText}>Nakili</Text>
+              <Text style={styles.copyBtnText}>COPY</Text>
             </Pressable>
           </View>
           <Text style={styles.deviceFooter}>
