@@ -10,7 +10,6 @@ import {
 } from '../lib/trialWatchSettings.shared';
 import {
   clearSubscriptionCache,
-  readSubscriptionCache,
   recoverSubscription,
   verifySubscription,
   writeSubscriptionCache,
@@ -25,8 +24,6 @@ import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
-import { getExpoUpdatesDiagnostics } from '../lib/expoUpdatesClient';
-import { trialSettingsSnapshot, trialTrace } from '../lib/trialTrace';
 
 const defaultSettings = {
   freeMode: false,
@@ -129,7 +126,12 @@ export function OsmaniAppProvider({ children }) {
   const [paymentModalRequest, setPaymentModalRequest] = useState(0);
 
   const verifyInFlightRef = useRef(false);
+  const verifyPromiseRef = useRef(null);
   const lastVerifyKeyRef = useRef(0);
+  /** Authoritative subscription flag for playback gates (updated synchronously on verify). */
+  const isSubscribedRef = useRef(false);
+  const trialWatchSettingsRef = useRef(DEFAULT_TRIAL_WATCH_SETTINGS);
+  const settingsRef = useRef(defaultSettings);
   /** Set after source POST /transfer/request succeeds; gates Kubali/Kataa popup. */
   const sourceTransferSessionRef = useRef(null);
 
@@ -140,90 +142,95 @@ export function OsmaniAppProvider({ children }) {
    * player) can gate playback on the same atomic answer.
    */
   const reverifySubscription = useCallback(async (reason = 'manual') => {
-    if (verifyInFlightRef.current) {
-      console.log('[SUBSCRIPTION_VERIFY]', 'in-flight; skipping duplicate', { reason });
+    if (verifyPromiseRef.current) {
+      console.log('[SUBSCRIPTION_VERIFY]', 'awaiting in-flight', { reason });
+      return verifyPromiseRef.current;
     }
-    verifyInFlightRef.current = true;
-    const verifyKey = ++lastVerifyKeyRef.current;
-    try {
-      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-      const r = await verifySubscription(deviceId, deviceFingerprint);
-      if (verifyKey !== lastVerifyKeyRef.current) return r;
-      const active = r.active === true;
-      const expiresAt = r.expiresAt ?? null;
-      trialTrace('subscription_verify_result', {
-        reason,
-        active,
-        expiresAt,
-        error: r?.error ?? null,
-      });
-      // Capture the monotonic anchor for the server-time at the instant
-      // we received the response. Used by `subscriptionMath` for the
-      // visual progress bar — never for trust.
-      const serverTimeFetchedAt = Date.now();
-      setIsSubscribed(active);
-      setSubscriptionExpiresAt(active ? expiresAt : null);
-      if (Array.isArray(r.plans) && r.plans.length > 0) {
-        setAvailablePlans(r.plans);
-      }
-      const detailsPayload = active
-        ? {
-            amount: r.amount ?? null,
-            currency: r.currency ?? null,
-            planName: r.planName ?? null,
-            planDurationDays: r.planDurationDays ?? r.plan_duration_days ?? null,
-            plan_duration_days: r.plan_duration_days ?? r.planDurationDays ?? null,
-            startedAt: r.startedAt ?? null,
-            expiresAt,
-            serverTime: r.serverTime ?? null,
-            serverTimeFetchedAt,
-            plans: Array.isArray(r.plans) ? r.plans : [],
-            /** When set, Home may show a one-time admin gift popup until acknowledged. */
-            manualGiftAckKey: r.manualGiftAckKey ?? null,
-          }
-        : null;
-      setSubscriptionDetails(detailsPayload);
-      console.log('[MANUAL_GIFT]', 'context_after_verify', {
-        reason,
-        active,
-        manualGiftAckKey: detailsPayload?.manualGiftAckKey ?? null,
-        rawVerifyManualGiftAckKey: r?.manualGiftAckKey ?? null,
-      });
-      if (__DEV__) {
-        console.log('[ACCOUNT_DURATION]', 'context_after_verify', {
-          planDurationDays: detailsPayload?.planDurationDays ?? null,
-          raw_verify_planDurationDays: r?.planDurationDays,
-          raw_verify_plan_duration_days: r?.plan_duration_days,
+
+    const run = (async () => {
+      verifyInFlightRef.current = true;
+      const verifyKey = ++lastVerifyKeyRef.current;
+      try {
+        const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+        const r = await verifySubscription(deviceId, deviceFingerprint);
+        if (verifyKey !== lastVerifyKeyRef.current) return r;
+        const active = r.active === true;
+        const expiresAt = r.expiresAt ?? null;
+        isSubscribedRef.current = active;
+        const serverTimeFetchedAt = Date.now();
+        setIsSubscribed(active);
+        setSubscriptionExpiresAt(active ? expiresAt : null);
+        if (Array.isArray(r.plans) && r.plans.length > 0) {
+          setAvailablePlans(r.plans);
+        }
+        const detailsPayload = active
+          ? {
+              amount: r.amount ?? null,
+              currency: r.currency ?? null,
+              planName: r.planName ?? null,
+              planDurationDays: r.planDurationDays ?? r.plan_duration_days ?? null,
+              plan_duration_days: r.plan_duration_days ?? r.planDurationDays ?? null,
+              startedAt: r.startedAt ?? null,
+              expiresAt,
+              serverTime: r.serverTime ?? null,
+              serverTimeFetchedAt,
+              plans: Array.isArray(r.plans) ? r.plans : [],
+              manualGiftAckKey: r.manualGiftAckKey ?? null,
+            }
+          : null;
+        setSubscriptionDetails(detailsPayload);
+        console.log('[MANUAL_GIFT]', 'context_after_verify', {
+          reason,
+          active,
+          manualGiftAckKey: detailsPayload?.manualGiftAckKey ?? null,
+          rawVerifyManualGiftAckKey: r?.manualGiftAckKey ?? null,
         });
-      }
-      setSubscriptionVersion((v) => v + 1);
-      if (active) {
-        setRevokedReason(null);
-        await writeSubscriptionCache({ active: true, expiresAt, deviceId, fingerprint: deviceFingerprint });
-      } else {
-        await clearSubscriptionCache(`verify:${reason}`);
-      }
-      console.log('[SUBSCRIPTION_VERIFY]', reason, {
-        active,
-        expiresAt,
-        amount: r.amount ?? null,
-        planName: r.planName ?? null,
-        startedAt: r.startedAt ?? null,
-        serverTime: r.serverTime ?? null,
-      });
-      return r;
-    } catch (e) {
-      console.log('[SUBSCRIPTION_VERIFY]', reason, 'error', e?.message ?? e);
-      if (verifyKey === lastVerifyKeyRef.current) {
-        setIsSubscribed(false);
-        setSubscriptionExpiresAt(null);
-        setSubscriptionDetails(null);
+        if (__DEV__) {
+          console.log('[ACCOUNT_DURATION]', 'context_after_verify', {
+            planDurationDays: detailsPayload?.planDurationDays ?? null,
+            raw_verify_planDurationDays: r?.planDurationDays,
+            raw_verify_plan_duration_days: r?.plan_duration_days,
+          });
+        }
         setSubscriptionVersion((v) => v + 1);
-        await clearSubscriptionCache(`verify-error:${reason}`);
+        if (active) {
+          setRevokedReason(null);
+          await writeSubscriptionCache({ active: true, expiresAt, deviceId, fingerprint: deviceFingerprint });
+        } else {
+          await clearSubscriptionCache(`verify:${reason}`);
+        }
+        console.log('[SUBSCRIPTION_VERIFY]', reason, {
+          active,
+          expiresAt,
+          amount: r.amount ?? null,
+          planName: r.planName ?? null,
+          startedAt: r.startedAt ?? null,
+          serverTime: r.serverTime ?? null,
+        });
+        return r;
+      } catch (e) {
+        console.log('[SUBSCRIPTION_VERIFY]', reason, 'error', e?.message ?? e);
+        if (verifyKey === lastVerifyKeyRef.current) {
+          isSubscribedRef.current = false;
+          setIsSubscribed(false);
+          setSubscriptionExpiresAt(null);
+          setSubscriptionDetails(null);
+          setSubscriptionVersion((v) => v + 1);
+          await clearSubscriptionCache(`verify-error:${reason}`);
+        }
+        return { active: false, expiresAt: null, error: String(e?.message ?? e) };
+      } finally {
+        verifyInFlightRef.current = false;
       }
-      return { active: false, expiresAt: null, error: String(e?.message ?? e) };
+    })();
+
+    verifyPromiseRef.current = run;
+    try {
+      return await run;
     } finally {
-      verifyInFlightRef.current = false;
+      if (verifyPromiseRef.current === run) {
+        verifyPromiseRef.current = null;
+      }
     }
   }, []);
 
@@ -251,12 +258,6 @@ export function OsmaniAppProvider({ children }) {
   const gateForPlayback = useCallback(async (reason = 'play') => {
     const r = await reverifySubscription(`gate:${reason}`);
     const active = r?.active === true;
-    const playbackGateReason = active ? 'allowed' : 'denied';
-    trialTrace('playback_gate_result', {
-      playbackGateReason,
-      reason,
-      active,
-    });
     if (!active) {
       console.log('[PLAYBACK_GATE]', 'denied', reason);
       setRevokedReason((cur) => cur ?? 'expired');
@@ -271,6 +272,7 @@ export function OsmaniAppProvider({ children }) {
     if (!subscription) return;
     const active = subscription.isActive === true || subscription.active === true;
     if (!active) return;
+    isSubscribedRef.current = true;
     setIsSubscribed(true);
     if (subscription.expiresAt != null) setSubscriptionExpiresAt(String(subscription.expiresAt));
     setRevokedReason(null);
@@ -304,28 +306,17 @@ export function OsmaniAppProvider({ children }) {
     };
   }, []);
 
-  /**
-   * Optimistic UI hint from local cache. NEVER used to grant playback —
-   * `gateForPlayback` always reverifies against the backend before play.
-   */
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const cached = await readSubscriptionCache();
-      trialTrace('subscription_cache_read', {
-        active: cached?.active === true,
-        expiresAt: cached?.expiresAt ?? null,
-        deviceId: cached?.deviceId ?? null,
-        fingerprint: cached?.fingerprint ? `${String(cached.fingerprint).slice(0, 8)}…` : null,
-      });
-      if (cancelled || !cached?.active) return;
-      setIsSubscribed(true);
-      if (cached.expiresAt) setSubscriptionExpiresAt(cached.expiresAt);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
+    trialWatchSettingsRef.current = trialWatchSettings;
+  }, [trialWatchSettings]);
+
+  useEffect(() => {
+    isSubscribedRef.current = isSubscribed;
+  }, [isSubscribed]);
 
   /**
    * Reload settings + channels.
@@ -337,12 +328,8 @@ export function OsmaniAppProvider({ children }) {
   const refreshTrialWatchSettings = useCallback(async (reason = 'poll') => {
     try {
       const s = await tryGetViewerTrialWatchSettings();
-      trialTrace('trial_watch_settings_fetch', {
-        reason,
-        fetched: Boolean(s),
-        settings: trialSettingsSnapshot(s),
-      });
       if (s) {
+        trialWatchSettingsRef.current = s;
         setTrialWatchSettings(s);
         console.log('[TRIAL_WATCH_SYNC]', reason, s);
       }
@@ -382,11 +369,8 @@ export function OsmaniAppProvider({ children }) {
       if (flags && !skipSettingsFromHttp) {
         setSettings((prev) => ({ ...prev, ...flags }));
       }
-      trialTrace('trial_watch_settings_refresh_batch', {
-        fetched: Boolean(trialFlags),
-        settings: trialSettingsSnapshot(trialFlags),
-      });
       if (trialFlags) {
+        trialWatchSettingsRef.current = trialFlags;
         setTrialWatchSettings(trialFlags);
       }
       setRawChannels(sortChannelsByAdminOrder(Array.isArray(list) ? list : []));
@@ -443,12 +427,6 @@ export function OsmaniAppProvider({ children }) {
     refresh();
   }, [refresh]);
 
-  useEffect(() => {
-    void getExpoUpdatesDiagnostics().then((ota) => {
-      trialTrace('ota_bundle_diagnostics', ota);
-    });
-  }, []);
-
   // Cold-start: recover (in case of reinstall) and immediately verify.
   useEffect(() => {
     (async () => {
@@ -474,31 +452,28 @@ export function OsmaniAppProvider({ children }) {
     return subscriptionReadyPromiseRef.current;
   }, [subscriptionSyncLoaded]);
 
-  const awaitPremiumGateReady = useCallback(async () => {
-    const startedAt = Date.now();
-    trialTrace('await_premium_gate_ready_start', {
-      trialWatchSettingsLoaded,
-      subscriptionSyncLoaded,
-      isSubscribed,
-      settings: trialSettingsSnapshot(trialWatchSettings),
-    });
+  const getPremiumAccessSnapshot = useCallback(
+    () => ({
+      premiumPlaybackReady: subscriptionSyncLoaded && trialWatchSettingsLoaded,
+      isSubscribed: isSubscribedRef.current,
+      freeMode: settingsRef.current.freeMode,
+      trialWatchSettings: trialWatchSettingsRef.current,
+    }),
+    [subscriptionSyncLoaded, trialWatchSettingsLoaded],
+  );
+
+  const awaitPremiumAccessSnapshot = useCallback(async () => {
     await Promise.all([awaitTrialWatchSettingsReady(), awaitSubscriptionSyncReady()]);
-    trialTrace('await_premium_gate_ready_done', {
-      waitedMs: Date.now() - startedAt,
-      trialWatchSettingsLoaded: true,
-      subscriptionSyncLoaded: true,
-      isSubscribed,
-      settings: trialSettingsSnapshot(trialWatchSettings),
-    });
-    return true;
+    return getPremiumAccessSnapshot();
   }, [
     awaitSubscriptionSyncReady,
     awaitTrialWatchSettingsReady,
-    isSubscribed,
-    subscriptionSyncLoaded,
-    trialWatchSettings,
-    trialWatchSettingsLoaded,
+    getPremiumAccessSnapshot,
   ]);
+
+  const awaitPremiumGateReady = awaitPremiumAccessSnapshot;
+
+  const premiumPlaybackReady = subscriptionSyncLoaded && trialWatchSettingsLoaded;
 
   useEffect(() => {
     void refreshServerHealth('initial');
@@ -538,6 +513,7 @@ export function OsmaniAppProvider({ children }) {
           ? payload.reason
           : 'revoked';
       setRevokedReason(reason);
+      isSubscribedRef.current = false;
       setIsSubscribed(false);
       setSubscriptionExpiresAt(null);
       setSubscriptionDetails(null);
@@ -638,10 +614,14 @@ export function OsmaniAppProvider({ children }) {
         } else {
           console.log('[SETTINGS_SYNC]', ev, 'no_mode_keys_in_payload');
         }
-        setTrialWatchSettings((prev) => ({
-          ...prev,
-          ...parseTrialWatchSettings(payload),
-        }));
+        setTrialWatchSettings((prev) => {
+          const next = {
+            ...prev,
+            ...parseTrialWatchSettings(payload),
+          };
+          trialWatchSettingsRef.current = next;
+          return next;
+        });
         void reverifySubscription(`sse:${ev}`);
       }),
     );
@@ -747,9 +727,6 @@ export function OsmaniAppProvider({ children }) {
   }, []);
 
   const requestPaymentModal = useCallback(() => {
-    trialTrace('payment_modal_request_global', {
-      source: 'requestPaymentModal',
-    });
     setPaymentModalRequest((v) => v + 1);
   }, []);
 
@@ -825,6 +802,9 @@ export function OsmaniAppProvider({ children }) {
       trialWatchSettings,
       trialWatchSettingsLoaded,
       subscriptionSyncLoaded,
+      premiumPlaybackReady,
+      getPremiumAccessSnapshot,
+      awaitPremiumAccessSnapshot,
       awaitTrialWatchSettingsReady,
       awaitSubscriptionSyncReady,
       awaitPremiumGateReady,
@@ -860,6 +840,9 @@ export function OsmaniAppProvider({ children }) {
       trialWatchSettings,
       trialWatchSettingsLoaded,
       subscriptionSyncLoaded,
+      premiumPlaybackReady,
+      getPremiumAccessSnapshot,
+      awaitPremiumAccessSnapshot,
       awaitTrialWatchSettingsReady,
       awaitSubscriptionSyncReady,
       awaitPremiumGateReady,

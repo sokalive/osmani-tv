@@ -1,14 +1,19 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { formatTrialCountdown } from '../lib/trialWatchState';
+
+function formatClock(totalSeconds) {
+  const s = Math.max(0, Math.trunc(totalSeconds));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
+}
 
 /**
- * @param {{ phase: 'trial' | 'preview'; remainingMs: number; topInset?: number }} props
+ * @param {{ phase: 'trial' | 'preview'; displaySeconds: number; topInset?: number }} props
  */
-export default function TrialWatchOverlay({ phase, remainingMs, topInset = 0 }) {
+function TrialWatchOverlay({ phase, displaySeconds, topInset = 0 }) {
   if (phase !== 'trial' && phase !== 'preview') return null;
   const label = phase === 'trial' ? 'Muda wa jaribio' : 'Onyesho fupi';
-  const clock = formatTrialCountdown(remainingMs);
 
   return (
     <View
@@ -17,11 +22,13 @@ export default function TrialWatchOverlay({ phase, remainingMs, topInset = 0 }) 
     >
       <View style={[styles.pill, phase === 'preview' ? styles.pillPreview : null]}>
         <Text style={styles.label}>{label}</Text>
-        <Text style={styles.clock}>{clock}</Text>
+        <Text style={styles.clock}>{formatClock(displaySeconds)}</Text>
       </View>
     </View>
   );
 }
+
+export default memo(TrialWatchOverlay);
 
 const styles = StyleSheet.create({
   wrap: {
@@ -59,5 +66,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
     letterSpacing: 0.5,
+    minWidth: 44,
+    textAlign: 'right',
   },
 });

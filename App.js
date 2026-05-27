@@ -46,7 +46,7 @@ import GlobalPaymentModalGate from './components/GlobalPaymentModalGate';
 import AkauntiYanguScreen from './screens/AkauntiYanguScreen';
 import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
-import { SecurityProvider, assertPlaybackAllowed, useSecurity } from './context/SecurityContext';
+import { SecurityProvider, useSecurity } from './context/SecurityContext';
 import {
   ModalSheetCoordinatorProvider,
   useModalSheetCoordinator,
@@ -65,8 +65,7 @@ import { resolveStream } from './lib/channelStream';
 import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBarLayout';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
-import { getTrialChannelAccess } from './lib/trialWatchAccess';
-import { trialSettingsSnapshot, trialTrace } from './lib/trialTrace';
+import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
 import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
 import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
@@ -280,7 +279,8 @@ function ChannelCatalogScreen({
     verifySubscriptionBeforePlay,
     requestEmergencyModal,
     trialWatchSettings,
-    awaitPremiumGateReady,
+    awaitPremiumAccessSnapshot,
+    premiumPlaybackReady,
   } = useOsmaniApp();
   const security = useSecurity();
   const [selectedFilter, setSelectedFilter] = useState('Zote');
@@ -364,12 +364,12 @@ function ChannelCatalogScreen({
     if (!enableHomeExpiryReminder) return;
     if (route?.params?.openPremiumAfterExpiry === true) {
       void (async () => {
-        await awaitPremiumGateReady?.();
+        await awaitPremiumAccessSnapshot?.();
         setPremiumModalVisible(true);
       })();
       navigation.setParams({ openPremiumAfterExpiry: false });
     }
-  }, [enableHomeExpiryReminder, navigation, route?.params?.openPremiumAfterExpiry]);
+  }, [enableHomeExpiryReminder, navigation, route?.params?.openPremiumAfterExpiry, awaitPremiumAccessSnapshot]);
 
   useEffect(() => {
     let cancelled = false;
@@ -799,15 +799,13 @@ function ChannelCatalogScreen({
     }
   }, [syncPendingGiftBlocking]);
 
-  const openPremiumModal = useCallback(async (source = 'catalog') => {
-    trialTrace('premium_modal_open_catalog', { source });
-    await awaitPremiumGateReady?.();
+  const openPremiumModal = useCallback(() => {
     setPremiumModalVisible(true);
-  }, [awaitPremiumGateReady]);
+  }, []);
 
   const onRenewFromExpiryReminder = useCallback(() => {
     setExpiryReminderVisible(false);
-    void openPremiumModal();
+    openPremiumModal();
   }, [openPremiumModal]);
 
   const mountManualGiftModal = enableHomeExpiryReminder && manualGiftVisible;
@@ -891,76 +889,19 @@ function ChannelCatalogScreen({
   const navigateToChannel = useCallback(
     async (playerChannel, { isPremium = false } = {}) => {
       if (!playerChannel) return;
-      const premiumContent = !freeMode && isPremium;
-      trialTrace('navigate_to_channel_start', {
-        channelName: playerChannel?.name ?? null,
+      const snapshot = await awaitPremiumAccessSnapshot();
+      await openPremiumChannelFromSnapshot(snapshot, {
+        playerChannel,
         cardIsPremium: isPremium,
-        premiumContent,
-        freeMode,
-        isSubscribedHook: isSubscribed,
-        channelAccessType: playerChannel?.accessType ?? null,
-        channelAccessPremium: playerChannel?.accessPremium ?? null,
-        settings: trialSettingsSnapshot(trialWatchSettings),
+        navigation,
+        openPaymentModal: openPremiumModal,
+        verifySubscriptionBeforePlay,
+        security,
+        Alert,
       });
-      if (premiumContent) {
-        await awaitPremiumGateReady?.();
-      }
-      trialTrace('navigate_to_channel_after_gate', {
-        isSubscribedHook: isSubscribed,
-        premiumContent,
-      });
-      if (premiumContent && !isSubscribed) {
-        const trial = await getTrialChannelAccess(trialWatchSettings, {
-          source: 'catalog_navigate',
-        });
-        if (trial.allowViaTrial && trial.bootstrap) {
-          trialTrace('navigate_to_channel_trial_player', {
-            bootstrap: trial.bootstrap,
-          });
-          navigation.navigate('ChannelPlayer', {
-            channel: playerChannel,
-            trialWatchBootstrap: trial.bootstrap,
-          });
-          return;
-        }
-        trialTrace('navigate_to_channel_open_payment', {
-          reason: 'trial_not_allowed',
-          exhausted: trial.exhausted,
-        });
-        await openPremiumModal('trial_denied');
-        return;
-      }
-      if (premiumContent) {
-        trialTrace('navigate_to_channel_subscriber_verify', {
-          isSubscribedHook: isSubscribed,
-        });
-        const ok = await verifySubscriptionBeforePlay();
-        trialTrace('navigate_to_channel_subscriber_verify_result', { ok });
-        if (!ok) {
-          Alert.alert(
-            'Kifurushi',
-            'Hakuna malipo halali au kifurushi kimekwisha. Lipa ili kuendelea.',
-          );
-          await openPremiumModal('verify_failed');
-          return;
-        }
-      }
-      const secGate = assertPlaybackAllowed(security);
-      if (!secGate.ok) {
-        Alert.alert('Usalama', secGate.message);
-        return;
-      }
-      trialTrace('navigate_to_channel_direct_player', {
-        viaTrial: false,
-        premiumContent,
-      });
-      navigation.navigate('ChannelPlayer', { channel: playerChannel });
     },
     [
-      freeMode,
-      isSubscribed,
-      trialWatchSettings,
-      awaitPremiumGateReady,
+      awaitPremiumAccessSnapshot,
       verifySubscriptionBeforePlay,
       navigation,
       security,
@@ -969,7 +910,7 @@ function ChannelCatalogScreen({
   );
 
   const onBannerPremiumRequired = useCallback(() => {
-    void openPremiumModal();
+    openPremiumModal();
   }, [openPremiumModal]);
 
   const handleCardPress = useCallback(
@@ -979,9 +920,20 @@ function ChannelCatalogScreen({
         requestEmergencyModal();
         return;
       }
+      if (item.isPremium && !freeMode && !premiumPlaybackReady) {
+        await awaitPremiumAccessSnapshot();
+      }
       await navigateToChannel(item.playerChannel, { isPremium: item.isPremium });
     },
-    [maintenanceMode, emergencyMode, navigateToChannel, requestEmergencyModal],
+    [
+      maintenanceMode,
+      emergencyMode,
+      navigateToChannel,
+      requestEmergencyModal,
+      freeMode,
+      premiumPlaybackReady,
+      awaitPremiumAccessSnapshot,
+    ],
   );
 
   const renderCard = ({ item }) => {
@@ -1147,8 +1099,9 @@ function ChannelCatalogScreen({
             onEmergency={onBannerEmergency}
             onPremiumRequired={onBannerPremiumRequired}
             verifySubscriptionBeforePlay={verifySubscriptionBeforePlay}
-            trialWatchSettings={trialWatchSettings}
-            awaitPremiumGateReady={awaitPremiumGateReady}
+            awaitPremiumAccessSnapshot={awaitPremiumAccessSnapshot}
+            premiumPlaybackReady={premiumPlaybackReady}
+            openPaymentModal={openPremiumModal}
           />
         ) : null}
 

@@ -22,8 +22,7 @@ import {
   buildPlayerChannelFromRow,
   findRawChannelById,
 } from '../lib/playerChannelFromRow';
-import { getTrialChannelAccess } from '../lib/trialWatchAccess';
-import { trialTrace } from '../lib/trialTrace';
+import { openPremiumChannelFromSnapshot } from '../lib/premiumChannelNavigation';
 
 const COLORS = {
   white: '#FFFFFF',
@@ -319,8 +318,9 @@ function BannerCarousel({
   onEmergency,
   onPremiumRequired,
   verifySubscriptionBeforePlay,
-  trialWatchSettings,
-  awaitPremiumGateReady,
+  awaitPremiumAccessSnapshot,
+  premiumPlaybackReady,
+  openPaymentModal,
   resetKey = 0,
 }) {
   const security = useSecurity();
@@ -420,53 +420,32 @@ function BannerCarousel({
         raw?.accessType === 'premium' ||
         Boolean(raw?.accessPremium === true || raw?.access_premium === true);
       const isPremium = freeMode ? false : isPremiumApi;
-      if (!freeMode && isPremium) {
-        await awaitPremiumGateReady?.();
+      if (isPremium && !freeMode && !premiumPlaybackReady) {
+        await awaitPremiumAccessSnapshot?.();
       }
-      if (!freeMode && isPremium && !isSubscribed) {
-        const trial = await getTrialChannelAccess(trialWatchSettings, { source: 'banner_navigate' });
-        if (trial.allowViaTrial && trial.bootstrap) {
-          const secGate = assertPlaybackAllowed(security);
-          if (!secGate.ok) {
-            Alert.alert('Usalama', secGate.message);
-            return;
-          }
-          navigation.navigate('ChannelPlayer', {
-            channel: playerChannel,
-            trialWatchBootstrap: trial.bootstrap,
-          });
-          return;
-        }
-        trialTrace('banner_open_payment', { channelName: raw?.name ?? null });
-        onPremiumRequired?.();
-        return;
-      }
-      if (isPremium && !freeMode && typeof verifySubscriptionBeforePlay === 'function') {
-        const ok = await verifySubscriptionBeforePlay();
-        if (!ok) {
-          onPremiumRequired?.();
-          return;
-        }
-      }
-      const secGate = assertPlaybackAllowed(security);
-      if (!secGate.ok) {
-        Alert.alert('Usalama', secGate.message);
-        return;
-      }
-      navigation.navigate('ChannelPlayer', { channel: playerChannel });
+      const snapshot = await awaitPremiumAccessSnapshot?.();
+      await openPremiumChannelFromSnapshot(snapshot, {
+        playerChannel,
+        cardIsPremium: isPremium,
+        navigation,
+        openPaymentModal: openPaymentModal ?? onPremiumRequired ?? (() => {}),
+        verifySubscriptionBeforePlay,
+        security,
+        Alert,
+      });
     },
     [
       rawChannels,
       freeMode,
-      isSubscribed,
       maintenanceMode,
       emergencyMode,
       navigation,
       onEmergency,
       onPremiumRequired,
       verifySubscriptionBeforePlay,
-      trialWatchSettings,
-      awaitPremiumGateReady,
+      awaitPremiumAccessSnapshot,
+      premiumPlaybackReady,
+      openPaymentModal,
       security,
     ],
   );

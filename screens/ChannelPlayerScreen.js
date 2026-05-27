@@ -41,7 +41,6 @@ import TrialWatchOverlay from '../components/TrialWatchOverlay';
 import { usePlaybackSecurityGate } from '../context/SecurityContext';
 import { useTrialWatchSession } from '../hooks/useTrialWatchSession';
 import { shouldRunTrialWatchOnChannel } from '../lib/trialWatchAccess';
-import { trialSettingsSnapshot, trialTrace } from '../lib/trialTrace';
 
 /**
  * Pick a playback engine:
@@ -134,39 +133,22 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     String(channel?.accessType ?? '').toLowerCase() === 'premium',
   );
   const trialWatchBootstrap = route?.params?.trialWatchBootstrap ?? null;
-  const trialWatchApplies = useMemo(
-    () =>
+  const viaTrialPlayback =
+    !freeMode &&
+    channelIsPremium &&
+    (Boolean(trialWatchBootstrap) ||
       shouldRunTrialWatchOnChannel({
         channel,
         isSubscribed,
         freeMode,
         trialWatchSettings,
-      }),
-    [channel, isSubscribed, freeMode, trialWatchSettings],
-  );
-  const viaTrialPlayback = trialWatchApplies && channelIsPremium && !freeMode;
+      }));
   const [accessChecked, setAccessChecked] = useState(
     () => !channelIsPremium || freeMode || viaTrialPlayback,
   );
   const [accessAllowed, setAccessAllowed] = useState(
     () => !channelIsPremium || freeMode || viaTrialPlayback,
   );
-
-  useEffect(() => {
-    trialTrace('player_mount', {
-      channelName: channel?.name ?? null,
-      channelIsPremium,
-      freeMode,
-      isSubscribed,
-      trialWatchApplies,
-      viaTrialPlayback,
-      hasBootstrap: Boolean(trialWatchBootstrap),
-      bootstrap: trialWatchBootstrap,
-      channelAccessType: channel?.accessType ?? null,
-      channelAccessPremium: channel?.accessPremium ?? null,
-      settings: trialSettingsSnapshot(trialWatchSettings),
-    });
-  }, []);
 
   const streams = [
     channel?.url,
@@ -1402,7 +1384,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       {viaTrialPlayback && trialWatch.visible && trialWatch.phase ? (
         <TrialWatchOverlay
           phase={trialWatch.phase}
-          remainingMs={trialWatch.remainingMs}
+          displaySeconds={trialWatch.displaySeconds}
           topInset={insets.top + 52}
         />
       ) : null}

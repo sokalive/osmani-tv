@@ -11,10 +11,13 @@ import {
   resolveTrialWatchAllowance,
   saveTrialWatchState,
 } from '../lib/trialWatchState';
-import { trialSettingsSnapshot, trialTrace } from '../lib/trialTrace';
 
 const TICK_MS = 250;
 const PAYMENT_MODAL_DELAY_MS = 480;
+
+function secondsFromMs(ms) {
+  return Math.max(0, Math.ceil(ms / 1000));
+}
 
 /**
  * @param {{
@@ -41,9 +44,11 @@ export function useTrialWatchSession({
   navigation,
 }) {
   const boot = initialBootstrap;
-  const [remainingMs, setRemainingMs] = useState(boot?.remainingMs ?? 0);
   const [phase, setPhase] = useState(
     boot?.phase === 'trial' || boot?.phase === 'preview' ? boot.phase : null,
+  );
+  const [displaySeconds, setDisplaySeconds] = useState(() =>
+    secondsFromMs(boot?.remainingMs ?? 0),
   );
   const [ready, setReady] = useState(!enabled || Boolean(boot));
 
@@ -52,6 +57,7 @@ export function useTrialWatchSession({
   const sessionPhaseRef = useRef(
     boot?.phase === 'trial' || boot?.phase === 'preview' ? boot.phase : null,
   );
+  const displaySecondsRef = useRef(secondsFromMs(boot?.remainingMs ?? 0));
   const lastTickAtRef = useRef(Date.now());
   const expiredRef = useRef(false);
   const screenFocusedRef = useRef(false);
@@ -62,6 +68,13 @@ export function useTrialWatchSession({
   const active =
     enabled &&
     shouldApplyTrialWatch({ isSubscribed, freeMode, trialWatchSettings });
+
+  const syncDisplaySeconds = useCallback((remainingMs) => {
+    const next = secondsFromMs(remainingMs);
+    if (next === displaySecondsRef.current) return;
+    displaySecondsRef.current = next;
+    setDisplaySeconds(next);
+  }, []);
 
   const persistState = useCallback(async () => {
     if (!stateRef.current) return;
@@ -91,7 +104,8 @@ export function useTrialWatchSession({
         clearInterval(tickTimerRef.current);
         tickTimerRef.current = null;
       }
-      setRemainingMs(0);
+      displaySecondsRef.current = 0;
+      setDisplaySeconds(0);
       setPhase(null);
       await persistState();
       try {
@@ -115,11 +129,22 @@ export function useTrialWatchSession({
     [navigation, persistState, schedulePaymentModal, stopPlayback],
   );
 
+  const applyAllowanceToSession = useCallback(
+    (allowance) => {
+      sessionPhaseRef.current = allowance.phase;
+      sessionRemainingRef.current = allowance.remainingMs;
+      setPhase(allowance.phase);
+      syncDisplaySeconds(allowance.remainingMs);
+    },
+    [syncDisplaySeconds],
+  );
+
   const bootstrap = useCallback(async () => {
     if (!active) {
       setReady(true);
       setPhase(null);
-      setRemainingMs(0);
+      displaySecondsRef.current = 0;
+      setDisplaySeconds(0);
       return;
     }
 
@@ -127,7 +152,7 @@ export function useTrialWatchSession({
       sessionPhaseRef.current = boot.phase;
       sessionRemainingRef.current = boot.remainingMs;
       setPhase(boot.phase);
-      setRemainingMs(boot.remainingMs);
+      syncDisplaySeconds(boot.remainingMs);
       setReady(true);
       lastTickAtRef.current = Date.now();
     }
@@ -137,25 +162,23 @@ export function useTrialWatchSession({
     const allowance = resolveTrialWatchAllowance(loaded, trialWatchSettings);
 
     if (allowance.phase === 'blocked') {
-      trialTrace('trial_session_bootstrap_blocked', {
-        hadRouteBootstrap: Boolean(boot?.phase),
-        trialExhausted: loaded.trialExhausted,
-        settings: trialSettingsSnapshot(trialWatchSettings),
-      });
+      if (boot?.phase && boot.remainingMs > 0) {
+        setReady(true);
+        lastTickAtRef.current = Date.now();
+        return;
+      }
       setReady(true);
       setPhase(null);
-      setRemainingMs(0);
+      displaySecondsRef.current = 0;
+      setDisplaySeconds(0);
       void finishExpired(loaded.trialExhausted ? 'preview' : 'trial');
       return;
     }
 
-    sessionPhaseRef.current = allowance.phase;
-    sessionRemainingRef.current = allowance.remainingMs;
-    setPhase(allowance.phase);
-    setRemainingMs(allowance.remainingMs);
+    applyAllowanceToSession(allowance);
     setReady(true);
     lastTickAtRef.current = Date.now();
-  }, [active, boot, finishExpired, trialWatchSettings]);
+  }, [active, applyAllowanceToSession, boot, finishExpired, syncDisplaySeconds, trialWatchSettings]);
 
   useEffect(() => {
     expiredRef.current = false;
@@ -209,7 +232,7 @@ export function useTrialWatchSession({
 
       if (sessionPhaseRef.current === 'preview') {
         sessionRemainingRef.current = Math.max(0, sessionRemainingRef.current - delta);
-        setRemainingMs(sessionRemainingRef.current);
+        syncDisplaySeconds(sessionRemainingRef.current);
         if (sessionRemainingRef.current <= 0) {
           void finishExpired('preview');
         }
@@ -224,7 +247,7 @@ export function useTrialWatchSession({
         );
         const allowance = resolveTrialWatchAllowance(stateRef.current, trialWatchSettings);
         sessionRemainingRef.current = allowance.remainingMs;
-        setRemainingMs(allowance.remainingMs);
+        syncDisplaySeconds(allowance.remainingMs);
         if (allowance.phase === 'preview') {
           sessionPhaseRef.current = 'preview';
           sessionRemainingRef.current = allowance.remainingMs;
@@ -249,19 +272,20 @@ export function useTrialWatchSession({
     trialWatchSettings,
     finishExpired,
     persistState,
+    syncDisplaySeconds,
   ]);
 
   const showOverlay =
     active &&
     (phase === 'trial' || phase === 'preview') &&
-    remainingMs > 0 &&
+    displaySeconds > 0 &&
     (ready || Boolean(boot));
 
   return {
     active,
     ready,
     phase,
-    remainingMs,
+    displaySeconds,
     visible: showOverlay,
   };
 }
