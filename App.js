@@ -66,6 +66,7 @@ import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBa
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import { getTrialChannelAccess } from './lib/trialWatchAccess';
+import { trialSettingsSnapshot, trialTrace } from './lib/trialTrace';
 import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
 import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
@@ -798,7 +799,8 @@ function ChannelCatalogScreen({
     }
   }, [syncPendingGiftBlocking]);
 
-  const openPremiumModal = useCallback(async () => {
+  const openPremiumModal = useCallback(async (source = 'catalog') => {
+    trialTrace('premium_modal_open_catalog', { source });
     await awaitPremiumGateReady?.();
     setPremiumModalVisible(true);
   }, [awaitPremiumGateReady]);
@@ -890,29 +892,56 @@ function ChannelCatalogScreen({
     async (playerChannel, { isPremium = false } = {}) => {
       if (!playerChannel) return;
       const premiumContent = !freeMode && isPremium;
+      trialTrace('navigate_to_channel_start', {
+        channelName: playerChannel?.name ?? null,
+        cardIsPremium: isPremium,
+        premiumContent,
+        freeMode,
+        isSubscribedHook: isSubscribed,
+        channelAccessType: playerChannel?.accessType ?? null,
+        channelAccessPremium: playerChannel?.accessPremium ?? null,
+        settings: trialSettingsSnapshot(trialWatchSettings),
+      });
       if (premiumContent) {
         await awaitPremiumGateReady?.();
       }
+      trialTrace('navigate_to_channel_after_gate', {
+        isSubscribedHook: isSubscribed,
+        premiumContent,
+      });
       if (premiumContent && !isSubscribed) {
-        const trial = await getTrialChannelAccess(trialWatchSettings);
+        const trial = await getTrialChannelAccess(trialWatchSettings, {
+          source: 'catalog_navigate',
+        });
         if (trial.allowViaTrial && trial.bootstrap) {
+          trialTrace('navigate_to_channel_trial_player', {
+            bootstrap: trial.bootstrap,
+          });
           navigation.navigate('ChannelPlayer', {
             channel: playerChannel,
             trialWatchBootstrap: trial.bootstrap,
           });
           return;
         }
-        await openPremiumModal();
+        trialTrace('navigate_to_channel_open_payment', {
+          reason: 'trial_not_allowed',
+          exhausted: trial.exhausted,
+        });
+        await openPremiumModal('trial_denied');
         return;
       }
       if (premiumContent) {
+        trialTrace('navigate_to_channel_subscriber_verify', {
+          isSubscribedHook: isSubscribed,
+        });
         const ok = await verifySubscriptionBeforePlay();
+        trialTrace('navigate_to_channel_subscriber_verify_result', { ok });
         if (!ok) {
           Alert.alert(
             'Kifurushi',
             'Hakuna malipo halali au kifurushi kimekwisha. Lipa ili kuendelea.',
           );
-          await openPremiumModal();
+          await openPremiumModal('verify_failed');
           return;
         }
       }
@@ -921,6 +950,10 @@ function ChannelCatalogScreen({
         Alert.alert('Usalama', secGate.message);
         return;
       }
+      trialTrace('navigate_to_channel_direct_player', {
+        viaTrial: false,
+        premiumContent,
+      });
       navigation.navigate('ChannelPlayer', { channel: playerChannel });
     },
     [

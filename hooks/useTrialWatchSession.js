@@ -11,6 +11,7 @@ import {
   resolveTrialWatchAllowance,
   saveTrialWatchState,
 } from '../lib/trialWatchState';
+import { trialSettingsSnapshot, trialTrace } from '../lib/trialTrace';
 
 const TICK_MS = 250;
 const PAYMENT_MODAL_DELAY_MS = 480;
@@ -136,6 +137,11 @@ export function useTrialWatchSession({
     const allowance = resolveTrialWatchAllowance(loaded, trialWatchSettings);
 
     if (allowance.phase === 'blocked') {
+      trialTrace('trial_session_bootstrap_blocked', {
+        hadRouteBootstrap: Boolean(boot?.phase),
+        trialExhausted: loaded.trialExhausted,
+        settings: trialSettingsSnapshot(trialWatchSettings),
+      });
       setReady(true);
       setPhase(null);
       setRemainingMs(0);

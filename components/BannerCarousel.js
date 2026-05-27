@@ -23,6 +23,7 @@ import {
   findRawChannelById,
 } from '../lib/playerChannelFromRow';
 import { getTrialChannelAccess } from '../lib/trialWatchAccess';
+import { trialTrace } from '../lib/trialTrace';
 
 const COLORS = {
   white: '#FFFFFF',
@@ -423,7 +424,7 @@ function BannerCarousel({
         await awaitPremiumGateReady?.();
       }
       if (!freeMode && isPremium && !isSubscribed) {
-        const trial = await getTrialChannelAccess(trialWatchSettings);
+        const trial = await getTrialChannelAccess(trialWatchSettings, { source: 'banner_navigate' });
         if (trial.allowViaTrial && trial.bootstrap) {
           const secGate = assertPlaybackAllowed(security);
           if (!secGate.ok) {
@@ -436,6 +437,7 @@ function BannerCarousel({
           });
           return;
         }
+        trialTrace('banner_open_payment', { channelName: raw?.name ?? null });
         onPremiumRequired?.();
         return;
       }

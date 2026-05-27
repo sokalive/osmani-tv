@@ -41,6 +41,7 @@ import TrialWatchOverlay from '../components/TrialWatchOverlay';
 import { usePlaybackSecurityGate } from '../context/SecurityContext';
 import { useTrialWatchSession } from '../hooks/useTrialWatchSession';
 import { shouldRunTrialWatchOnChannel } from '../lib/trialWatchAccess';
+import { trialSettingsSnapshot, trialTrace } from '../lib/trialTrace';
 
 /**
  * Pick a playback engine:
@@ -150,6 +151,22 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [accessAllowed, setAccessAllowed] = useState(
     () => !channelIsPremium || freeMode || viaTrialPlayback,
   );
+
+  useEffect(() => {
+    trialTrace('player_mount', {
+      channelName: channel?.name ?? null,
+      channelIsPremium,
+      freeMode,
+      isSubscribed,
+      trialWatchApplies,
+      viaTrialPlayback,
+      hasBootstrap: Boolean(trialWatchBootstrap),
+      bootstrap: trialWatchBootstrap,
+      channelAccessType: channel?.accessType ?? null,
+      channelAccessPremium: channel?.accessPremium ?? null,
+      settings: trialSettingsSnapshot(trialWatchSettings),
+    });
+  }, []);
 
   const streams = [
     channel?.url,

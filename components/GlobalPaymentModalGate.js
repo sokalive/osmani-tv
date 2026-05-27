@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { useRegisterBlockingSheet } from '../context/ModalSheetCoordinatorContext';
 import PremiumModal from './PremiumModal';
+import { trialTrace } from '../lib/trialTrace';
 
 /**
  * Opens PremiumModal from anywhere (e.g. trial expiry on the player screen).
@@ -13,6 +14,10 @@ export default function GlobalPaymentModalGate() {
 
   useEffect(() => {
     if (!paymentModalRequest) return;
+    trialTrace('premium_modal_open_global', {
+      paymentModalRequest,
+      source: 'GlobalPaymentModalGate',
+    });
     setVisible(true);
   }, [paymentModalRequest]);
 

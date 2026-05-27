@@ -25,6 +25,8 @@ import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
+import { getExpoUpdatesDiagnostics } from '../lib/expoUpdatesClient';
+import { trialSettingsSnapshot, trialTrace } from '../lib/trialTrace';
 
 const defaultSettings = {
   freeMode: false,
@@ -149,6 +151,12 @@ export function OsmaniAppProvider({ children }) {
       if (verifyKey !== lastVerifyKeyRef.current) return r;
       const active = r.active === true;
       const expiresAt = r.expiresAt ?? null;
+      trialTrace('subscription_verify_result', {
+        reason,
+        active,
+        expiresAt,
+        error: r?.error ?? null,
+      });
       // Capture the monotonic anchor for the server-time at the instant
       // we received the response. Used by `subscriptionMath` for the
       // visual progress bar — never for trust.
@@ -243,6 +251,12 @@ export function OsmaniAppProvider({ children }) {
   const gateForPlayback = useCallback(async (reason = 'play') => {
     const r = await reverifySubscription(`gate:${reason}`);
     const active = r?.active === true;
+    const playbackGateReason = active ? 'allowed' : 'denied';
+    trialTrace('playback_gate_result', {
+      playbackGateReason,
+      reason,
+      active,
+    });
     if (!active) {
       console.log('[PLAYBACK_GATE]', 'denied', reason);
       setRevokedReason((cur) => cur ?? 'expired');
@@ -298,6 +312,12 @@ export function OsmaniAppProvider({ children }) {
     let cancelled = false;
     (async () => {
       const cached = await readSubscriptionCache();
+      trialTrace('subscription_cache_read', {
+        active: cached?.active === true,
+        expiresAt: cached?.expiresAt ?? null,
+        deviceId: cached?.deviceId ?? null,
+        fingerprint: cached?.fingerprint ? `${String(cached.fingerprint).slice(0, 8)}…` : null,
+      });
       if (cancelled || !cached?.active) return;
       setIsSubscribed(true);
       if (cached.expiresAt) setSubscriptionExpiresAt(cached.expiresAt);
@@ -317,6 +337,11 @@ export function OsmaniAppProvider({ children }) {
   const refreshTrialWatchSettings = useCallback(async (reason = 'poll') => {
     try {
       const s = await tryGetViewerTrialWatchSettings();
+      trialTrace('trial_watch_settings_fetch', {
+        reason,
+        fetched: Boolean(s),
+        settings: trialSettingsSnapshot(s),
+      });
       if (s) {
         setTrialWatchSettings(s);
         console.log('[TRIAL_WATCH_SYNC]', reason, s);
@@ -357,6 +382,10 @@ export function OsmaniAppProvider({ children }) {
       if (flags && !skipSettingsFromHttp) {
         setSettings((prev) => ({ ...prev, ...flags }));
       }
+      trialTrace('trial_watch_settings_refresh_batch', {
+        fetched: Boolean(trialFlags),
+        settings: trialSettingsSnapshot(trialFlags),
+      });
       if (trialFlags) {
         setTrialWatchSettings(trialFlags);
       }
@@ -414,6 +443,12 @@ export function OsmaniAppProvider({ children }) {
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    void getExpoUpdatesDiagnostics().then((ota) => {
+      trialTrace('ota_bundle_diagnostics', ota);
+    });
+  }, []);
+
   // Cold-start: recover (in case of reinstall) and immediately verify.
   useEffect(() => {
     (async () => {
@@ -440,9 +475,30 @@ export function OsmaniAppProvider({ children }) {
   }, [subscriptionSyncLoaded]);
 
   const awaitPremiumGateReady = useCallback(async () => {
+    const startedAt = Date.now();
+    trialTrace('await_premium_gate_ready_start', {
+      trialWatchSettingsLoaded,
+      subscriptionSyncLoaded,
+      isSubscribed,
+      settings: trialSettingsSnapshot(trialWatchSettings),
+    });
     await Promise.all([awaitTrialWatchSettingsReady(), awaitSubscriptionSyncReady()]);
+    trialTrace('await_premium_gate_ready_done', {
+      waitedMs: Date.now() - startedAt,
+      trialWatchSettingsLoaded: true,
+      subscriptionSyncLoaded: true,
+      isSubscribed,
+      settings: trialSettingsSnapshot(trialWatchSettings),
+    });
     return true;
-  }, [awaitSubscriptionSyncReady, awaitTrialWatchSettingsReady]);
+  }, [
+    awaitSubscriptionSyncReady,
+    awaitTrialWatchSettingsReady,
+    isSubscribed,
+    subscriptionSyncLoaded,
+    trialWatchSettings,
+    trialWatchSettingsLoaded,
+  ]);
 
   useEffect(() => {
     void refreshServerHealth('initial');
@@ -691,6 +747,9 @@ export function OsmaniAppProvider({ children }) {
   }, []);
 
   const requestPaymentModal = useCallback(() => {
+    trialTrace('payment_modal_request_global', {
+      source: 'requestPaymentModal',
+    });
     setPaymentModalRequest((v) => v + 1);
   }, []);
 
