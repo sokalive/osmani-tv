@@ -106,6 +106,34 @@ const countdownOnlyDaily = normalizeBanner(
 assert(countdownOnlyDaily.hasDailyTimer, 'countdown ON + daily window');
 assert(getBannerRuntimeState(countdownOnlyDaily, atLocal(14, 0)) != null, 'countdown-only runtime');
 
+const showRedApiDaily = normalizeBanner(
+  {
+    id: 7,
+    useTimer: false,
+    event_timer: false,
+    show_red_badge: true,
+    startTime: '16:00',
+    endTime: '20:00',
+    runtime_position: 'bottom_left',
+  },
+  0,
+);
+assert(showRedApiDaily.hasDailyTimer, 'show_red_badge + daily window');
+assert(showRedApiDaily.runtimePosition === 'bottom_left', 'show_red_badge preserves position');
+assert(getBannerRuntimeState(showRedApiDaily, atLocal(14, 0)) != null, 'show_red_badge runtime');
+
+const eventTimerOnly = normalizeBanner(
+  {
+    id: 100,
+    event_timer: true,
+    show_red_badge: true,
+    eventStart: new Date(atLocal(22, 0, 2)).toISOString(),
+    eventEnd: new Date(atLocal(23, 0, 2)).toISOString(),
+  },
+  0,
+);
+assert(eventTimerOnly.hasEventSchedule, 'event_timer + show_red_badge schedule');
+
 assert(parseRuntimePosition({ runtime_position: 'bottom_left' }) === 'bottom_left');
 assert(parseRuntimePosition({ runtimePosition: 'top-right' }) === 'top_right');
 assert(parseRuntimePosition({ runtime_position: 'top left' }) === 'top_left', 'space separated');

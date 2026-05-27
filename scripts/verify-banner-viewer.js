@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const { enrichBannerForViewer } = require('../backend/lib/bannerViewerSerializer');
+const { enrichBannerForViewer } = require('../lib/bannerViewerSerializer.shared.js');
 
 function assert(label, cond) {
   if (!cond) {
@@ -22,13 +22,14 @@ const timerBanner = {
   badge_enabled: true,
   badge: '',
   runtime_position: 'bottom_left',
+  show_red_badge: true,
 };
 
 const out = enrichBannerForViewer(timerBanner);
 
-assert('timer flags stripped', out.useTimer === false && out.event_timer === false);
-assert('badge text from timer fallback', out.badge === 'LIVE NOW');
-assert('badge color red', out.badge_color === '#DC2626');
-assert('badge position top_left', out.badge_position === 'top_left');
+assert('preserves timer fields', out.useTimer === true && out.event_timer === true);
+assert('preserves show_red_badge', out.show_red_badge === true);
+assert('preserves runtime position', out.runtime_position === 'bottom_left');
+assert('preserves badge text', out.badge === '');
 
 console.log('\n[verify-banner-viewer] done');

@@ -13,7 +13,6 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   bannerNeedsRuntimeTick,
-  formatCountdownClock,
   getBannerRuntimeState,
   getSlideBadgePosition,
   getSlideRuntimePosition,
@@ -29,8 +28,6 @@ const COLORS = {
   mutedText: '#A1A8B5',
   greenButton: '#1EC967',
   pillRed: '#DC2626',
-  pillGreen: '#16A34A',
-  pillBlue: '#1D4ED8',
 };
 
 const AUTO_MS = 5000;
@@ -99,16 +96,10 @@ function runtimeBlockAlignStyle(position) {
   return styles.runtimeBlockAlignCenter;
 }
 
-/** @param {{ variant: 'en' | 'sw' | 'clock'; children: string }} props */
-function RuntimePill({ variant, children }) {
-  const pillStyle =
-    variant === 'en'
-      ? styles.pillRed
-      : variant === 'sw'
-        ? styles.pillGreen
-        : styles.pillBlue;
+/** @param {{ children: string }} props */
+function RuntimeStatusPill({ children }) {
   return (
-    <View style={[styles.runtimePill, pillStyle]}>
+    <View style={[styles.runtimePill, styles.pillRed]}>
       <Text style={styles.runtimePillText} numberOfLines={2}>
         {children}
       </Text>
@@ -152,13 +143,10 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
   const showRuntimeUi = runtime != null;
 
   const showAdminBadge =
-    !runtime && slide.badgeEnabled && slide.badgeText.length > 0;
+    !showRuntimeUi && slide.badgeEnabled && slide.badgeText.length > 0;
   const badgeOpacity = useBadgePulse(showAdminBadge && slide.badgeBlink);
   const badgePosition = getSlideBadgePosition(slide);
   const badgeOverlayStyle = getRuntimeOverlayStyle(badgePosition);
-  const countdownClock = runtime
-    ? formatCountdownClock(runtime.remainingSec)
-    : null;
   const runtimePosition = getSlideRuntimePosition(slide);
   const overlayStyle = getRuntimeOverlayStyle(runtimePosition);
   const useCenterStack = runtimePosition === 'center';
@@ -168,45 +156,12 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
       runtimePosition === 'bottom_left' ||
       runtimePosition === 'bottom_right');
 
-  useEffect(() => {
-    if (!runtime) return;
-    console.warn(
-      '[BANNER_POSITION]',
-      JSON.stringify({
-        id: slide.id,
-        title: slide.title,
-        raw: {
-          runtime_position: slide.runtimePositionRaw ?? null,
-          field: slide.runtimePositionField ?? null,
-        },
-        normalized: slide.runtimePosition,
-        appliedStyle: runtimePosition,
-        useCenterStack,
-        overlayStyle: overlayStyle ? runtimePosition : null,
-      }),
-    );
-  }, [
-    runtime,
-    slide.id,
-    slide.title,
-    slide.runtimePosition,
-    slide.runtimePositionRaw,
-    slide.runtimePositionField,
-    runtimePosition,
-    useCenterStack,
-    overlayStyle,
-  ]);
-
-  const runtimePills = runtime ? (
+  const runtimePill = showRuntimeUi ? (
     <View
       style={[styles.runtimeBlock, runtimeBlockAlignStyle(runtimePosition)]}
       pointerEvents="none"
     >
-      <RuntimePill variant="en">{runtime.statusLine}</RuntimePill>
-      {runtime.subtitleLine ? (
-        <RuntimePill variant="sw">{runtime.subtitleLine}</RuntimePill>
-      ) : null}
-      {countdownClock ? <RuntimePill variant="clock">{countdownClock}</RuntimePill> : null}
+      <RuntimeStatusPill>{runtime.statusLine}</RuntimeStatusPill>
     </View>
   ) : null;
 
@@ -234,27 +189,34 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
       )}
       <LinearGradient
         colors={
-          runtime
-            ? ['rgba(0,0,0,0)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.85)']
+          showRuntimeUi
+            ? ['rgba(0,0,0,0.15)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.88)']
             : ['rgba(0,0,0,0)', 'rgba(0,0,0,0.68)']
         }
         start={{ x: 0.5, y: 0.25 }}
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      <View style={[styles.overlay, usesBottomRuntime ? styles.overlayRaisedTitle : null]}>
-        {slide.description && !showRuntimeUi ? (
-          <Text style={styles.desc} numberOfLines={1}>
-            {slide.description}
-          </Text>
-        ) : null}
+      <View
+        style={[
+          styles.overlay,
+          styles.textOverlay,
+          usesBottomRuntime ? styles.overlayRaisedTitle : null,
+        ]}
+        pointerEvents="none"
+      >
         <Text
           style={[styles.title, showRuntimeUi ? styles.titleWithRuntime : null]}
           numberOfLines={showRuntimeUi ? 1 : 2}
         >
           {slide.title}
         </Text>
-        {useCenterStack ? runtimePills : null}
+        {slide.description ? (
+          <Text style={styles.desc} numberOfLines={showRuntimeUi ? 1 : 2}>
+            {slide.description}
+          </Text>
+        ) : null}
+        {useCenterStack ? runtimePill : null}
       </View>
       {showAdminBadge && badgeOverlayStyle ? (
         <View style={[styles.badgeOverlay, badgeOverlayStyle]} pointerEvents="none">
@@ -273,9 +235,9 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
           </Animated.View>
         </View>
       ) : null}
-      {runtime && !useCenterStack && overlayStyle ? (
+      {showRuntimeUi && !useCenterStack && overlayStyle ? (
         <View style={[styles.runtimeOverlay, overlayStyle]} pointerEvents="none">
-          {runtimePills}
+          {runtimePill}
         </View>
       ) : null}
     </View>
@@ -534,25 +496,27 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     justifyContent: 'flex-end',
   },
+  textOverlay: {
+    zIndex: 4,
+    elevation: 4,
+  },
   overlayRaisedTitle: {
     paddingBottom: 88,
   },
   runtimeOverlay: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 5,
-    elevation: 7,
+    zIndex: 6,
+    elevation: 6,
   },
   badgeOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 8,
-    elevation: 9,
+    elevation: 8,
   },
   runtimeBlock: {
     maxWidth: '94%',
     marginTop: 6,
     marginBottom: 2,
-    zIndex: 4,
-    elevation: 6,
   },
   runtimeBlockAlignCenter: {
     alignSelf: 'center',
@@ -582,12 +546,6 @@ const styles = StyleSheet.create({
   },
   pillRed: {
     backgroundColor: COLORS.pillRed,
-  },
-  pillGreen: {
-    backgroundColor: COLORS.pillGreen,
-  },
-  pillBlue: {
-    backgroundColor: COLORS.pillBlue,
   },
   runtimePillText: {
     color: COLORS.white,
@@ -619,16 +577,22 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 20,
     fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   titleWithRuntime: {
     fontSize: 16,
     marginBottom: 2,
   },
   desc: {
-    marginTop: 6,
-    color: 'rgba(255,255,255,0.85)',
+    marginTop: 4,
+    color: 'rgba(255,255,255,0.92)',
     fontSize: 13,
     fontWeight: '500',
+    textShadowColor: 'rgba(0,0,0,0.85)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   dotsRow: {
     marginTop: 10,
