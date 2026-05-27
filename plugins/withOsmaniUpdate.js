@@ -3,7 +3,8 @@ const { AndroidConfig, withAndroidManifest } = require('@expo/config-plugins');
 /**
  * Expo config plugin for the local osmani-update native module.
  * Adds REQUEST_INSTALL_PACKAGES only when APK sideload is enabled (not Play Store).
- * Set EXPO_PUBLIC_APK_INSTALLER_ENABLED=0 on production EAS profile to omit the permission.
+ * Omit permission only when EXPO_PUBLIC_APK_INSTALLER_ENABLED=0 (legacy Play v1.7.0 native build).
+ * OTA / preview / future native builds should not set that env.
  */
 const withOsmaniUpdate = (config) =>
   withAndroidManifest(config, (cfg) => {
