@@ -24,6 +24,10 @@ import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
+import { withTimeout } from '../lib/asyncTimeout';
+
+const STARTUP_FETCH_TIMEOUT_MS = 12_000;
+const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
 
 const defaultSettings = {
   freeMode: false,
@@ -365,10 +369,16 @@ export function OsmaniAppProvider({ children }) {
     setError(null);
     try {
       const [list, bannersResult, flags, trialFlags] = await Promise.all([
-        getChannels(),
-        getBanners().catch(() => null),
-        tryGetViewerAppSettings(),
-        tryGetViewerTrialWatchSettings(),
+        withTimeout(getChannels(), STARTUP_FETCH_TIMEOUT_MS, 'startup-channels'),
+        withTimeout(getBanners(), STARTUP_FETCH_TIMEOUT_MS, 'startup-banners').catch(() => null),
+        withTimeout(tryGetViewerAppSettings(), STARTUP_FETCH_TIMEOUT_MS, 'startup-settings').catch(
+          () => null,
+        ),
+        withTimeout(
+          tryGetViewerTrialWatchSettings(),
+          STARTUP_FETCH_TIMEOUT_MS,
+          'startup-trial-watch',
+        ).catch(() => null),
       ]);
       if (flags && !skipSettingsFromHttp) {
         setSettings((prev) => ({ ...prev, ...flags }));
@@ -431,14 +441,20 @@ export function OsmaniAppProvider({ children }) {
   );
 
   useEffect(() => {
-    refresh();
+    void refresh({ showGlobalLoading: false, preserveDataOnError: true });
   }, [refresh]);
 
-  // Cold-start: recover (in case of reinstall) and immediately verify.
+  // Cold-start: recover (in case of reinstall) and verify — background, never blocks splash.
   useEffect(() => {
     (async () => {
       try {
-        await recoverAndVerify('cold-start');
+        await withTimeout(
+          recoverAndVerify('cold-start'),
+          COLD_START_SUBSCRIPTION_TIMEOUT_MS,
+          'cold-start-subscription',
+        );
+      } catch (e) {
+        console.log('[SUBSCRIPTION_COLD_START]', 'timeout_or_error', e?.message ?? e);
       } finally {
         setSubscriptionSyncLoaded(true);
         if (subscriptionReadyResolveRef.current) {

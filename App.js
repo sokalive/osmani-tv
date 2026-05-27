@@ -1480,7 +1480,7 @@ function AppTabs() {
 
 export default function App() {
   const [navigationRevision, setNavigationRevision] = useState(0);
-  const splashHidden = useStartupSplash();
+  useStartupSplash();
   useGlobalSecureScreen();
 
   useLayoutEffect(() => {
@@ -1526,52 +1526,45 @@ export default function App() {
 
   return (
     <SafeAreaProvider style={styles.appRoot}>
-      <StatusBar
-        style={splashHidden ? 'light' : 'dark'}
-        backgroundColor={splashHidden ? '#000000' : '#FFFFFF'}
-      />
+      <StatusBar style="light" backgroundColor="#000000" />
       <OsmaniAppProvider>
         <SecurityProvider>
-          {splashHidden ? (
-            <ModalSheetCoordinatorProvider>
-              <NavigationContainer
-                ref={navigationRef}
-                linking={osmaniLinking}
-                theme={{
-                  ...DarkTheme,
-                  colors: {
-                    ...DarkTheme.colors,
-                    background: COLORS.background,
-                    card: COLORS.card,
-                    border: 'rgba(255,255,255,0.06)',
-                  },
-                }}
-                onReady={() => {
-                  setNavigationRevision((n) => n + 1);
-                  const pending = pendingOsmaniUrlRef.current;
-                  if (pending) {
-                    pendingOsmaniUrlRef.current = null;
-                    openOsmaniUrlRef.current(pending);
-                  }
-                }}
-                onStateChange={() => setNavigationRevision((n) => n + 1)}
-              >
-                <RootNavigator />
-              </NavigationContainer>
-              <GlobalEmergencyGate />
-              <WhatsAppFloatingButtonGate
-                navigationRef={navigationRef}
-                navigationRevision={navigationRevision}
-              />
-              <PopupSettingsModal />
-              <UpdateOverlay />
-              <OtaDebugOverlay />
-              <SubscriptionLifecycleGates />
-              <GlobalPaymentModalGate />
-            </ModalSheetCoordinatorProvider>
-          ) : (
-            <View style={styles.startupSplashPlaceholder} />
-          )}
+          <ModalSheetCoordinatorProvider>
+            <NavigationContainer
+              ref={navigationRef}
+              linking={osmaniLinking}
+              theme={{
+                ...DarkTheme,
+                colors: {
+                  ...DarkTheme.colors,
+                  background: COLORS.background,
+                  card: COLORS.card,
+                  border: 'rgba(255,255,255,0.06)',
+                },
+              }}
+              onReady={() => {
+                setNavigationRevision((n) => n + 1);
+                const pending = pendingOsmaniUrlRef.current;
+                if (pending) {
+                  pendingOsmaniUrlRef.current = null;
+                  openOsmaniUrlRef.current(pending);
+                }
+              }}
+              onStateChange={() => setNavigationRevision((n) => n + 1)}
+            >
+              <RootNavigator />
+            </NavigationContainer>
+            <GlobalEmergencyGate />
+            <WhatsAppFloatingButtonGate
+              navigationRef={navigationRef}
+              navigationRevision={navigationRevision}
+            />
+            <PopupSettingsModal />
+            <UpdateOverlay />
+            <OtaDebugOverlay />
+            <SubscriptionLifecycleGates />
+            <GlobalPaymentModalGate />
+          </ModalSheetCoordinatorProvider>
         </SecurityProvider>
       </OsmaniAppProvider>
     </SafeAreaProvider>
@@ -1653,10 +1646,6 @@ const styles = StyleSheet.create({
   appRoot: {
     flex: 1,
     backgroundColor: '#000000',
-  },
-  startupSplashPlaceholder: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
   },
   listContent: {
     paddingHorizontal: HORIZONTAL_PADDING,
