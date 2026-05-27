@@ -26,6 +26,7 @@ function secondsFromMs(ms) {
  *   freeMode?: boolean;
  *   trialWatchSettings?: typeof DEFAULT_TRIAL_WATCH_SETTINGS;
  *   initialBootstrap?: { phase: 'trial' | 'preview'; remainingMs: number } | null;
+ *   playbackKey?: string;
  *   isPlaybackActive: boolean;
  *   stopPlayback: () => void | Promise<void>;
  *   onExpired: (reason: 'trial' | 'preview') => void;
@@ -38,12 +39,19 @@ export function useTrialWatchSession({
   freeMode = false,
   trialWatchSettings = TRIAL_WATCH_FAIL_CLOSED,
   initialBootstrap = null,
+  playbackKey = '',
   isPlaybackActive,
   stopPlayback,
   onExpired,
   navigation,
 }) {
-  const boot = initialBootstrap;
+  const boot =
+    enabled &&
+    initialBootstrap?.phase &&
+    (initialBootstrap.phase === 'trial' || initialBootstrap.phase === 'preview') &&
+    initialBootstrap.remainingMs > 0
+      ? initialBootstrap
+      : null;
   const [phase, setPhase] = useState(
     boot?.phase === 'trial' || boot?.phase === 'preview' ? boot.phase : null,
   );
@@ -182,12 +190,32 @@ export function useTrialWatchSession({
 
   useEffect(() => {
     expiredRef.current = false;
+    if (tickTimerRef.current) {
+      clearInterval(tickTimerRef.current);
+      tickTimerRef.current = null;
+    }
+    if (!active) {
+      sessionPhaseRef.current = null;
+      sessionRemainingRef.current = 0;
+      displaySecondsRef.current = 0;
+      setPhase(null);
+      setDisplaySeconds(0);
+      setReady(true);
+      return undefined;
+    }
     if (!boot) setReady(false);
     void bootstrap();
     return () => {
       if (paymentDelayRef.current) clearTimeout(paymentDelayRef.current);
     };
-  }, [bootstrap, trialWatchSettings?.trialMinutes, trialWatchSettings?.previewSeconds]);
+  }, [
+    active,
+    bootstrap,
+    boot,
+    playbackKey,
+    trialWatchSettings?.trialMinutes,
+    trialWatchSettings?.previewSeconds,
+  ]);
 
   useFocusEffect(
     useCallback(() => {

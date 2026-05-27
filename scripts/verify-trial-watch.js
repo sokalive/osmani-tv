@@ -115,6 +115,39 @@ function previewMsFromSettings(settings) {
   return Math.max(0, settings.previewSeconds) * 1000;
 }
 
+function channelIsFreeAccess(channel, ctx = {}) {
+  if (ctx.freeMode) return true;
+  if (!channel || typeof channel !== 'object') return false;
+  const accessType = String(channel.accessType ?? channel.access_type ?? '').toLowerCase();
+  if (accessType === 'free') return true;
+  if (accessType === 'premium') return false;
+  if (channel.accessPremium === true || channel.access_premium === true) return false;
+  if (channel.isPremium === true) return false;
+  return true;
+}
+
+function channelIsPremiumAccess(channel, ctx = {}) {
+  if (ctx?.freeMode) return false;
+  if (!channel || typeof channel !== 'object') return false;
+  if (channelIsFreeAccess(channel, ctx)) return false;
+  return (
+    channel.isPremium === true ||
+    channel.accessPremium === true ||
+    channel.access_premium === true ||
+    String(channel.accessType ?? channel.access_type ?? '').toLowerCase() === 'premium'
+  );
+}
+
+function shouldRunTrialWatchOnChannel(input) {
+  if (input?.freeMode || input?.isSubscribed) return false;
+  if (!channelIsPremiumAccess(input?.channel, { freeMode: input?.freeMode })) return false;
+  return shouldApplyTrialWatch({
+    isSubscribed: input?.isSubscribed,
+    freeMode: input?.freeMode,
+    trialWatchSettings: input?.trialWatchSettings,
+  });
+}
+
 function resolveTrialWatchAllowance(state, settings) {
   const trialBudget = trialMsFromSettings(settings);
   const previewBudget = previewMsFromSettings(settings);
@@ -185,6 +218,40 @@ function run() {
   const fresh = { trialConsumedMs: 0, trialExhausted: false };
   assert.strictEqual(resolveTrialWatchAllowance(fresh, runtimeEnabled).phase, 'trial');
   assert.strictEqual(resolveTrialWatchAllowance(fresh, runtimeEnabled).remainingMs, trialBudget);
+
+  const freeChannel = { accessType: 'free', accessPremium: false, isPremium: false };
+  assert.strictEqual(channelIsFreeAccess(freeChannel), true);
+  assert.strictEqual(channelIsPremiumAccess(freeChannel), false);
+  assert.strictEqual(
+    shouldRunTrialWatchOnChannel({
+      channel: freeChannel,
+      isSubscribed: false,
+      freeMode: false,
+      trialWatchSettings: runtimeEnabled,
+    }),
+    false,
+  );
+
+  const freeWithStaleBootstrap = {
+    accessType: 'free',
+    accessPremium: false,
+    isPremium: true,
+  };
+  assert.strictEqual(channelIsFreeAccess(freeWithStaleBootstrap), true);
+  assert.strictEqual(channelIsPremiumAccess(freeWithStaleBootstrap), false);
+
+  const premiumChannel = { accessType: 'premium', accessPremium: true };
+  assert.strictEqual(channelIsFreeAccess(premiumChannel), false);
+  assert.strictEqual(channelIsPremiumAccess(premiumChannel), true);
+  assert.strictEqual(
+    shouldRunTrialWatchOnChannel({
+      channel: premiumChannel,
+      isSubscribed: false,
+      freeMode: false,
+      trialWatchSettings: runtimeDisabled,
+    }),
+    false,
+  );
 
   console.log('[verify-trial-watch] ok');
 }

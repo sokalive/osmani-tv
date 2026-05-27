@@ -40,7 +40,10 @@ import {
 import TrialWatchOverlay from '../components/TrialWatchOverlay';
 import { usePlaybackSecurityGate } from '../context/SecurityContext';
 import { useTrialWatchSession } from '../hooks/useTrialWatchSession';
-import { shouldRunTrialWatchOnChannel } from '../lib/trialWatchAccess';
+import {
+  channelIsPremiumAccess,
+  shouldRunTrialWatchOnChannel,
+} from '../lib/trialWatchAccess';
 
 /**
  * Pick a playback engine:
@@ -126,23 +129,23 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   } = useOsmaniApp();
   const playbackSecurity = usePlaybackSecurityGate();
   const channel = liveChannel ?? initialChannel;
-  const channelIsPremium = Boolean(
-    channel?.isPremium ||
-    channel?.accessPremium ||
-    channel?.access_premium ||
-    String(channel?.accessType ?? '').toLowerCase() === 'premium',
-  );
-  const trialWatchBootstrap = route?.params?.trialWatchBootstrap ?? null;
-  const viaTrialPlayback =
-    !freeMode &&
-    channelIsPremium &&
-    (Boolean(trialWatchBootstrap) ||
-      shouldRunTrialWatchOnChannel({
-        channel,
-        isSubscribed,
-        freeMode,
-        trialWatchSettings,
-      }));
+  const channelIsPremium = channelIsPremiumAccess(channel, { freeMode });
+  const channelPlaybackKey = String(
+    channel?.id ?? channel?.channel_id ?? channel?.name ?? '',
+  ).trim();
+  const routeTrialBootstrap = route?.params?.trialWatchBootstrap ?? null;
+  const viaTrialPlayback = shouldRunTrialWatchOnChannel({
+    channel,
+    isSubscribed,
+    freeMode,
+    trialWatchSettings,
+  });
+  const trialBootstrapForSession =
+    viaTrialPlayback &&
+    routeTrialBootstrap?.phase &&
+    routeTrialBootstrap.remainingMs > 0
+      ? routeTrialBootstrap
+      : null;
   const [accessChecked, setAccessChecked] = useState(
     () => !channelIsPremium || freeMode || viaTrialPlayback,
   );
@@ -319,6 +322,16 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setLiveChannel(route?.params?.channel ?? null);
     setChannelDisabledNotified(false);
   }, [route?.params?.channel]);
+
+  // Drop stale trial bootstrap when playback is free (premium → free switch).
+  useEffect(() => {
+    if (viaTrialPlayback || !routeTrialBootstrap) return;
+    try {
+      navigation.setParams({ trialWatchBootstrap: null });
+    } catch {
+      /* ignore */
+    }
+  }, [channelPlaybackKey, viaTrialPlayback, routeTrialBootstrap, navigation]);
 
   /**
    * Hard pre-play gate: APP -> BACKEND VERIFY -> PLAY.
@@ -812,10 +825,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const trialWatch = useTrialWatchSession({
     enabled: viaTrialPlayback && accessAllowed && !playbackSuppressed,
+    playbackKey: channelPlaybackKey,
     isSubscribed,
     freeMode,
     trialWatchSettings,
-    initialBootstrap: trialWatchBootstrap,
+    initialBootstrap: trialBootstrapForSession,
     isPlaybackActive:
       isPlaying && accessAllowed && Boolean(uri) && !playbackError && !playbackSuppressed,
     stopPlayback: stopTrialPlayback,
