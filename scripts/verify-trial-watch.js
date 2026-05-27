@@ -125,6 +125,38 @@ function run() {
   });
   assert.strictEqual(blocked.phase, 'blocked');
 
+  const premiumChannel = { isPremium: true };
+  const freeChannel = { isPremium: false };
+  function shouldRunTrialWatchOnChannel(input) {
+    if (input?.freeMode || input?.isSubscribed) return false;
+    const ch = input?.channel;
+    const isPremium =
+      ch?.isPremium ||
+      ch?.accessPremium ||
+      ch?.access_premium ||
+      String(ch?.accessType ?? '').toLowerCase() === 'premium';
+    if (!isPremium) return false;
+    return shouldApplyTrialWatch(input);
+  }
+  assert.strictEqual(
+    shouldRunTrialWatchOnChannel({
+      channel: premiumChannel,
+      isSubscribed: false,
+      freeMode: false,
+      trialWatchSettings: admin,
+    }),
+    true,
+  );
+  assert.strictEqual(
+    shouldRunTrialWatchOnChannel({
+      channel: freeChannel,
+      isSubscribed: false,
+      freeMode: false,
+      trialWatchSettings: admin,
+    }),
+    false,
+  );
+
   console.log('[verify-trial-watch] ok');
 }
 

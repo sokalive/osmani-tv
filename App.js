@@ -65,6 +65,7 @@ import { resolveStream } from './lib/channelStream';
 import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBarLayout';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
+import { getTrialChannelAccess } from './lib/trialWatchAccess';
 import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
 import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
@@ -277,6 +278,7 @@ function ChannelCatalogScreen({
     subscriptionVersion,
     verifySubscriptionBeforePlay,
     requestEmergencyModal,
+    trialWatchSettings,
   } = useOsmaniApp();
   const security = useSecurity();
   const [selectedFilter, setSelectedFilter] = useState('Zote');
@@ -875,23 +877,23 @@ function ChannelCatalogScreen({
     requestEmergencyModal();
   }, [requestEmergencyModal]);
 
-  const onBannerPremiumRequired = useCallback(() => {
-    setPremiumModalVisible(true);
-  }, []);
-
-  const handleCardPress = useCallback(
-    async (item) => {
-      const locked = !freeMode && item.isPremium && !isSubscribed;
-      if (maintenanceMode) return;
-      if (emergencyMode) {
-        requestEmergencyModal();
-        return;
-      }
-      if (locked) {
+  const navigateToChannel = useCallback(
+    async (playerChannel, { isPremium = false } = {}) => {
+      if (!playerChannel) return;
+      const premiumContent = !freeMode && isPremium;
+      if (premiumContent && !isSubscribed) {
+        const trial = await getTrialChannelAccess(trialWatchSettings);
+        if (trial.allowViaTrial && trial.bootstrap) {
+          navigation.navigate('ChannelPlayer', {
+            channel: playerChannel,
+            trialWatchBootstrap: trial.bootstrap,
+          });
+          return;
+        }
         setPremiumModalVisible(true);
         return;
       }
-      if (item.isPremium && !freeMode) {
+      if (premiumContent) {
         const ok = await verifySubscriptionBeforePlay();
         if (!ok) {
           Alert.alert(
@@ -907,20 +909,32 @@ function ChannelCatalogScreen({
         Alert.alert('Usalama', secGate.message);
         return;
       }
-      navigation.navigate('ChannelPlayer', {
-        channel: item.playerChannel,
-      });
+      navigation.navigate('ChannelPlayer', { channel: playerChannel });
     },
     [
       freeMode,
       isSubscribed,
-      maintenanceMode,
-      emergencyMode,
+      trialWatchSettings,
       verifySubscriptionBeforePlay,
       navigation,
-      requestEmergencyModal,
       security,
     ],
+  );
+
+  const onBannerPremiumRequired = useCallback(() => {
+    setPremiumModalVisible(true);
+  }, []);
+
+  const handleCardPress = useCallback(
+    async (item) => {
+      if (maintenanceMode) return;
+      if (emergencyMode) {
+        requestEmergencyModal();
+        return;
+      }
+      await navigateToChannel(item.playerChannel, { isPremium: item.isPremium });
+    },
+    [maintenanceMode, emergencyMode, navigateToChannel, requestEmergencyModal],
   );
 
   const renderCard = ({ item }) => {
@@ -1086,6 +1100,7 @@ function ChannelCatalogScreen({
             onEmergency={onBannerEmergency}
             onPremiumRequired={onBannerPremiumRequired}
             verifySubscriptionBeforePlay={verifySubscriptionBeforePlay}
+            trialWatchSettings={trialWatchSettings}
           />
         ) : null}
 

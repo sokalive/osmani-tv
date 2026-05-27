@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, InteractionManager } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   DEFAULT_TRIAL_WATCH_SETTINGS,
@@ -13,15 +13,15 @@ import {
 } from '../lib/trialWatchState';
 
 const TICK_MS = 250;
+const PAYMENT_MODAL_DELAY_MS = 480;
 
 /**
- * Non-subscriber trial / preview countdown while the player screen is focused.
- *
  * @param {{
  *   enabled: boolean;
  *   isSubscribed?: boolean;
  *   freeMode?: boolean;
  *   trialWatchSettings?: typeof DEFAULT_TRIAL_WATCH_SETTINGS;
+ *   initialBootstrap?: { phase: 'trial' | 'preview'; remainingMs: number } | null;
  *   isPlaybackActive: boolean;
  *   stopPlayback: () => void | Promise<void>;
  *   onExpired: (reason: 'trial' | 'preview') => void;
@@ -33,23 +33,30 @@ export function useTrialWatchSession({
   isSubscribed = false,
   freeMode = false,
   trialWatchSettings = DEFAULT_TRIAL_WATCH_SETTINGS,
+  initialBootstrap = null,
   isPlaybackActive,
   stopPlayback,
   onExpired,
   navigation,
 }) {
-  const [remainingMs, setRemainingMs] = useState(0);
-  const [phase, setPhase] = useState(/** @type {'trial'|'preview'|null} */ (null));
-  const [ready, setReady] = useState(false);
+  const boot = initialBootstrap;
+  const [remainingMs, setRemainingMs] = useState(boot?.remainingMs ?? 0);
+  const [phase, setPhase] = useState(
+    boot?.phase === 'trial' || boot?.phase === 'preview' ? boot.phase : null,
+  );
+  const [ready, setReady] = useState(!enabled || Boolean(boot));
 
   const stateRef = useRef(null);
-  const sessionRemainingRef = useRef(0);
-  const sessionPhaseRef = useRef(/** @type {'trial'|'preview'|null} */ (null));
-  const lastTickAtRef = useRef(0);
+  const sessionRemainingRef = useRef(boot?.remainingMs ?? 0);
+  const sessionPhaseRef = useRef(
+    boot?.phase === 'trial' || boot?.phase === 'preview' ? boot.phase : null,
+  );
+  const lastTickAtRef = useRef(Date.now());
   const expiredRef = useRef(false);
   const screenFocusedRef = useRef(false);
   const appActiveRef = useRef(AppState.currentState === 'active');
   const tickTimerRef = useRef(null);
+  const paymentDelayRef = useRef(null);
 
   const active =
     enabled &&
@@ -59,6 +66,21 @@ export function useTrialWatchSession({
     if (!stateRef.current) return;
     await saveTrialWatchState(stateRef.current);
   }, []);
+
+  const schedulePaymentModal = useCallback(
+    (reason) => {
+      if (paymentDelayRef.current) clearTimeout(paymentDelayRef.current);
+      paymentDelayRef.current = setTimeout(() => {
+        paymentDelayRef.current = null;
+        try {
+          onExpired?.(reason);
+        } catch {
+          /* ignore */
+        }
+      }, PAYMENT_MODAL_DELAY_MS);
+    },
+    [onExpired],
+  );
 
   const finishExpired = useCallback(
     async (reason) => {
@@ -76,22 +98,20 @@ export function useTrialWatchSession({
       } catch {
         /* ignore */
       }
-      try {
-        navigation?.navigate?.('MainTabs', { screen: 'Home' });
-      } catch {
+      InteractionManager.runAfterInteractions(() => {
         try {
-          navigation?.goBack?.();
+          navigation?.navigate?.('MainTabs', { screen: 'Home' });
         } catch {
-          /* ignore */
+          try {
+            navigation?.goBack?.();
+          } catch {
+            /* ignore */
+          }
         }
-      }
-      try {
-        onExpired?.(reason);
-      } catch {
-        /* ignore */
-      }
+        schedulePaymentModal(reason);
+      });
     },
-    [navigation, onExpired, persistState, stopPlayback],
+    [navigation, persistState, schedulePaymentModal, stopPlayback],
   );
 
   const bootstrap = useCallback(async () => {
@@ -101,9 +121,20 @@ export function useTrialWatchSession({
       setRemainingMs(0);
       return;
     }
+
+    if (boot?.phase && boot.remainingMs > 0) {
+      sessionPhaseRef.current = boot.phase;
+      sessionRemainingRef.current = boot.remainingMs;
+      setPhase(boot.phase);
+      setRemainingMs(boot.remainingMs);
+      setReady(true);
+      lastTickAtRef.current = Date.now();
+    }
+
     const loaded = await loadTrialWatchState();
     stateRef.current = loaded;
     const allowance = resolveTrialWatchAllowance(loaded, trialWatchSettings);
+
     if (allowance.phase === 'blocked') {
       setReady(true);
       setPhase(null);
@@ -111,18 +142,22 @@ export function useTrialWatchSession({
       void finishExpired(loaded.trialExhausted ? 'preview' : 'trial');
       return;
     }
+
     sessionPhaseRef.current = allowance.phase;
     sessionRemainingRef.current = allowance.remainingMs;
     setPhase(allowance.phase);
     setRemainingMs(allowance.remainingMs);
     setReady(true);
     lastTickAtRef.current = Date.now();
-  }, [active, finishExpired, trialWatchSettings]);
+  }, [active, boot, finishExpired, trialWatchSettings]);
 
   useEffect(() => {
     expiredRef.current = false;
-    setReady(false);
+    if (!boot) setReady(false);
     void bootstrap();
+    return () => {
+      if (paymentDelayRef.current) clearTimeout(paymentDelayRef.current);
+    };
   }, [bootstrap, trialWatchSettings?.trialMinutes, trialWatchSettings?.previewSeconds]);
 
   useFocusEffect(
@@ -210,11 +245,17 @@ export function useTrialWatchSession({
     persistState,
   ]);
 
+  const showOverlay =
+    active &&
+    (phase === 'trial' || phase === 'preview') &&
+    remainingMs > 0 &&
+    (ready || Boolean(boot));
+
   return {
     active,
     ready,
     phase,
     remainingMs,
-    visible: active && ready && (phase === 'trial' || phase === 'preview') && remainingMs > 0,
+    visible: showOverlay,
   };
 }

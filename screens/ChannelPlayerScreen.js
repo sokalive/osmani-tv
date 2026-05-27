@@ -40,7 +40,7 @@ import {
 import TrialWatchOverlay from '../components/TrialWatchOverlay';
 import { usePlaybackSecurityGate } from '../context/SecurityContext';
 import { useTrialWatchSession } from '../hooks/useTrialWatchSession';
-import { shouldApplyTrialWatch } from '../lib/trialWatchSettings.shared';
+import { shouldRunTrialWatchOnChannel } from '../lib/trialWatchAccess';
 
 /**
  * Pick a playback engine:
@@ -132,8 +132,24 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     channel?.access_premium ||
     String(channel?.accessType ?? '').toLowerCase() === 'premium',
   );
-  const [accessChecked, setAccessChecked] = useState(false);
-  const [accessAllowed, setAccessAllowed] = useState(!channelIsPremium || freeMode);
+  const trialWatchBootstrap = route?.params?.trialWatchBootstrap ?? null;
+  const trialWatchApplies = useMemo(
+    () =>
+      shouldRunTrialWatchOnChannel({
+        channel,
+        isSubscribed,
+        freeMode,
+        trialWatchSettings,
+      }),
+    [channel, isSubscribed, freeMode, trialWatchSettings],
+  );
+  const viaTrialPlayback = trialWatchApplies && channelIsPremium && !freeMode;
+  const [accessChecked, setAccessChecked] = useState(
+    () => !channelIsPremium || freeMode || viaTrialPlayback,
+  );
+  const [accessAllowed, setAccessAllowed] = useState(
+    () => !channelIsPremium || freeMode || viaTrialPlayback,
+  );
 
   const streams = [
     channel?.url,
@@ -321,6 +337,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       setAccessAllowed(true);
       return undefined;
     }
+    if (viaTrialPlayback) {
+      setAccessChecked(true);
+      setAccessAllowed(true);
+      return undefined;
+    }
     setAccessChecked(false);
     setAccessAllowed(false);
     (async () => {
@@ -344,6 +365,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     channel?.url,
     channelIsPremium,
     freeMode,
+    viaTrialPlayback,
     gateForPlayback,
     navigation,
   ]);
@@ -789,16 +811,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
   }, [clearHideTimer]);
 
-  const trialWatchApplies = useMemo(
-    () => shouldApplyTrialWatch({ isSubscribed, freeMode, trialWatchSettings }),
-    [isSubscribed, freeMode, trialWatchSettings],
-  );
-
   const trialWatch = useTrialWatchSession({
-    enabled: trialWatchApplies && accessAllowed && !playbackSuppressed,
+    enabled: viaTrialPlayback && accessAllowed && !playbackSuppressed,
     isSubscribed,
     freeMode,
     trialWatchSettings,
+    initialBootstrap: trialWatchBootstrap,
     isPlaybackActive:
       isPlaying && accessAllowed && Boolean(uri) && !playbackError && !playbackSuppressed,
     stopPlayback: stopTrialPlayback,
@@ -1335,7 +1353,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     );
   }
 
-  if (channelIsPremium && !freeMode && (!accessChecked || !accessAllowed)) {
+  if (
+    channelIsPremium &&
+    !freeMode &&
+    !viaTrialPlayback &&
+    (!accessChecked || !accessAllowed)
+  ) {
     return (
       <View style={[styles.root, styles.gateScreen]}>
         <ActivityIndicator color="#FBBF24" size="large" />
@@ -1355,20 +1378,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     );
   }
 
-  if (trialWatchApplies && trialWatch.active && !trialWatch.ready) {
-    return (
-      <View style={[styles.root, styles.gateScreen]}>
-        <ActivityIndicator color="#FBBF24" size="large" />
-        <Text style={styles.gateText}>Inaandaa uangalizi…</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.root}>
       <SecurityPlayerBanner />
 
-      {trialWatch.visible && trialWatch.phase ? (
+      {viaTrialPlayback && trialWatch.visible && trialWatch.phase ? (
         <TrialWatchOverlay
           phase={trialWatch.phase}
           remainingMs={trialWatch.remainingMs}

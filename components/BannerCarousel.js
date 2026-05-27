@@ -22,6 +22,7 @@ import {
   buildPlayerChannelFromRow,
   findRawChannelById,
 } from '../lib/playerChannelFromRow';
+import { getTrialChannelAccess } from '../lib/trialWatchAccess';
 
 const COLORS = {
   white: '#FFFFFF',
@@ -317,6 +318,7 @@ function BannerCarousel({
   onEmergency,
   onPremiumRequired,
   verifySubscriptionBeforePlay,
+  trialWatchSettings,
   resetKey = 0,
 }) {
   const security = useSecurity();
@@ -416,8 +418,20 @@ function BannerCarousel({
         raw?.accessType === 'premium' ||
         Boolean(raw?.accessPremium === true || raw?.access_premium === true);
       const isPremium = freeMode ? false : isPremiumApi;
-      const locked = !freeMode && isPremium && !isSubscribed;
-      if (locked) {
+      if (!freeMode && isPremium && !isSubscribed) {
+        const trial = await getTrialChannelAccess(trialWatchSettings);
+        if (trial.allowViaTrial && trial.bootstrap) {
+          const secGate = assertPlaybackAllowed(security);
+          if (!secGate.ok) {
+            Alert.alert('Usalama', secGate.message);
+            return;
+          }
+          navigation.navigate('ChannelPlayer', {
+            channel: playerChannel,
+            trialWatchBootstrap: trial.bootstrap,
+          });
+          return;
+        }
         onPremiumRequired?.();
         return;
       }
@@ -445,6 +459,7 @@ function BannerCarousel({
       onEmergency,
       onPremiumRequired,
       verifySubscriptionBeforePlay,
+      trialWatchSettings,
       security,
     ],
   );
