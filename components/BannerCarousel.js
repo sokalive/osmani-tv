@@ -148,13 +148,12 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
   const badgePosition = getSlideBadgePosition(slide);
   const badgeOverlayStyle = getRuntimeOverlayStyle(badgePosition);
   const runtimePosition = getSlideRuntimePosition(slide);
-  const overlayStyle = getRuntimeOverlayStyle(runtimePosition);
-  const useCenterStack = runtimePosition === 'center';
-  const usesBottomRuntime =
-    showRuntimeUi &&
-    (runtimePosition === 'bottom_center' ||
-      runtimePosition === 'bottom_left' ||
-      runtimePosition === 'bottom_right');
+  const runtimeAlign =
+    runtimePosition === 'top_right' || runtimePosition === 'bottom_right'
+      ? 'right'
+      : runtimePosition === 'top_left' || runtimePosition === 'bottom_left'
+        ? 'left'
+        : 'center';
 
   const runtimePill = showRuntimeUi ? (
     <View
@@ -197,14 +196,7 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
         end={{ x: 0.5, y: 1 }}
         style={StyleSheet.absoluteFill}
       />
-      <View
-        style={[
-          styles.overlay,
-          styles.textOverlay,
-          usesBottomRuntime ? styles.overlayRaisedTitle : null,
-        ]}
-        pointerEvents="none"
-      >
+      <View style={[styles.overlay, styles.textOverlay]} pointerEvents="none">
         <Text
           style={[styles.title, showRuntimeUi ? styles.titleWithRuntime : null]}
           numberOfLines={showRuntimeUi ? 1 : 2}
@@ -212,11 +204,10 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
           {slide.title}
         </Text>
         {slide.description ? (
-          <Text style={styles.desc} numberOfLines={showRuntimeUi ? 1 : 2}>
+          <Text style={styles.desc} numberOfLines={2}>
             {slide.description}
           </Text>
         ) : null}
-        {useCenterStack ? runtimePill : null}
       </View>
       {showAdminBadge && badgeOverlayStyle ? (
         <View style={[styles.badgeOverlay, badgeOverlayStyle]} pointerEvents="none">
@@ -235,9 +226,20 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
           </Animated.View>
         </View>
       ) : null}
-      {showRuntimeUi && !useCenterStack && overlayStyle ? (
-        <View style={[styles.runtimeOverlay, overlayStyle]} pointerEvents="none">
+      {showRuntimeUi ? (
+        <View style={styles.runtimeTopOverlay} pointerEvents="none">
+          <View
+            style={[
+              styles.runtimeTopRow,
+              runtimeAlign === 'left'
+                ? styles.runtimeTopAlignStart
+                : runtimeAlign === 'right'
+                  ? styles.runtimeTopAlignEnd
+                  : styles.runtimeTopAlignCenter,
+            ]}
+          >
           {runtimePill}
+          </View>
         </View>
       ) : null}
     </View>
@@ -493,6 +495,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     paddingLeft: 16,
     paddingRight: 16,
+    paddingTop: 56,
     paddingBottom: 20,
     justifyContent: 'flex-end',
   },
@@ -500,13 +503,25 @@ const styles = StyleSheet.create({
     zIndex: 4,
     elevation: 4,
   },
-  overlayRaisedTitle: {
-    paddingBottom: 88,
-  },
-  runtimeOverlay: {
+  runtimeTopOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 6,
     elevation: 6,
+    justifyContent: 'flex-start',
+    paddingTop: RUNTIME_SAFE_TOP,
+    paddingHorizontal: RUNTIME_SAFE_SIDE,
+  },
+  runtimeTopRow: {
+    width: '100%',
+  },
+  runtimeTopAlignStart: {
+    alignItems: 'flex-start',
+  },
+  runtimeTopAlignCenter: {
+    alignItems: 'center',
+  },
+  runtimeTopAlignEnd: {
+    alignItems: 'flex-end',
   },
   badgeOverlay: {
     ...StyleSheet.absoluteFillObject,
