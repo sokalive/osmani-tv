@@ -84,14 +84,22 @@ function getRuntimeOverlayStyle(position) {
   return null;
 }
 
-/** @param {{ children: string }} props */
-function RuntimeStatusPill({ children }) {
+/** @param {{ children: string; pulse?: boolean }} props */
+function RuntimeStatusPill({ children, pulse = false }) {
+  const opacity = useBadgePulse(pulse);
   return (
-    <View style={[styles.runtimePill, styles.pillRed]}>
+    <Animated.View
+      style={[
+        styles.runtimePill,
+        styles.pillRed,
+        pulse ? styles.pillRedLive : null,
+        pulse ? { opacity } : null,
+      ]}
+    >
       <Text style={styles.runtimePillText} numberOfLines={2}>
         {children}
       </Text>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -171,7 +179,7 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
       <View style={[styles.overlay, styles.textOverlay]} pointerEvents="none">
         <View style={styles.contentStack}>
           {showRuntimeUi ? (
-            <RuntimeStatusPill>{runtime.statusLine}</RuntimeStatusPill>
+            <RuntimeStatusPill pulse={runtime.pulse}>{runtime.statusLine}</RuntimeStatusPill>
           ) : null}
           <Text
             style={[styles.title, showRuntimeUi ? styles.titleWithRuntime : null]}
@@ -489,6 +497,13 @@ const styles = StyleSheet.create({
   },
   pillRed: {
     backgroundColor: COLORS.pillRed,
+  },
+  pillRedLive: {
+    shadowColor: '#FF4D4D',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.95,
+    shadowRadius: 10,
+    elevation: 8,
   },
   runtimePillText: {
     color: COLORS.white,

@@ -5,7 +5,18 @@ const fs = require('fs');
 const path = require('path');
 
 const srcPath = path.join(__dirname, '..', 'lib', 'normalizeBanner.js');
-const src = fs.readFileSync(srcPath, 'utf8').replace(/^export /gm, '');
+let src = fs.readFileSync(srcPath, 'utf8');
+src = src.replace(/^import .*$/gm, '').replace(/^export /gm, '');
+
+function enrichBannerForViewer(row) {
+  if (!row || typeof row !== 'object') return row;
+  return { ...row };
+}
+
+function resolveMediaAssetUrl(url) {
+  return url;
+}
+
 // eslint-disable-next-line no-eval
 eval(`${src}\n//# sourceURL=normalizeBanner.js`);
 
@@ -35,15 +46,44 @@ assert(isBannerVisibleAt(slide, atLocal(14, 0)), 'visible at 2pm');
 const at2pm = getBannerRuntimeState(slide, atLocal(14, 0));
 assert(at2pm?.statusLine.startsWith('COMING SOON'), '2pm COMING SOON');
 assert(at2pm?.statusLine.includes('10:00 PM'), '2pm shows 10pm wall time');
-assert(at2pm?.subtitleLine.includes('kuanza'), '2pm swahili kuanza');
+assert(at2pm?.phase === 'coming', '2pm far coming phase');
+assert(at2pm?.subtitleLine === '', 'no subtitle line');
 assert(at2pm.remainingSec > 0, '2pm countdown positive');
+
+const at7pm = getBannerRuntimeState(slide, atLocal(19, 0));
+assert(at7pm?.statusLine === 'BADO MASAA 3 KUANZA', '7pm swahili hours countdown');
+assert(at7pm?.phase === 'coming_near', '7pm near phase');
+
+const at955pm = getBannerRuntimeState(slide, atLocal(21, 55));
+assert(at955pm?.statusLine === 'BADO DAKIKA 5 KUANZA', '955pm swahili minutes countdown');
 
 const at10pm = getBannerRuntimeState(slide, atLocal(22, 0));
 assert(at10pm?.statusLine === 'LIVE NOW', '10pm LIVE NOW');
+assert(at10pm?.phase === 'live', '10pm live phase');
+assert(at10pm?.pulse === true, 'live pulse enabled');
+
+const at1054pm = getBannerRuntimeState(slide, atLocal(22, 54));
+assert(at1054pm?.statusLine === 'END', '1 min after end shows END');
+assert(at1054pm?.phase === 'end', 'end phase');
+
+const at1057pm = getBannerRuntimeState(slide, atLocal(22, 57));
+assert(at1057pm?.statusLine.startsWith('NEXT TODAY'), 'after end window NEXT TODAY');
+assert(at1057pm?.statusLine.includes('10:00 PM'), 'next today shows slot time');
+assert(at1057pm?.phase === 'next_today', 'next_today phase');
 
 const at11pm = getBannerRuntimeState(slide, atLocal(23, 0));
-assert(at11pm?.statusLine.startsWith('NEXT COMING SOON'), '11pm NEXT COMING SOON');
-assert(at11pm?.subtitleLine.includes('Usiku'), '11pm kesho usiku');
+assert(at11pm?.statusLine.startsWith('NEXT TODAY'), '11pm NEXT TODAY same day');
+
+const at1am = getBannerRuntimeState(slide, atLocal(1, 0, 1));
+assert(at1am?.statusLine.startsWith('COMING SOON'), '1am reset COMING SOON');
+assert(at1am?.statusLine.includes('10:00 PM'), '1am shows tonight slot');
+
+assert(
+  formatPreStartStatusLine(8 * 3600, atLocal(22, 0)) === 'COMING SOON 10:00 PM',
+  'formatPreStart far english',
+);
+assert(formatPreStartStatusLine(3 * 3600, atLocal(22, 0)) === 'BADO MASAA 3 KUANZA', 'formatPreStart hours');
+assert(formatPreStartStatusLine(5 * 60, atLocal(22, 0)) === 'BADO DAKIKA 5 KUANZA', 'formatPreStart minutes');
 
 assert(formatSwahiliRemaining(7200, 'kuanza') === 'Bado masaa 2 kuanza', '2 hours swahili');
 assert(
@@ -87,7 +127,8 @@ const eventSlide = normalizeBanner(eventRaw, 0);
 assert(eventSlide.hasEventSchedule, 'event schedule');
 const before = getBannerRuntimeState(eventSlide, atLocal(14, 0, 1));
 assert(before?.statusLine.startsWith('COMING SOON'), 'event before');
-assert(!isBannerVisibleAt(eventSlide, atLocal(23, 30, 1)), 'hidden after event end');
+assert(isBannerVisibleAt(eventSlide, atLocal(23, 10, 1)), 'visible after event end same day');
+assert(!isBannerVisibleAt(eventSlide, atLocal(23, 10, 2)), 'hidden after midnight rollover');
 
 const staticSlide = normalizeBanner({ id: 1, title: 'Static' }, 0);
 assert(getBannerRuntimeState(staticSlide, Date.now()) == null, 'static no runtime');
