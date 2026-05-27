@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, InteractionManager } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  DEFAULT_TRIAL_WATCH_SETTINGS,
+  TRIAL_WATCH_FAIL_CLOSED,
   shouldApplyTrialWatch,
 } from '../lib/trialWatchSettings.shared';
 import {
@@ -36,7 +36,7 @@ export function useTrialWatchSession({
   enabled,
   isSubscribed = false,
   freeMode = false,
-  trialWatchSettings = DEFAULT_TRIAL_WATCH_SETTINGS,
+  trialWatchSettings = TRIAL_WATCH_FAIL_CLOSED,
   initialBootstrap = null,
   isPlaybackActive,
   stopPlayback,

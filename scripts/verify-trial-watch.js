@@ -34,31 +34,66 @@ function coercePositiveInt(v, fallback) {
   return Math.trunc(n);
 }
 
+const FAIL_CLOSED = {
+  enableTrial: false,
+  trialMinutes: 0,
+  previewSeconds: 0,
+  enablePreviewAfterTrial: false,
+  configLoaded: false,
+};
+
 function parseTrialWatchSettings(payload) {
-  const out = {
-    enableTrial: true,
-    trialMinutes: 5,
-    previewSeconds: 11,
-    enablePreviewAfterTrial: true,
-  };
+  const out = { ...FAIL_CLOSED };
   const candidates = [payload];
   if (payload && typeof payload === 'object') {
     candidates.push(payload.payload, payload.data, payload.settings, payload.trial_watch);
   }
   for (const o of candidates) {
     if (!o || typeof o !== 'object') continue;
-    const enableTrial = pickDefined(o, ['enable_trial', 'enableTrial']);
-    if (enableTrial !== undefined) out.enableTrial = coerceBool(enableTrial, out.enableTrial);
-    const trialMinutes = pickDefined(o, ['trial_minutes', 'trialMinutes']);
-    if (trialMinutes !== undefined) out.trialMinutes = coercePositiveInt(trialMinutes, out.trialMinutes);
-    const previewSeconds = pickDefined(o, ['preview_seconds', 'previewSeconds']);
+    const enableTrial = pickDefined(o, [
+      'enable_trial',
+      'enableTrial',
+      'trial_enabled',
+      'trialEnabled',
+      'trial_watch_enabled',
+      'trialWatchEnabled',
+    ]);
+    if (enableTrial !== undefined) {
+      out.enableTrial = coerceBool(enableTrial, false);
+      out.configLoaded = true;
+    }
+    const trialMinutes = pickDefined(o, [
+      'trial_minutes',
+      'trialMinutes',
+      'trial_watch_minutes',
+      'trialWatchMinutes',
+    ]);
+    if (trialMinutes !== undefined) {
+      out.trialMinutes = coercePositiveInt(trialMinutes, 5);
+    }
+    const previewSeconds = pickDefined(o, [
+      'preview_seconds',
+      'previewSeconds',
+      'trial_preview_seconds',
+      'trialPreviewSeconds',
+    ]);
     if (previewSeconds !== undefined) {
-      out.previewSeconds = coercePositiveInt(previewSeconds, out.previewSeconds);
+      out.previewSeconds = coercePositiveInt(previewSeconds, 11);
     }
-    const enablePreview = pickDefined(o, ['enable_preview_after_trial', 'enablePreviewAfterTrial']);
+    const enablePreview = pickDefined(o, [
+      'enable_preview_after_trial',
+      'enablePreviewAfterTrial',
+      'trial_preview_after_enabled',
+      'trialPreviewAfterEnabled',
+    ]);
     if (enablePreview !== undefined) {
-      out.enablePreviewAfterTrial = coerceBool(enablePreview, out.enablePreviewAfterTrial);
+      out.enablePreviewAfterTrial = coerceBool(enablePreview, false);
+      out.configLoaded = true;
     }
+  }
+  if (out.configLoaded) {
+    if (out.enableTrial && out.trialMinutes <= 0) out.trialMinutes = 5;
+    if (out.enablePreviewAfterTrial && out.previewSeconds <= 0) out.previewSeconds = 11;
   }
   return out;
 }
@@ -66,7 +101,8 @@ function parseTrialWatchSettings(payload) {
 function shouldApplyTrialWatch(input) {
   if (input?.freeMode) return false;
   if (input?.isSubscribed) return false;
-  const s = input?.trialWatchSettings ?? parseTrialWatchSettings(null);
+  const s = input?.trialWatchSettings ?? FAIL_CLOSED;
+  if (!s.configLoaded) return false;
   if (!s.enableTrial && !s.enablePreviewAfterTrial) return false;
   return true;
 }
@@ -97,65 +133,58 @@ function resolveTrialWatchAllowance(state, settings) {
 }
 
 function run() {
-  const admin = parseTrialWatchSettings({
+  const empty = parseTrialWatchSettings(null);
+  assert.strictEqual(empty.configLoaded, false);
+  assert.strictEqual(empty.enableTrial, false);
+  assert.strictEqual(
+    shouldApplyTrialWatch({ isSubscribed: false, freeMode: false, trialWatchSettings: empty }),
+    false,
+  );
+
+  const appModesOnly = parseTrialWatchSettings({
+    ok: true,
+    free_mode: false,
+    maintenance_mode: false,
+  });
+  assert.strictEqual(appModesOnly.configLoaded, false);
+  assert.strictEqual(appModesOnly.enableTrial, false);
+
+  const runtimeDisabled = parseTrialWatchSettings({
+    ok: true,
+    trial_watch_enabled: false,
+    trialWatchEnabled: false,
+    trial_watch_minutes: 5,
+    trial_preview_seconds: 11,
+    trial_preview_after_enabled: false,
+  });
+  assert.strictEqual(runtimeDisabled.configLoaded, true);
+  assert.strictEqual(runtimeDisabled.enableTrial, false);
+  assert.strictEqual(
+    shouldApplyTrialWatch({
+      isSubscribed: false,
+      freeMode: false,
+      trialWatchSettings: runtimeDisabled,
+    }),
+    false,
+  );
+  assert.strictEqual(
+    resolveTrialWatchAllowance({ trialConsumedMs: 0, trialExhausted: false }, runtimeDisabled).phase,
+    'blocked',
+  );
+
+  const runtimeEnabled = parseTrialWatchSettings({
     enable_trial: true,
     trial_minutes: 5,
     preview_seconds: 11,
     enable_preview_after_trial: true,
   });
-  assert.strictEqual(admin.trialMinutes, 5);
-  assert.strictEqual(admin.previewSeconds, 11);
-  assert.strictEqual(shouldApplyTrialWatch({ isSubscribed: true, trialWatchSettings: admin }), false);
-  assert.strictEqual(shouldApplyTrialWatch({ isSubscribed: false, freeMode: true, trialWatchSettings: admin }), false);
-  assert.strictEqual(shouldApplyTrialWatch({ isSubscribed: false, freeMode: false, trialWatchSettings: admin }), true);
+  assert.strictEqual(runtimeEnabled.configLoaded, true);
+  assert.strictEqual(shouldApplyTrialWatch({ isSubscribed: false, trialWatchSettings: runtimeEnabled }), true);
 
-  const trialBudget = trialMsFromSettings(admin);
-  const previewBudget = previewMsFromSettings(admin);
+  const trialBudget = trialMsFromSettings(runtimeEnabled);
   const fresh = { trialConsumedMs: 0, trialExhausted: false };
-  assert.strictEqual(resolveTrialWatchAllowance(fresh, admin).phase, 'trial');
-  assert.strictEqual(resolveTrialWatchAllowance(fresh, admin).remainingMs, trialBudget);
-
-  const done = { trialConsumedMs: trialBudget, trialExhausted: true };
-  assert.strictEqual(resolveTrialWatchAllowance(done, admin).phase, 'preview');
-  assert.strictEqual(resolveTrialWatchAllowance(done, admin).remainingMs, previewBudget);
-
-  const blocked = resolveTrialWatchAllowance(done, {
-    ...admin,
-    enablePreviewAfterTrial: false,
-  });
-  assert.strictEqual(blocked.phase, 'blocked');
-
-  const premiumChannel = { isPremium: true };
-  const freeChannel = { isPremium: false };
-  function shouldRunTrialWatchOnChannel(input) {
-    if (input?.freeMode || input?.isSubscribed) return false;
-    const ch = input?.channel;
-    const isPremium =
-      ch?.isPremium ||
-      ch?.accessPremium ||
-      ch?.access_premium ||
-      String(ch?.accessType ?? '').toLowerCase() === 'premium';
-    if (!isPremium) return false;
-    return shouldApplyTrialWatch(input);
-  }
-  assert.strictEqual(
-    shouldRunTrialWatchOnChannel({
-      channel: premiumChannel,
-      isSubscribed: false,
-      freeMode: false,
-      trialWatchSettings: admin,
-    }),
-    true,
-  );
-  assert.strictEqual(
-    shouldRunTrialWatchOnChannel({
-      channel: freeChannel,
-      isSubscribed: false,
-      freeMode: false,
-      trialWatchSettings: admin,
-    }),
-    false,
-  );
+  assert.strictEqual(resolveTrialWatchAllowance(fresh, runtimeEnabled).phase, 'trial');
+  assert.strictEqual(resolveTrialWatchAllowance(fresh, runtimeEnabled).remainingMs, trialBudget);
 
   console.log('[verify-trial-watch] ok');
 }

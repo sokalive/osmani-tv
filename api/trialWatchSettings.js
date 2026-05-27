@@ -12,22 +12,23 @@ async function parseJson(res) {
 }
 
 /**
- * Viewer-safe trial settings (never calls admin-only routes).
- * @returns {Promise<import('../lib/trialWatchSettings.shared').DEFAULT_TRIAL_WATCH_SETTINGS | null>}
+ * Viewer-safe trial settings from runtime API (never admin-only routes).
+ * Returns null when no endpoint provides explicit trial flags (fail-closed upstream).
+ * @returns {Promise<ReturnType<typeof parseTrialWatchSettings> | null>}
  */
 export async function tryGetViewerTrialWatchSettings() {
   const paths = [
+    '/api/runtime/trial-watch',
     '/api/public/trial-watch',
     '/api/public/trial-watch-settings',
-    '/api/runtime/app-modes',
-    '/api/public/app-settings',
   ];
   for (const path of paths) {
     try {
       const res = await fetch(`${BASE_URL}${path}`);
       const body = await parseJson(res);
       if (!res.ok || !body) continue;
-      return parseTrialWatchSettings(body);
+      const parsed = parseTrialWatchSettings(body);
+      if (parsed.configLoaded) return parsed;
     } catch {
       /* ignore */
     }

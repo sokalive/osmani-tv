@@ -5,7 +5,7 @@ import { sortChannelsByAdminOrder } from '../lib/channelOrder';
 import { parseAppSettingsRealtimePatch, tryGetViewerAppSettings } from '../api/settings';
 import { tryGetViewerTrialWatchSettings } from '../api/trialWatchSettings';
 import {
-  DEFAULT_TRIAL_WATCH_SETTINGS,
+  TRIAL_WATCH_FAIL_CLOSED,
   parseTrialWatchSettings,
 } from '../lib/trialWatchSettings.shared';
 import {
@@ -102,7 +102,7 @@ export function OsmaniAppProvider({ children }) {
   const [pendingTransfer, setPendingTransfer] = useState(null);
   /** Bumped to re-open global emergency modal (banner / channel tap while emergency). */
   const [emergencyModalRequestVersion, setEmergencyModalRequestVersion] = useState(0);
-  const [trialWatchSettings, setTrialWatchSettings] = useState(DEFAULT_TRIAL_WATCH_SETTINGS);
+  const [trialWatchSettings, setTrialWatchSettings] = useState(TRIAL_WATCH_FAIL_CLOSED);
   /** True once we've attempted the initial viewer-safe trial-watch fetch (success or fail). */
   const [trialWatchSettingsLoaded, setTrialWatchSettingsLoaded] = useState(false);
   const trialWatchReadyResolveRef = useRef(null);
@@ -130,7 +130,7 @@ export function OsmaniAppProvider({ children }) {
   const lastVerifyKeyRef = useRef(0);
   /** Authoritative subscription flag for playback gates (updated synchronously on verify). */
   const isSubscribedRef = useRef(false);
-  const trialWatchSettingsRef = useRef(DEFAULT_TRIAL_WATCH_SETTINGS);
+  const trialWatchSettingsRef = useRef(TRIAL_WATCH_FAIL_CLOSED);
   const settingsRef = useRef(defaultSettings);
   /** Set after source POST /transfer/request succeeds; gates Kubali/Kataa popup. */
   const sourceTransferSessionRef = useRef(null);
@@ -332,6 +332,10 @@ export function OsmaniAppProvider({ children }) {
         trialWatchSettingsRef.current = s;
         setTrialWatchSettings(s);
         console.log('[TRIAL_WATCH_SYNC]', reason, s);
+      } else {
+        trialWatchSettingsRef.current = TRIAL_WATCH_FAIL_CLOSED;
+        setTrialWatchSettings(TRIAL_WATCH_FAIL_CLOSED);
+        console.log('[TRIAL_WATCH_SYNC]', reason, 'fail_closed_no_runtime_config');
       }
     } finally {
       setTrialWatchSettingsLoaded(true);
@@ -372,6 +376,9 @@ export function OsmaniAppProvider({ children }) {
       if (trialFlags) {
         trialWatchSettingsRef.current = trialFlags;
         setTrialWatchSettings(trialFlags);
+      } else if (!skipSettingsFromHttp) {
+        trialWatchSettingsRef.current = TRIAL_WATCH_FAIL_CLOSED;
+        setTrialWatchSettings(TRIAL_WATCH_FAIL_CLOSED);
       }
       setRawChannels(sortChannelsByAdminOrder(Array.isArray(list) ? list : []));
       const nextBanners = Array.isArray(bannersResult) ? bannersResult : null;
@@ -615,10 +622,12 @@ export function OsmaniAppProvider({ children }) {
           console.log('[SETTINGS_SYNC]', ev, 'no_mode_keys_in_payload');
         }
         setTrialWatchSettings((prev) => {
-          const next = {
-            ...prev,
-            ...parseTrialWatchSettings(payload),
-          };
+          const parsed = parseTrialWatchSettings(payload);
+          if (!parsed.configLoaded) {
+            void refreshTrialWatchSettings(`sse:${ev}`);
+            return prev;
+          }
+          const next = { ...prev, ...parsed };
           trialWatchSettingsRef.current = next;
           return next;
         });
@@ -644,7 +653,7 @@ export function OsmaniAppProvider({ children }) {
       offRuntimeModes.forEach((off) => off());
       offCatalogAliases.forEach((off) => off());
     };
-  }, [refresh, reverifySubscription, scheduleAdminDrivenSoftSync]);
+  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync]);
 
   // Foreground sync: refresh catalog + reverify periodically while app is active.
   useEffect(() => {
