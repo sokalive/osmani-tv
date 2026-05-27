@@ -15,7 +15,6 @@ import {
   bannerNeedsRuntimeTick,
   getBannerRuntimeState,
   getSlideBadgePosition,
-  getSlideRuntimePosition,
 } from '../lib/normalizeBanner';
 import {
   buildPlayerChannelFromRow,
@@ -85,17 +84,6 @@ function getRuntimeOverlayStyle(position) {
   return null;
 }
 
-/** @param {RuntimePositionPreset} position */
-function runtimeBlockAlignStyle(position) {
-  if (position === 'bottom_left' || position === 'top_left') {
-    return styles.runtimeBlockAlignStart;
-  }
-  if (position === 'bottom_right' || position === 'top_right') {
-    return styles.runtimeBlockAlignEnd;
-  }
-  return styles.runtimeBlockAlignCenter;
-}
-
 /** @param {{ children: string }} props */
 function RuntimeStatusPill({ children }) {
   return (
@@ -147,22 +135,6 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
   const badgeOpacity = useBadgePulse(showAdminBadge && slide.badgeBlink);
   const badgePosition = getSlideBadgePosition(slide);
   const badgeOverlayStyle = getRuntimeOverlayStyle(badgePosition);
-  const runtimePosition = getSlideRuntimePosition(slide);
-  const runtimeAlign =
-    runtimePosition === 'top_right' || runtimePosition === 'bottom_right'
-      ? 'right'
-      : runtimePosition === 'top_left' || runtimePosition === 'bottom_left'
-        ? 'left'
-        : 'center';
-
-  const runtimePill = showRuntimeUi ? (
-    <View
-      style={[styles.runtimeBlock, runtimeBlockAlignStyle(runtimePosition)]}
-      pointerEvents="none"
-    >
-      <RuntimeStatusPill>{runtime.statusLine}</RuntimeStatusPill>
-    </View>
-  ) : null;
 
   useEffect(() => {
     setImageFailed(false);
@@ -197,17 +169,22 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
         style={StyleSheet.absoluteFill}
       />
       <View style={[styles.overlay, styles.textOverlay]} pointerEvents="none">
-        <Text
-          style={[styles.title, showRuntimeUi ? styles.titleWithRuntime : null]}
-          numberOfLines={showRuntimeUi ? 1 : 2}
-        >
-          {slide.title}
-        </Text>
-        {slide.description ? (
-          <Text style={styles.desc} numberOfLines={2}>
-            {slide.description}
+        <View style={styles.contentStack}>
+          {showRuntimeUi ? (
+            <RuntimeStatusPill>{runtime.statusLine}</RuntimeStatusPill>
+          ) : null}
+          <Text
+            style={[styles.title, showRuntimeUi ? styles.titleWithRuntime : null]}
+            numberOfLines={showRuntimeUi ? 1 : 2}
+          >
+            {slide.title}
           </Text>
-        ) : null}
+          {slide.description ? (
+            <Text style={styles.desc} numberOfLines={2}>
+              {slide.description}
+            </Text>
+          ) : null}
+        </View>
       </View>
       {showAdminBadge && badgeOverlayStyle ? (
         <View style={[styles.badgeOverlay, badgeOverlayStyle]} pointerEvents="none">
@@ -224,22 +201,6 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
               {slide.badgeText}
             </Text>
           </Animated.View>
-        </View>
-      ) : null}
-      {showRuntimeUi ? (
-        <View style={styles.runtimeTopOverlay} pointerEvents="none">
-          <View
-            style={[
-              styles.runtimeTopRow,
-              runtimeAlign === 'left'
-                ? styles.runtimeTopAlignStart
-                : runtimeAlign === 'right'
-                  ? styles.runtimeTopAlignEnd
-                  : styles.runtimeTopAlignCenter,
-            ]}
-          >
-          {runtimePill}
-          </View>
         </View>
       ) : null}
     </View>
@@ -495,64 +456,31 @@ const styles = StyleSheet.create({
     bottom: 0,
     paddingLeft: 16,
     paddingRight: 16,
-    paddingTop: 56,
     paddingBottom: 20,
     justifyContent: 'flex-end',
+    alignItems: 'flex-start',
   },
   textOverlay: {
     zIndex: 4,
     elevation: 4,
   },
-  runtimeTopOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 6,
-    elevation: 6,
-    justifyContent: 'flex-start',
-    paddingTop: RUNTIME_SAFE_TOP,
-    paddingHorizontal: RUNTIME_SAFE_SIDE,
-  },
-  runtimeTopRow: {
-    width: '100%',
-  },
-  runtimeTopAlignStart: {
+  contentStack: {
+    flexDirection: 'column',
     alignItems: 'flex-start',
-  },
-  runtimeTopAlignCenter: {
-    alignItems: 'center',
-  },
-  runtimeTopAlignEnd: {
-    alignItems: 'flex-end',
+    maxWidth: '94%',
   },
   badgeOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 8,
     elevation: 8,
   },
-  runtimeBlock: {
-    maxWidth: '94%',
-    marginTop: 6,
-    marginBottom: 2,
-  },
-  runtimeBlockAlignCenter: {
-    alignSelf: 'center',
-    alignItems: 'center',
-    width: '100%',
-  },
-  runtimeBlockAlignStart: {
-    alignSelf: 'flex-start',
-    alignItems: 'flex-start',
-  },
-  runtimeBlockAlignEnd: {
-    alignSelf: 'flex-end',
-    alignItems: 'flex-end',
-  },
   runtimePill: {
-    alignSelf: 'center',
-    maxWidth: '94%',
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 10,
-    marginBottom: 4,
+    marginBottom: 6,
     elevation: 4,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 1 },
@@ -598,10 +526,9 @@ const styles = StyleSheet.create({
   },
   titleWithRuntime: {
     fontSize: 16,
-    marginBottom: 2,
   },
   desc: {
-    marginTop: 4,
+    marginTop: 3,
     color: 'rgba(255,255,255,0.92)',
     fontSize: 13,
     fontWeight: '500',
