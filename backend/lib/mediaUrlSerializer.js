@@ -63,6 +63,13 @@ function buildCdnStreamProxyUrl(rawUrl, headers = {}) {
   return `${base}?${params.toString()}`;
 }
 
+function normalizeStreamDeliveryMode(raw) {
+  const m = String(raw ?? "").trim().toLowerCase();
+  if (m === "direct") return "direct";
+  if (m === "auto" || m === "hybrid") return "auto";
+  return "proxy";
+}
+
 function enrichChannelForViewer(row) {
   if (!row || typeof row !== "object") return row;
   const out = rewriteMediaUrlsInJson(row);
@@ -71,11 +78,33 @@ function enrichChannelForViewer(row) {
   const origin = String(out.origin ?? out.stream_origin ?? "").trim();
   const userAgent = String(out.userAgent ?? out.user_agent ?? "").trim();
   const headers = { referer, origin, userAgent };
+  const deliveryMode = normalizeStreamDeliveryMode(
+    out.stream_delivery_mode ?? out.streamDeliveryMode,
+  );
+  out.stream_delivery_mode = deliveryMode;
+  out.streamDeliveryMode = deliveryMode;
+
+  const directRaw = String(
+    out.direct_stream_url ?? out.directStreamUrl ?? "",
+  ).trim();
+  if (directRaw) {
+    const direct = rewriteLegacyRenderMediaUrl(directRaw);
+    out.direct_stream_url = direct;
+    out.directStreamUrl = direct;
+  }
 
   if (rawUrl && looksLikeHlsManifestPath(rawUrl)) {
+    const proxyUrl = buildCdnStreamProxyUrl(rawUrl, headers);
     const playback = String(out.playbackUrl ?? out.playback_url ?? "").trim();
     if (!playback) {
-      out.playbackUrl = buildCdnStreamProxyUrl(rawUrl, headers);
+      out.playbackUrl = proxyUrl;
+      out.playback_url = out.playbackUrl;
+    }
+    out.proxy_fallback_url = out.playbackUrl || proxyUrl;
+    out.proxyFallbackUrl = out.proxy_fallback_url;
+
+    if (deliveryMode === "direct" && out.direct_stream_url) {
+      out.playbackUrl = out.direct_stream_url;
       out.playback_url = out.playbackUrl;
     }
   }

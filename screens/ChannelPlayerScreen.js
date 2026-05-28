@@ -26,9 +26,12 @@ import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
 import {
+  canFallbackToProxyPlayback,
   looksLikeHlsPlaybackUri,
-  resolveHlsProxiedManifestUrl,
+  logPlaybackDiagnostics,
+  resolveHlsPlaybackManifestUrl,
 } from '../lib/hlsPlayback';
+import { devLog } from '../lib/devLog';
 import { STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
 import { buildEmbedBridgeJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
@@ -160,6 +163,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   ].filter(Boolean);
 
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
+  /** When direct/auto playback fails, retry once through CDN stream-proxy. */
+  const [hlsForceProxy, setHlsForceProxy] = useState(false);
   const uri = streams[currentUrlIndex];
   const headers = useMemo(
     () => ({
@@ -180,36 +185,55 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const isHlsManifest = Boolean(uri && looksLikeHlsPlaybackUri(uri));
 
-  /** Tokenized IPTV-safe proxy URL for HLS (native Exo + optional hls.js webview). */
-  const proxiedHlsUrl = useMemo(() => {
+  /** HLS manifest for native Exo / hls.js (direct, proxy, or auto with fallback). */
+  const hlsManifestUrl = useMemo(() => {
     if (!uri || !isHlsManifest) return '';
-    return resolveHlsProxiedManifestUrl(uri, {
-      referer: channel?.referer,
-      origin: channel?.origin,
-      userAgent: channel?.userAgent,
-    });
-  }, [isHlsManifest, uri, channel?.referer, channel?.origin, channel?.userAgent]);
+    return resolveHlsPlaybackManifestUrl(
+      uri,
+      {
+        referer: channel?.referer,
+        origin: channel?.origin,
+        userAgent: channel?.userAgent,
+      },
+      {
+        deliveryMode: channel?.streamDeliveryMode,
+        directStreamUrl: channel?.directStreamUrl,
+        proxyFallbackUrl: channel?.proxyFallbackUrl,
+        forceProxy: hlsForceProxy,
+      },
+    );
+  }, [
+    isHlsManifest,
+    uri,
+    channel?.referer,
+    channel?.origin,
+    channel?.userAgent,
+    channel?.streamDeliveryMode,
+    channel?.directStreamUrl,
+    channel?.proxyFallbackUrl,
+    hlsForceProxy,
+  ]);
 
   /** expo-av source: HLS plays through proxy URL so Exo gets a stable manifest; override extension when URI has no .m3u8 suffix. */
   const nativeVideoSource = useMemo(() => {
     if (!useNativePlayer || !uri) return null;
     if (looksLikeHlsPlaybackUri(uri)) {
-      const u = proxiedHlsUrl || uri;
+      const u = hlsManifestUrl || uri;
       return {
         uri: u,
         overrideFileExtensionAndroid: 'm3u8',
       };
     }
     return { uri, headers };
-  }, [useNativePlayer, uri, proxiedHlsUrl, headers]);
+  }, [useNativePlayer, uri, hlsManifestUrl, headers]);
 
   const hlsWebViewSource = useMemo(() => {
-    if (!useHlsWebView || !proxiedHlsUrl) return null;
+    if (!useHlsWebView || !hlsManifestUrl) return null;
     return {
-      html: buildHlsJsPlayerHtml(proxiedHlsUrl, { diagnostics: __DEV__ }),
-      baseUrl: baseUrlFromUrl(proxiedHlsUrl),
+      html: buildHlsJsPlayerHtml(hlsManifestUrl, { diagnostics: __DEV__ }),
+      baseUrl: baseUrlFromUrl(hlsManifestUrl),
     };
-  }, [useHlsWebView, proxiedHlsUrl]);
+  }, [useHlsWebView, hlsManifestUrl]);
 
   /** Plain WebView source for player.php / embed/iframe HTML pages. Headers as-is. */
   const embedWebViewSource = useMemo(() => {
@@ -286,6 +310,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   useEffect(() => {
     setCurrentUrlIndex(0);
+    setHlsForceProxy(false);
     setIsBuffering(true);
     setPlaybackError('');
     setPlayerEpoch((e) => e + 1);
@@ -305,17 +330,27 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!uri) return;
-    console.log('[player][debug] route:', {
+    logPlaybackDiagnostics('route', {
       route: playbackRoute,
       api_playerType: normalizedPlayerType,
       url: uri,
       proxy_base: STREAM_PROXY_BASE,
-      proxied_url: proxiedHlsUrl || null,
+      hls_manifest_url: hlsManifestUrl || null,
+      stream_delivery_mode: channel?.streamDeliveryMode ?? 'proxy',
+      hls_force_proxy: hlsForceProxy,
       embed_headers_present: Boolean(
         embedWebViewSource?.headers && Object.keys(embedWebViewSource.headers).length,
       ),
     });
-  }, [uri, normalizedPlayerType, playbackRoute, proxiedHlsUrl, embedWebViewSource?.headers]);
+  }, [
+    uri,
+    normalizedPlayerType,
+    playbackRoute,
+    hlsManifestUrl,
+    hlsForceProxy,
+    channel?.streamDeliveryMode,
+    embedWebViewSource?.headers,
+  ]);
 
   // Keep local channel snapshot in sync when route params change.
   useEffect(() => {
@@ -477,10 +512,61 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         String(p.origin ?? '') !== String(next.origin ?? '') ||
         String(p.referer ?? '') !== String(next.referer ?? '') ||
         String(p.userAgent ?? '') !== String(next.userAgent ?? '') ||
-        String(p.playerType ?? '') !== String(next.playerType ?? '');
+        String(p.playerType ?? '') !== String(next.playerType ?? '') ||
+        String(p.streamDeliveryMode ?? '') !== String(next.streamDeliveryMode ?? '') ||
+        String(p.proxyFallbackUrl ?? '') !== String(next.proxyFallbackUrl ?? '');
       return changed ? next : prev;
     });
   }, [rawChannels, freeMode, liveChannel, route?.params?.channel, navigation, channelDisabledNotified]);
+
+  const attemptPlaybackRecovery = useCallback(
+    (reasonText) => {
+      if (
+        isHlsManifest &&
+        !hlsForceProxy &&
+        canFallbackToProxyPlayback({
+          deliveryMode: channel?.streamDeliveryMode,
+          proxyFallbackUrl: channel?.proxyFallbackUrl,
+          uri,
+        })
+      ) {
+        logPlaybackDiagnostics('direct_failed_proxy_fallback', {
+          reason: reasonText,
+          channel: channel?.name,
+          deliveryMode: channel?.streamDeliveryMode,
+        });
+        setHlsForceProxy(true);
+        setPlaybackError('');
+        setIsBuffering(true);
+        setPlayerEpoch((e) => e + 1);
+        return true;
+      }
+      if (currentUrlIndex < streams.length - 1) {
+        logPlaybackDiagnostics('backup_stream_rotate', {
+          reason: reasonText,
+          from: currentUrlIndex,
+          to: currentUrlIndex + 1,
+        });
+        setCurrentUrlIndex((i) => i + 1);
+        setHlsForceProxy(false);
+        setPlaybackError('');
+        setIsBuffering(true);
+        setPlayerEpoch((e) => e + 1);
+        return true;
+      }
+      return false;
+    },
+    [
+      isHlsManifest,
+      hlsForceProxy,
+      channel?.streamDeliveryMode,
+      channel?.proxyFallbackUrl,
+      channel?.name,
+      uri,
+      currentUrlIndex,
+      streams.length,
+    ],
+  );
 
   const applyPlaybackFailure = useCallback((reasonText) => {
     setIsBuffering(false);
@@ -492,23 +578,33 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   /** User-only: fresh mount without automatic timers or replay loops. */
   const manualReloadSameStream = useCallback(() => {
+    setHlsForceProxy(false);
     setPlaybackError('');
     setIsBuffering(true);
     setPlayerEpoch((e) => e + 1);
   }, []);
 
+  const handlePlaybackFailure = useCallback(
+    (reasonText) => {
+      if (attemptPlaybackRecovery(reasonText)) return;
+      applyPlaybackFailure(reasonText);
+    },
+    [attemptPlaybackRecovery, applyPlaybackFailure],
+  );
+
   const onError = (error) => {
-    console.log('[player][debug] playback error:', {
+    devLog('[player][debug] playback error:', {
       route: playbackRoute,
       declared_player_type: normalizedPlayerType,
       url: uri,
       current_index: currentUrlIndex,
       total_streams: streams.length,
+      hls_force_proxy: hlsForceProxy,
       error,
     });
     const errMsg =
       error == null ? 'onError' : typeof error === 'string' ? error : JSON.stringify(error);
-    applyPlaybackFailure(errMsg);
+    handlePlaybackFailure(errMsg);
   };
 
   // ROTATION
@@ -985,7 +1081,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const onEmbedError = (ev) => {
     const desc = ev?.nativeEvent?.description ?? ev?.nativeEvent?.message ?? 'unknown';
     console.log('[player][debug] embed load error:', desc);
-    applyPlaybackFailure(`webview-error:${String(desc)}`);
+    handlePlaybackFailure(`webview-error:${String(desc)}`);
   };
 
   const onHlsWebMessage = (event) => {
@@ -1079,7 +1175,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (kind === 'recovery_failed') {
       console.log('[player][debug] hls.js: recovery_failed', payload);
       if (payload?.mode === 'max-consecutive' || payload?.mode === 'cooldown') {
-        applyPlaybackFailure(`hls-recovery:${payload?.mode || 'failed'}`);
+        handlePlaybackFailure(`hls-recovery:${payload?.mode || 'failed'}`);
       }
       return;
     }
@@ -1095,12 +1191,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
     if (kind === 'video_error') {
       console.log('[player][debug] hls.js: video element error', payload);
-      applyPlaybackFailure(`video-error:${payload?.code ?? ''}`);
+      handlePlaybackFailure(`video-error:${payload?.code ?? ''}`);
       return;
     }
     if (kind === 'hls_fatal_giveup') {
       console.log('[player][debug] hls.js: fatal giveup', payload);
-      applyPlaybackFailure(`hls.js-fatal:${payload?.type || ''}:${payload?.details || ''}`);
+      handlePlaybackFailure(`hls.js-fatal:${payload?.type || ''}:${payload?.details || ''}`);
       return;
     }
     console.log('[player][debug] hls.js unknown event:', kind, payload);
@@ -1133,13 +1229,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const onHlsWebHttpError = (ev) => {
     const status = ev?.nativeEvent?.statusCode;
     console.log('[player][debug] hls.js webview shell http error:', status);
-    applyPlaybackFailure(`hls-shell-http:${status}`);
+    handlePlaybackFailure(`hls-shell-http:${status}`);
   };
 
   const onHlsWebError = (ev) => {
     const desc = ev?.nativeEvent?.description ?? ev?.nativeEvent?.message ?? 'unknown';
     console.log('[player][debug] hls.js webview shell error:', desc);
-    applyPlaybackFailure(`hls-shell-error:${String(desc)}`);
+    handlePlaybackFailure(`hls-shell-error:${String(desc)}`);
   };
 
   // PLAY / PAUSE
