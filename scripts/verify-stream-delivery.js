@@ -30,6 +30,14 @@ assert(screen.includes('hlsForceProxy'), 'player tracks proxy fallback state');
 assert(screen.includes('attemptPlaybackRecovery'), 'player recovery path');
 assert(screen.includes('resolveHlsPlaybackManifestUrl'), 'player uses delivery-aware manifest');
 
+const segments = read('lib/hlsDirectSegments.js');
+assert(segments.includes('unwrapStreamProxyUrl'), 'segment unwrap helper');
+assert(segments.includes('rewriteHlsManifestForDirectSegments'), 'manifest rewrite for direct segments');
+
+const hlsHtml = read('lib/hlsJsPlayerHtml.js');
+assert(hlsHtml.includes('DIRECT_SEGMENTS'), 'hls.js direct segment loader');
+assert(hlsHtml.includes('segment_source'), 'segment source diagnostics');
+
 const backend = read('backend/lib/mediaUrlSerializer.js');
 assert(backend.includes('direct_stream_url'), 'backend serializer passes direct URL');
 assert(backend.includes('stream_delivery_mode'), 'backend serializer passes delivery mode');
