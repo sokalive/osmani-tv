@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { getBanners, getChannels, getServerHealth } from '../api';
+import { getBanners, getChannels, getServerHealth, invalidateCatalogCache } from '../api';
+import { devLog } from '../lib/devLog';
 import { sortChannelsByAdminOrder } from '../lib/channelOrder';
 import { parseAppSettingsRealtimePatch, tryGetViewerAppSettings } from '../api/settings';
 import { tryGetViewerTrialWatchSettings } from '../api/trialWatchSettings';
@@ -36,10 +37,10 @@ const defaultSettings = {
 };
 /** SSE names that carry free / emergency / maintenance — must not share the catalog debouncer. */
 const RUNTIME_MODE_SSE_NAMES = Object.freeze(['app_settings_changed', ...ADMIN_RUNTIME_MODE_SSE_EVENTS]);
-const LIVE_SYNC_BASE_MS = 15000;
+const LIVE_SYNC_BASE_MS = 30000;
 const LIVE_SYNC_MAX_MS = 120000;
-/** Fast poll for admin flags (maintenance / emergency / free); complements SSE. */
-const SETTINGS_POLL_MS = 2500;
+/** Admin flags poll while foreground; SSE is primary — conservative interval for cost. */
+const SETTINGS_POLL_MS = 10000;
 
 const OsmaniAppContext = createContext(null);
 
@@ -131,6 +132,7 @@ export function OsmaniAppProvider({ children }) {
 
   const verifyInFlightRef = useRef(false);
   const refreshInFlightRef = useRef(0);
+  const refreshPromiseRef = useRef(null);
   const verifyPromiseRef = useRef(null);
   const lastVerifyKeyRef = useRef(0);
   /** Authoritative subscription flag for playback gates (updated synchronously on verify). */
@@ -288,11 +290,11 @@ export function OsmaniAppProvider({ children }) {
   const refreshServerHealth = useCallback(async (reason = 'fetch') => {
     try {
       const payload = await getServerHealth();
-      console.log('[SERVER_HEALTH_UPDATE]', reason, payload);
+      devLog('[SERVER_HEALTH_UPDATE]', reason, payload);
       setServerHealth(payload);
       return payload;
     } catch (e) {
-      console.log('[SERVER_HEALTH_UPDATE]', 'fetch_failed', e?.message ?? e);
+      devLog('[SERVER_HEALTH_UPDATE]', 'fetch_failed', e?.message ?? e);
       return null;
     }
   }, []);
@@ -341,11 +343,11 @@ export function OsmaniAppProvider({ children }) {
       if (s) {
         trialWatchSettingsRef.current = s;
         setTrialWatchSettings(s);
-        console.log('[TRIAL_WATCH_SYNC]', reason, s);
+        devLog('[TRIAL_WATCH_SYNC]', reason, s);
       } else {
         trialWatchSettingsRef.current = TRIAL_WATCH_FAIL_CLOSED;
         setTrialWatchSettings(TRIAL_WATCH_FAIL_CLOSED);
-        console.log('[TRIAL_WATCH_SYNC]', reason, 'fail_closed_no_runtime_config');
+        devLog('[TRIAL_WATCH_SYNC]', reason, 'fail_closed_no_runtime_config');
       }
     } finally {
       setTrialWatchSettingsLoaded(true);
@@ -360,9 +362,9 @@ export function OsmaniAppProvider({ children }) {
     const s = await tryGetViewerAppSettings();
     if (s) {
       setSettings((prev) => ({ ...prev, ...s }));
-      console.log('[SETTINGS_SYNC]', reason, s);
+      devLog('[SETTINGS_SYNC]', reason, s);
     } else if (__DEV__) {
-      console.log('[SETTINGS_SYNC]', reason, 'skip_no_public_flags');
+      devLog('[SETTINGS_SYNC]', reason, 'skip_no_public_flags');
     }
     await refreshTrialWatchSettings(reason);
   }, [refreshTrialWatchSettings]);
@@ -371,6 +373,17 @@ export function OsmaniAppProvider({ children }) {
     const showGlobalLoading = opts.showGlobalLoading !== false;
     const preserveDataOnError = opts.preserveDataOnError === true;
     const skipSettingsFromHttp = opts.skipSettingsFromHttp === true;
+    const forceNetwork = opts.forceNetwork === true;
+    const catalogOpts = forceNetwork ? { force: true } : {};
+
+    if (forceNetwork) {
+      invalidateCatalogCache();
+    }
+    if (!forceNetwork && refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
+    }
+
+    const run = (async () => {
     refreshInFlightRef.current += 1;
     const shouldShowLoading =
       showGlobalLoading || rawChannelsRef.current.length === 0;
@@ -378,8 +391,8 @@ export function OsmaniAppProvider({ children }) {
     setError(null);
     try {
       const [list, bannersResult, flags, trialFlags] = await Promise.all([
-        withTimeout(getChannels(), STARTUP_FETCH_TIMEOUT_MS, 'startup-channels'),
-        withTimeout(getBanners(), STARTUP_FETCH_TIMEOUT_MS, 'startup-banners').catch(() => null),
+        withTimeout(getChannels(catalogOpts), STARTUP_FETCH_TIMEOUT_MS, 'startup-channels'),
+        withTimeout(getBanners(catalogOpts), STARTUP_FETCH_TIMEOUT_MS, 'startup-banners').catch(() => null),
         withTimeout(tryGetViewerAppSettings(), STARTUP_FETCH_TIMEOUT_MS, 'startup-settings').catch(
           () => null,
         ),
@@ -423,6 +436,16 @@ export function OsmaniAppProvider({ children }) {
         setLoading(false);
       }
     }
+    })();
+
+    refreshPromiseRef.current = run;
+    try {
+      return await run;
+    } finally {
+      if (refreshPromiseRef.current === run) {
+        refreshPromiseRef.current = null;
+      }
+    }
   }, []);
 
   /** Debounced channels/banners + subscription reverify after admin SSE bursts. */
@@ -432,7 +455,7 @@ export function OsmaniAppProvider({ children }) {
       if (adminSoftSyncTimerRef.current) clearTimeout(adminSoftSyncTimerRef.current);
       adminSoftSyncTimerRef.current = setTimeout(() => {
         adminSoftSyncTimerRef.current = null;
-        console.log('[ADMIN_SYNC]', 'soft_refresh', reason);
+        devLog('[ADMIN_SYNC]', 'soft_refresh', reason);
         void refreshTrialWatchSettings(reason);
         void refresh({
           showGlobalLoading: false,
@@ -513,12 +536,12 @@ export function OsmaniAppProvider({ children }) {
   useEffect(() => {
     void refreshServerHealth('initial');
     const unsubscribe = subscribeRealtimeEvent('server_health_changed', (payload) => {
-      console.log('[SERVER_HEALTH_UPDATE]', 'sse', payload);
+      devLog('[SERVER_HEALTH_UPDATE]', 'sse', payload);
       if (payload && typeof payload === 'object') {
         setServerHealth(payload);
+      } else {
+        void refreshServerHealth('sse');
       }
-      void refreshServerHealth('sse');
-      void refresh({ showGlobalLoading: false, preserveDataOnError: true });
     });
     return unsubscribe;
   }, [refresh, refreshServerHealth]);
@@ -531,6 +554,7 @@ export function OsmaniAppProvider({ children }) {
     };
     const sub = AppState.addEventListener('change', onAppState);
     interval = setInterval(() => {
+      if (AppState.currentState !== 'active') return;
       void refreshSettingsOnly('interval');
     }, SETTINGS_POLL_MS);
     return () => {

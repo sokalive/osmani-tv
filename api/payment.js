@@ -244,10 +244,11 @@ export async function createPayment(payload) {
   const url = `${P}/payments/create-payment`;
   const requestBody = JSON.stringify(payload);
 
-  console.log('[createPayment] BASE_URL (from api.js):', BASE_URL);
-  console.log('[createPayment] Full URL:', url);
-  console.log('[createPayment] Request body:', requestBody);
-  console.log('SENDING REQUEST TO BACKEND...');
+  if (__DEV__) {
+    console.log('[createPayment] BASE_URL (from api.js):', BASE_URL);
+    console.log('[createPayment] Full URL:', url);
+    console.log('[createPayment] Request body:', requestBody);
+  }
 
   let res;
   let responseText = '';
@@ -259,12 +260,14 @@ export async function createPayment(payload) {
     });
     responseText = await res.text();
   } catch (error) {
-    console.log('FETCH ERROR:', String(error));
+    if (__DEV__) console.log('[createPayment] FETCH ERROR:', String(error));
     throw error;
   }
 
-  console.log('[createPayment] Response status:', res.status, res.statusText);
-  console.log('[createPayment] Response text:', responseText);
+  if (__DEV__) {
+    console.log('[createPayment] Response status:', res.status, res.statusText);
+    console.log('[createPayment] Response text:', responseText);
+  }
 
   let body = null;
   if (responseText) {

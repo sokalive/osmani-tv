@@ -904,7 +904,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     const id = setInterval(() => {
       if (hardWallClockExpiryDoneRef.current) return;
       void reverifySubscription('player-expiry-sync');
-    }, 90 * 1000);
+    }, 120 * 1000);
     return () => clearInterval(id);
   }, [channelIsPremium, freeMode, accessAllowed, playbackSuppressed, reverifySubscription]);
 

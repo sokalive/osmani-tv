@@ -7,11 +7,11 @@ import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { getAnalyticsLocationPayload } from '../lib/analyticsLocation';
 
 const INSTALL_TRACKED_KEY = 'osmani:install_tracked_v1';
-const PING_MS = 30000;
+const PING_MS = 45000;
 /** Heartbeat for the app-level presence layer (decoupled from channel session). */
-const PRESENCE_PING_MS = 25000;
+const PRESENCE_PING_MS = 45000;
 const RETRY_DELAYS_MS = [0, 700, 1800];
-const ANALYTICS_DEBUG = true;
+const ANALYTICS_DEBUG = __DEV__;
 
 let cachedAppSessionId = '';
 

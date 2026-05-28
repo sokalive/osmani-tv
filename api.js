@@ -1,5 +1,8 @@
+import { getCachedBanners, getCachedChannels, invalidateCatalogCache } from './lib/catalogCache';
 import { rewriteMediaUrlsInJson } from './lib/mediaDelivery';
 import { enrichBannersForViewer } from './lib/bannerViewerSerializer';
+
+export { invalidateCatalogCache };
 
 /**
  * Production Render API host for the mobile app (JSON / SSE / payments only).
@@ -35,7 +38,7 @@ function resolveBaseUrl() {
 // - Rewrites legacy `osmani-tv.onrender.com` so channel/catalog calls hit Admin API
 export const BASE_URL = resolveBaseUrl();
 
-export async function getChannels() {
+async function fetchChannelsFromNetwork() {
   const res = await fetch(`${BASE_URL}/api/channels`);
   let body;
   try {
@@ -56,7 +59,7 @@ export async function getChannels() {
   return rewriteMediaUrlsInJson(body);
 }
 
-export async function getBanners() {
+async function fetchBannersFromNetwork() {
   const res = await fetch(`${BASE_URL}/api/banners`);
   let body;
   try {
@@ -75,6 +78,20 @@ export async function getBanners() {
     throw new Error('Could not load banners (invalid response)');
   }
   return enrichBannersForViewer(rewriteMediaUrlsInJson(body));
+}
+
+/**
+ * @param {{ force?: boolean }} [opts] — pass force: true after pull-to-refresh
+ */
+export async function getChannels(opts = {}) {
+  return getCachedChannels(() => fetchChannelsFromNetwork(), opts);
+}
+
+/**
+ * @param {{ force?: boolean }} [opts] — pass force: true after pull-to-refresh
+ */
+export async function getBanners(opts = {}) {
+  return getCachedBanners(() => fetchBannersFromNetwork(), opts);
 }
 
 export async function getWhatsappSettings() {

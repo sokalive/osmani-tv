@@ -52,7 +52,7 @@ import {
   useModalSheetCoordinator,
   useRegisterBlockingSheet,
 } from './context/ModalSheetCoordinatorContext';
-import { resolveMediaAssetUrl } from './lib/mediaDelivery';
+import { optimizeDisplayImageUrl, resolveMediaAssetUrl } from './lib/mediaDelivery';
 import { acknowledgeManualGift } from './api/subscription';
 import { trackInstallOnce } from './api/analytics';
 import { startPresence, stopPresence } from './lib/presenceTracker';
@@ -156,11 +156,13 @@ function resolveChannelThumbnailUri(raw) {
         ? String(raw.thumbnail_url).trim()
         : '';
   const abs = raw?.thumbnailUrl != null ? String(raw.thumbnailUrl).trim() : '';
-  if (abs.startsWith('http')) return resolveMediaAssetUrl(abs);
-  if (rel.startsWith('http')) return resolveMediaAssetUrl(rel);
-  if (rel.startsWith('/')) return resolveMediaAssetUrl(rel);
-  if (rel.length > 0) return resolveMediaAssetUrl(rel);
-  return null;
+  let resolved = null;
+  if (abs.startsWith('http')) resolved = resolveMediaAssetUrl(abs);
+  else if (rel.startsWith('http')) resolved = resolveMediaAssetUrl(rel);
+  else if (rel.startsWith('/')) resolved = resolveMediaAssetUrl(rel);
+  else if (rel.length > 0) resolved = resolveMediaAssetUrl(rel);
+  if (!resolved) return null;
+  return optimizeDisplayImageUrl(resolved, { maxWidth: 360, quality: 80 });
 }
 
 function placeholderLetterFromName(name) {
@@ -873,7 +875,7 @@ function ChannelCatalogScreen({
   const onPullRefresh = useCallback(async () => {
     setPullRefreshing(true);
     try {
-      await refresh({ showGlobalLoading: false });
+      await refresh({ showGlobalLoading: false, forceNetwork: true });
     } finally {
       setPullRefreshing(false);
     }
@@ -882,7 +884,7 @@ function ChannelCatalogScreen({
   const handleRefresh = useCallback(() => {
     setSelectedFilter('Zote');
     setRefreshKey((k) => k + 1);
-    refresh({ showGlobalLoading: false });
+    refresh({ showGlobalLoading: false, forceNetwork: true });
   }, [refresh]);
 
   const onBannerEmergency = useCallback(() => {

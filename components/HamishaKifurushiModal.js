@@ -334,9 +334,9 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
         console.log('[transfer-ui]', 'poll_error', e?.message ?? e);
       }
       if (cancelled) return;
-      timer = setTimeout(tick, 2000);
+      timer = setTimeout(tick, 4000);
     };
-    timer = setTimeout(tick, 1500);
+    timer = setTimeout(tick, 2000);
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
