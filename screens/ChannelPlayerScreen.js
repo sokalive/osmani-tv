@@ -13,7 +13,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { Video } from 'expo-av';
+import { Video, ResizeMode } from 'expo-av';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Ionicons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -51,6 +51,10 @@ import {
   channelIsPremiumAccess,
   shouldRunTrialWatchOnChannel,
 } from '../lib/trialWatchAccess';
+import {
+  applyNativeVideoResizeMode,
+  normalizeVideoResizeMode,
+} from '../lib/nativeVideoResize';
 
 /**
  * Pick a playback engine:
@@ -348,8 +352,18 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const [isPlaying, setIsPlaying] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [resizeMode, setResizeMode] = useState(ResizeMode.CONTAIN);
 
-  const [resizeMode, setResizeMode] = useState('contain');
+  useEffect(() => {
+    if (!useNativePlayer) return undefined;
+    applyNativeVideoResizeMode(videoRef, resizeMode);
+    const t = setTimeout(() => applyNativeVideoResizeMode(videoRef, resizeMode), 0);
+    return () => clearTimeout(t);
+  }, [resizeMode, useNativePlayer, playerEpoch]);
+
+  const onNativeReadyForDisplay = useCallback(() => {
+    applyNativeVideoResizeMode(videoRef, resizeMode);
+  }, [resizeMode]);
 
   /** HLS track bridge state (populated by hls.js inside WebView). */
   const [hlsLevels, setHlsLevels] = useState([]);
@@ -1585,18 +1599,20 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       },
       {
         key: 'fill',
-        icon: resizeMode === 'cover' ? 'scan' : 'expand',
+        icon: resizeMode === ResizeMode.COVER ? 'scan' : 'expand',
         label: 'Fill',
         onPress: () =>
           setResizeMode((m) => {
-            const next = m === 'contain' ? 'cover' : 'contain';
-            if (useHlsWebView) {
-              const fit = next === 'cover' ? 'cover' : 'contain';
+            const next = m === ResizeMode.CONTAIN ? ResizeMode.COVER : ResizeMode.CONTAIN;
+            if (useNativePlayer) {
+              requestAnimationFrame(() => applyNativeVideoResizeMode(videoRef, next));
+            } else if (useHlsWebView) {
+              const fit = next === ResizeMode.COVER ? 'cover' : 'contain';
               hlsWebRef.current?.injectJavaScript(
                 `(function(){try{var v=document.getElementById('v');if(v)v.style.objectFit=${JSON.stringify(fit)};}catch(e){}})();true;`,
               );
             } else if (useEmbedWebView) {
-              const fit = next === 'cover' ? 'cover' : 'contain';
+              const fit = next === ResizeMode.COVER ? 'cover' : 'contain';
               embedWebRef.current?.injectJavaScript(
                 `(function(){try{var v=document.querySelector('video');if(v)v.style.objectFit=${JSON.stringify(fit)};}catch(e){}})();true;`,
               );
@@ -1626,6 +1642,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       resizeMode,
       useHlsWebView,
       useEmbedWebView,
+      useNativePlayer,
       onPlayPause,
       openLanguagePicker,
       openQualityPicker,
@@ -1715,11 +1732,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             ref={videoRef}
             source={nativeVideoSource}
             style={styles.video}
-            resizeMode={resizeMode}
+            resizeMode={normalizeVideoResizeMode(resizeMode)}
             shouldPlay
             progressUpdateIntervalMillis={1000}
             onPlaybackStatusUpdate={onStatusUpdate}
             onError={onError}
+            onReadyForDisplay={onNativeReadyForDisplay}
             useNativeControls={false}
             pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
           />
