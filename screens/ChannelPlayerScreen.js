@@ -37,7 +37,7 @@ import {
 import { devLog } from '../lib/devLog';
 import { STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
-import { buildEmbedBridgeJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
+import { buildEmbedBridgeJs, buildEmbedPageBootstrapJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
 import { getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
 import {
   SecurityPlaybackBlock,
@@ -282,6 +282,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, [useEmbedWebView, uri, headers]);
 
   const embedBridgeJs = useMemo(() => buildEmbedBridgeJs(), []);
+  const embedPageBootstrapJs = useMemo(() => buildEmbedPageBootstrapJs(), []);
   const [isBuffering, setIsBuffering] = useState(true);
   const [playbackError, setPlaybackError] = useState('');
   const [playerEpoch, setPlayerEpoch] = useState(0);
@@ -1206,17 +1207,16 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   };
 
   const onEmbedLoadEnd = () => {
-    setIsBuffering(false);
     setPlaybackError('');
     if (useEmbedWebView) {
       embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'request-tracks' }));
+      // Keep isBuffering true until embed_playback_started (provider video actually playing).
+      markPlaybackStartedForHide();
+      return;
     }
+    setIsBuffering(false);
     if (useHlsWebView) {
       hlsWebRef.current?.injectJavaScript(buildHlsCmdScript({ type: 'request-tracks' }));
-    }
-    // Embed pages may never post a playing event; arm hide once after load (not on every message).
-    if (useEmbedWebView) {
-      markPlaybackStartedForHide();
     }
   };
 
@@ -1374,6 +1374,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       setEmbedControls(payload || null);
       setEmbedHasControls(Boolean(payload));
       embedWebRef.current?.injectJavaScript(buildEmbedSuppressNativeUiJs());
+      return;
+    }
+    if (kind === 'embed_playback_started') {
+      setIsBuffering(false);
+      setPlaybackError('');
+      markPlaybackStartedForHide();
+      return;
+    }
+    if (kind === 'embed_playback_waiting') {
+      // Page loaded but autoplay has not started — hide spinner so user can tap play.
+      setIsBuffering(false);
       return;
     }
     if (kind === 'embed_no_controls') {
@@ -1735,7 +1746,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           <WebView
             key={`embed-${playerEpoch}`}
             ref={embedWebRef}
-            style={styles.video}
+            style={[styles.video, styles.embedWebView]}
             source={embedWebViewSource}
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
@@ -1743,6 +1754,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             domStorageEnabled
             originWhitelist={['*']}
             mixedContentMode="always"
+            injectedJavaScriptBeforeContentLoaded={embedPageBootstrapJs}
             injectedJavaScript={embedBridgeJs}
             onLoadStart={onEmbedLoadStart}
             onLoadEnd={onEmbedLoadEnd}
@@ -1913,6 +1925,9 @@ const styles = StyleSheet.create({
   },
   video: {
     ...StyleSheet.absoluteFillObject,
+  },
+  embedWebView: {
+    backgroundColor: 'transparent',
   },
   videoTapTarget: {
     ...StyleSheet.absoluteFillObject,

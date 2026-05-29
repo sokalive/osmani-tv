@@ -19,7 +19,8 @@ function assert(cond, msg) {
 const delivery = read('lib/streamDelivery.js');
 assert(delivery.includes('normalizeStreamDeliveryMode'), 'streamDelivery module');
 assert(delivery.includes('resolveChannelPlaybackPlan'), 'playback plan');
-assert(delivery.includes('canFallbackToProxyPlayback'), 'proxy fallback guard');
+assert(delivery.includes('isProviderEmbedPageUrl'), 'embed page detector');
+assert(delivery.includes('finalizePlaybackPlan') || delivery.includes('playUrl: rawUrl'), 'embed raw URL override');
 
 const player = read('lib/playerChannelFromRow.js');
 assert(player.includes('streamDeliveryMode'), 'player channel exposes delivery mode');
