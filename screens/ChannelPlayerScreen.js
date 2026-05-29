@@ -24,21 +24,18 @@ import { clearActiveChannel, setActiveChannel } from '../lib/presenceTracker';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
-import { normalizePlayerType } from '../lib/channelStream';
 import {
   canFallbackToProxyPlayback,
-  looksLikeHlsPlaybackUri,
   logPlaybackDiagnostics,
   logSegmentDiagnostics,
-  prepareNativeDirectHlsManifest,
   resolveHlsPlaybackManifestUrl,
   shouldUseDirectHlsSegments,
 } from '../lib/hlsPlayback';
 import { devLog } from '../lib/devLog';
 import { STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
-import { buildEmbedBridgeJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
 import { getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
+import { pickOsmaniPlaybackRoute } from '../lib/playerPlaybackRoute';
 import {
   SecurityPlaybackBlock,
   SecurityPlayerBanner,
@@ -53,24 +50,9 @@ import {
 } from '../lib/trialWatchAccess';
 
 /**
- * Pick a playback engine:
- *   HLS (.m3u8)     → 'native' by default (expo-av / ExoPlayer + stream-proxy manifest URL)
- *                    Admin may force 'hls-webview' when playerType is `webview`.
- *   .mp4/.ts/.mts  → 'native' (expo-av direct)
- *   anything else  → 'embed-webview' (player.php / iframe pages)
+ * Osmani TV is the only visible player. HLS uses a chromeless hls.js surface;
+ * progressive streams use expo-av. Provider embed/iframe UI is never shown.
  */
-function pickPlaybackRoute(url, playerTypeNorm) {
-  const s = String(url ?? '');
-  if (!s.trim()) return 'embed-webview';
-  const lower = s.split(/[#?]/)[0].toLowerCase();
-  if (looksLikeHlsPlaybackUri(s)) {
-    if (playerTypeNorm === 'webview') return 'hls-webview';
-    return 'native';
-  }
-  if (/\.mp4$/i.test(lower)) return 'native';
-  if (/\.(?:m2ts|mts|ts)$/i.test(lower)) return 'native';
-  return 'embed-webview';
-}
 
 function baseUrlFromUrl(url) {
   try {
@@ -85,9 +67,11 @@ function buildHlsCmdScript(cmd) {
   return `(function(){try{if(window.__OSMANI_HLS_CMD__){window.__OSMANI_HLS_CMD__(${json});}}catch(e){}})();true;`;
 }
 
-function buildEmbedCmdScript(cmd) {
-  const json = JSON.stringify(cmd ?? {});
-  return `(function(){try{if(window.__OSMANI_EMBED_CMD__){window.__OSMANI_EMBED_CMD__(${json});}}catch(e){}})();true;`;
+function injectHlsVideoObjectFit(webRef, fit) {
+  const json = JSON.stringify(fit === 'cover' ? 'cover' : 'contain');
+  webRef?.current?.injectJavaScript(
+    `(function(){try{var v=document.getElementById('v');if(v)v.style.objectFit=${json};}catch(e){}})();true;`,
+  );
 }
 
 function hlsLevelLabel(level) {
@@ -170,7 +154,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   /** When direct/auto playback fails, retry once through CDN stream-proxy. */
   const [hlsForceProxy, setHlsForceProxy] = useState(false);
-  const [nativePreparedManifestUri, setNativePreparedManifestUri] = useState('');
   const manifestRefreshAttemptRef = useRef(0);
   const uri = streams[currentUrlIndex];
   const headers = useMemo(
@@ -181,20 +164,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }),
     [channel?.referer, channel?.origin, channel?.userAgent],
   );
-  const normalizedPlayerType = normalizePlayerType(channel?.playerType);
-  const playbackRoute = useMemo(
-    () => pickPlaybackRoute(uri, normalizedPlayerType),
-    [uri, normalizedPlayerType],
-  );
+  const playbackRoute = useMemo(() => pickOsmaniPlaybackRoute(uri), [uri]);
   const useNativePlayer = playbackRoute === 'native';
-  const useHlsWebView = playbackRoute === 'hls-webview';
-  const useEmbedWebView = playbackRoute === 'embed-webview';
+  const useOsmaniHls = playbackRoute === 'osmani-hls';
 
-  const isHlsManifest = Boolean(uri && looksLikeHlsPlaybackUri(uri));
-
-  /** HLS manifest for native Exo / hls.js (direct, proxy, or auto with fallback). */
   const hlsManifestUrl = useMemo(() => {
-    if (!uri || !isHlsManifest) return '';
+    if (!uri || !useOsmaniHls) return '';
     return resolveHlsPlaybackManifestUrl(
       uri,
       {
@@ -210,7 +185,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       },
     );
   }, [
-    isHlsManifest,
+    useOsmaniHls,
     uri,
     channel?.referer,
     channel?.origin,
@@ -240,7 +215,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       });
       setLiveChannel(next);
       setHlsForceProxy(false);
-      setNativePreparedManifestUri('');
       setPlaybackError('');
       setIsBuffering(true);
       setPlayerEpoch((e) => e + 1);
@@ -249,21 +223,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     [channel?.id, channel?.channel_id, rawChannels, freeMode],
   );
 
-  /** expo-av source: HLS plays through proxy URL so Exo gets a stable manifest; override extension when URI has no .m3u8 suffix. */
+  /** expo-av source for progressive (.mp4 / .ts) streams only. */
   const nativeVideoSource = useMemo(() => {
     if (!useNativePlayer || !uri) return null;
-    if (looksLikeHlsPlaybackUri(uri)) {
-      const u = nativePreparedManifestUri || hlsManifestUrl || uri;
-      return {
-        uri: u,
-        overrideFileExtensionAndroid: 'm3u8',
-      };
-    }
     return { uri, headers };
-  }, [useNativePlayer, uri, hlsManifestUrl, nativePreparedManifestUri, headers]);
+  }, [useNativePlayer, uri, headers]);
 
   const hlsWebViewSource = useMemo(() => {
-    if (!useHlsWebView || !hlsManifestUrl) return null;
+    if (!useOsmaniHls || !hlsManifestUrl) return null;
     return {
       html: buildHlsJsPlayerHtml(hlsManifestUrl, {
         diagnostics: __DEV__,
@@ -271,17 +238,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       }),
       baseUrl: baseUrlFromUrl(hlsManifestUrl),
     };
-  }, [useHlsWebView, hlsManifestUrl, useDirectHlsSegments]);
+  }, [useOsmaniHls, hlsManifestUrl, useDirectHlsSegments]);
 
-  /** Plain WebView source for player.php / embed/iframe HTML pages. Headers as-is. */
-  const embedWebViewSource = useMemo(() => {
-    if (!useEmbedWebView) return null;
-    const hEntries = Object.entries(headers).filter(([, v]) => v != null && String(v).trim() !== '');
-    if (!hEntries.length) return { uri };
-    return { uri, headers: Object.fromEntries(hEntries) };
-  }, [useEmbedWebView, uri, headers]);
-
-  const embedBridgeJs = useMemo(() => buildEmbedBridgeJs(), []);
   const [isBuffering, setIsBuffering] = useState(true);
   const [playbackError, setPlaybackError] = useState('');
   const [playerEpoch, setPlayerEpoch] = useState(0);
@@ -289,7 +247,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const videoRef = useRef(null);
   const hlsWebRef = useRef(null);
-  const embedWebRef = useRef(null);
   const hideTimer = useRef(null);
   const pickerKindRef = useRef(null);
   const playbackErrorRef = useRef('');
@@ -308,13 +265,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     try {
       hlsWebRef.current?.injectJavaScript(
         `(function(){try{var v=document.getElementById('v');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
-      );
-    } catch {
-      /* ignore */
-    }
-    try {
-      embedWebRef.current?.injectJavaScript(
-        `(function(){try{var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
       );
     } catch {
       /* ignore */
@@ -350,16 +300,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const [resizeMode, setResizeMode] = useState('contain');
 
-  /** HLS track bridge state (populated by hls.js inside WebView). */
+  /** HLS track bridge state (chromeless hls.js engine). */
   const [hlsLevels, setHlsLevels] = useState([]);
   const [hlsCurrentLevel, setHlsCurrentLevel] = useState(-1);
   const [hlsAutoLevel, setHlsAutoLevel] = useState(true);
   const [hlsAudioTracks, setHlsAudioTracks] = useState([]);
   const [hlsCurrentAudioTrack, setHlsCurrentAudioTrack] = useState(-1);
-
-  /** Embed-page detection state (populated by embed bridge). */
-  const [embedControls, setEmbedControls] = useState(null);
-  const [embedHasControls, setEmbedHasControls] = useState(null); // null=unknown, false=none, true=yes
 
   /** Picker overlay: 'quality' | 'language' | null. */
   const [pickerKind, setPickerKind] = useState(null);
@@ -389,52 +335,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, [uri]);
 
   useEffect(() => {
-    if (
-      !useNativePlayer ||
-      !isHlsManifest ||
-      !hlsManifestUrl ||
-      !useDirectHlsSegments ||
-      hlsForceProxy
-    ) {
-      setNativePreparedManifestUri('');
-      return undefined;
-    }
-    let cancelled = false;
-    (async () => {
-      const result = await prepareNativeDirectHlsManifest(hlsManifestUrl, headers);
-      if (cancelled) return;
-      if (result.tokenExpired) {
-        logSegmentDiagnostics('manifest_token_expired', { url: hlsManifestUrl });
-        refreshManifestFromCatalog('manifest_token_expired');
-        return;
-      }
-      if (result.rewritten) {
-        logSegmentDiagnostics('native_manifest_prepared', {
-          dataUri: result.uri.startsWith('data:'),
-        });
-        setNativePreparedManifestUri(result.uri);
-      } else {
-        setNativePreparedManifestUri('');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    useNativePlayer,
-    isHlsManifest,
-    hlsManifestUrl,
-    useDirectHlsSegments,
-    hlsForceProxy,
-    headers,
-    playerEpoch,
-    refreshManifestFromCatalog,
-  ]);
-
-  useEffect(() => {
     setCurrentUrlIndex(0);
     setHlsForceProxy(false);
-    setNativePreparedManifestUri('');
     manifestRefreshAttemptRef.current = 0;
     setIsBuffering(true);
     setPlaybackError('');
@@ -444,8 +346,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setHlsAutoLevel(true);
     setHlsAudioTracks([]);
     setHlsCurrentAudioTrack(-1);
-    setEmbedControls(null);
-    setEmbedHasControls(null);
     setPickerKind(null);
     playbackHideArmedRef.current = false;
     hardWallClockExpiryDoneRef.current = false;
@@ -457,28 +357,20 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (!uri) return;
     logPlaybackDiagnostics('route', {
       route: playbackRoute,
-      api_playerType: normalizedPlayerType,
       url: uri,
       proxy_base: STREAM_PROXY_BASE,
       hls_manifest_url: hlsManifestUrl || null,
       stream_delivery_mode: channel?.streamDeliveryMode ?? 'proxy',
       hls_force_proxy: hlsForceProxy,
       direct_hls_segments: useDirectHlsSegments,
-      native_manifest_prepared: Boolean(nativePreparedManifestUri),
-      embed_headers_present: Boolean(
-        embedWebViewSource?.headers && Object.keys(embedWebViewSource.headers).length,
-      ),
     });
   }, [
     uri,
-    normalizedPlayerType,
     playbackRoute,
     hlsManifestUrl,
     hlsForceProxy,
     channel?.streamDeliveryMode,
     useDirectHlsSegments,
-    nativePreparedManifestUri,
-    embedWebViewSource?.headers,
   ]);
 
   // Keep local channel snapshot in sync when route params change.
@@ -585,11 +477,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         );
       } catch {}
       try {
-        embedWebRef.current?.injectJavaScript(
-          `(function(){try{var v=document.querySelector('video');if(v)v.pause();}catch(e){}})();true;`,
-        );
-      } catch {}
-      try {
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
         StatusBar.setHidden(false);
       } catch {}
@@ -666,7 +553,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         return true;
       }
       if (
-        isHlsManifest &&
+        useOsmaniHls &&
         !hlsForceProxy &&
         canFallbackToProxyPlayback({
           deliveryMode: channel?.streamDeliveryMode,
@@ -682,7 +569,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         });
         logSegmentDiagnostics('proxy_fallback', { reason });
         setHlsForceProxy(true);
-        setNativePreparedManifestUri('');
         setPlaybackError('');
         setIsBuffering(true);
         setPlayerEpoch((e) => e + 1);
@@ -704,7 +590,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return false;
     },
     [
-      isHlsManifest,
+      useOsmaniHls,
       hlsForceProxy,
       channel?.streamDeliveryMode,
       channel?.proxyFallbackUrl,
@@ -988,13 +874,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     } catch {
       /* ignore */
     }
-    try {
-      embedWebRef.current?.injectJavaScript(
-        `(function(){try{var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
-      );
-    } catch {
-      /* ignore */
-    }
 
     setPlayerEpoch((e) => e + 1);
 
@@ -1047,13 +926,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     try {
       hlsWebRef.current?.injectJavaScript(
         `(function(){try{var v=document.getElementById('v');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
-      );
-    } catch {
-      /* ignore */
-    }
-    try {
-      embedWebRef.current?.injectJavaScript(
-        `(function(){try{var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
       );
     } catch {
       /* ignore */
@@ -1201,35 +1073,16 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
   };
 
-  const onEmbedLoadStart = () => {
+  const onHlsShellLoadStart = () => {
     setIsBuffering(true);
   };
 
-  const onEmbedLoadEnd = () => {
+  const onHlsShellLoadEnd = () => {
     setIsBuffering(false);
     setPlaybackError('');
-    if (useEmbedWebView) {
-      embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'request-tracks' }));
-    }
-    if (useHlsWebView) {
+    if (useOsmaniHls) {
       hlsWebRef.current?.injectJavaScript(buildHlsCmdScript({ type: 'request-tracks' }));
     }
-    // Embed pages may never post a playing event; arm hide once after load (not on every message).
-    if (useEmbedWebView) {
-      markPlaybackStartedForHide();
-    }
-  };
-
-  const onEmbedHttpError = (ev) => {
-    const status = ev?.nativeEvent?.statusCode;
-    console.log('[player][debug] embed http error:', status);
-    applyPlaybackFailure(`embed-http:${status}`);
-  };
-
-  const onEmbedError = (ev) => {
-    const desc = ev?.nativeEvent?.description ?? ev?.nativeEvent?.message ?? 'unknown';
-    console.log('[player][debug] embed load error:', desc);
-    handlePlaybackFailure(`webview-error:${String(desc)}`);
   };
 
   const onHlsWebMessage = (event) => {
@@ -1359,30 +1212,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     console.log('[player][debug] hls.js unknown event:', kind, payload);
   };
 
-  const onEmbedMessage = (event) => {
-    const raw = event?.nativeEvent?.data ?? '';
-    let msg = null;
-    try {
-      msg = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    if (!msg || typeof msg !== 'object') return;
-    const kind = String(msg.kind || '');
-    const payload = msg.payload ?? null;
-    if (kind === 'embed_controls_detected') {
-      setEmbedControls(payload || null);
-      setEmbedHasControls(Boolean(payload));
-      embedWebRef.current?.injectJavaScript(buildEmbedSuppressNativeUiJs());
-      return;
-    }
-    if (kind === 'embed_no_controls') {
-      setEmbedControls(null);
-      setEmbedHasControls(false);
-      return;
-    }
-  };
-
   const onHlsWebHttpError = (ev) => {
     const status = ev?.nativeEvent?.statusCode;
     console.log('[player][debug] hls.js webview shell http error:', status);
@@ -1404,14 +1233,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       } else {
         await videoRef.current?.playAsync?.();
       }
-    } else if (useHlsWebView) {
+    } else if (useOsmaniHls) {
       const cmd = isPlaying
         ? `(function(){try{var v=document.getElementById('v');if(v)v.pause();}catch(e){}})();true;`
         : `(function(){try{var v=document.getElementById('v');if(v)v.play().catch(function(){});}catch(e){}})();true;`;
       hlsWebRef.current?.injectJavaScript(cmd);
-      setIsPlaying((v) => !v);
-    } else {
-      embedWebRef.current?.injectJavaScript(`(function(){try{var v=document.querySelector('video');if(v){if(v.paused)v.play().catch(function(){});else v.pause();}}catch(e){}})();true;`);
       setIsPlaying((v) => !v);
     }
     revealControlsUser();
@@ -1424,7 +1250,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   /** Quality picker model (auto + per-level). */
   const qualityModel = useMemo(() => {
-    if (useHlsWebView) {
+    if (useOsmaniHls) {
       const selectedId = hlsAutoLevel ? -1 : hlsCurrentLevel;
       const options = [
         { id: -1, label: 'Auto', selected: selectedId === -1 },
@@ -1435,27 +1261,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         })),
       ];
       const current = options.find((o) => o.selected) ?? options[0];
-      return { available: true, options, currentLabel: current?.label ?? 'Auto' };
-    }
-    if (useEmbedWebView && embedControls && embedControls.qualities?.length) {
-      const selectedId = typeof embedControls.currentQuality === 'number' ? embedControls.currentQuality : -1;
-      const options = [
-        { id: -1, label: 'Auto', selected: selectedId === -1 },
-        ...embedControls.qualities.map((q) => ({
-          id: q.id,
-          label: q.label || `Q${q.id}`,
-          selected: selectedId === q.id,
-        })),
-      ];
-      const current = options.find((o) => o.selected) ?? options[0];
-      return { available: true, options, currentLabel: current?.label ?? 'Auto' };
+      return { available: options.length > 1, options, currentLabel: current?.label ?? 'Auto' };
     }
     return { available: false, options: [], currentLabel: useNativePlayer ? 'Auto' : '—' };
-  }, [useHlsWebView, useEmbedWebView, useNativePlayer, hlsLevels, hlsCurrentLevel, hlsAutoLevel, embedControls]);
+  }, [useOsmaniHls, useNativePlayer, hlsLevels, hlsCurrentLevel, hlsAutoLevel]);
 
   /** Language / audio track picker model. */
   const languageModel = useMemo(() => {
-    if (useHlsWebView && hlsAudioTracks.length) {
+    if (useOsmaniHls && hlsAudioTracks.length) {
       const options = hlsAudioTracks.map((t) => ({
         id: t.id,
         label: hlsAudioLabel(t),
@@ -1464,18 +1277,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       const current = options.find((o) => o.selected) ?? options[0];
       return { available: true, options, currentLabel: current?.label ?? '—' };
     }
-    if (useEmbedWebView && embedControls && embedControls.audioTracks?.length) {
-      const selectedId = typeof embedControls.currentAudioTrack === 'number' ? embedControls.currentAudioTrack : -1;
-      const options = embedControls.audioTracks.map((t) => ({
-        id: t.id,
-        label: t.label || `Audio ${t.id}`,
-        selected: selectedId === t.id,
-      }));
-      const current = options.find((o) => o.selected) ?? options[0];
-      return { available: true, options, currentLabel: current?.label ?? '—' };
-    }
     return { available: false, options: [], currentLabel: '—' };
-  }, [useHlsWebView, useEmbedWebView, hlsAudioTracks, hlsCurrentAudioTrack, embedControls]);
+  }, [useOsmaniHls, hlsAudioTracks, hlsCurrentAudioTrack]);
 
   const openQualityPicker = useCallback(() => {
     revealControlsUser();
@@ -1484,15 +1287,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return;
     }
     if (!qualityModel.available) {
-      if (useEmbedWebView && embedHasControls === false) {
-        Alert.alert('Quality', 'Stream hii inadhibiti ubora ndani ya page yenyewe.');
-        return;
-      }
-      Alert.alert('Quality', useHlsWebView ? 'Inasubiri taarifa za ubora kutoka kwenye stream...' : 'Quality controls hazijapatikana bado.');
+      Alert.alert('Quality', useOsmaniHls ? 'Inasubiri taarifa za ubora kutoka kwenye stream...' : 'Quality controls hazijapatikana bado.');
       return;
     }
     setPickerKind('quality');
-  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, qualityModel.available, revealControlsUser]);
+  }, [useNativePlayer, useOsmaniHls, qualityModel.available, revealControlsUser]);
 
   const openLanguagePicker = useCallback(() => {
     revealControlsUser();
@@ -1501,45 +1300,31 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return;
     }
     if (!languageModel.available) {
-      if (useEmbedWebView && embedHasControls === false) {
-        Alert.alert('Lugha', 'Stream hii inadhibiti audio/lugha ndani ya page yenyewe.');
-        return;
-      }
-      Alert.alert('Lugha', useHlsWebView ? 'Stream hii haina audio tracks za ziada.' : 'Audio tracks hazijapatikana bado.');
+      Alert.alert('Lugha', useOsmaniHls ? 'Stream hii haina audio tracks za ziada.' : 'Audio tracks hazijapatikana bado.');
       return;
     }
     setPickerKind('language');
-  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, languageModel.available, revealControlsUser]);
+  }, [useNativePlayer, useOsmaniHls, languageModel.available, revealControlsUser]);
 
   const onPickOption = useCallback(
     (option) => {
-      if (pickerKind === 'quality') {
-        if (useHlsWebView) {
-          hlsWebRef.current?.injectJavaScript(buildHlsCmdScript({ type: 'set-level', level: option.id }));
-          if (option.id === -1) {
-            setHlsAutoLevel(true);
-            setHlsCurrentLevel(-1);
-          } else {
-            setHlsAutoLevel(false);
-            setHlsCurrentLevel(option.id);
-          }
-        } else if (useEmbedWebView) {
-          embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'set-level', level: option.id }));
-          setEmbedControls((prev) => (prev ? { ...prev, currentQuality: option.id } : prev));
+      if (pickerKind === 'quality' && useOsmaniHls) {
+        hlsWebRef.current?.injectJavaScript(buildHlsCmdScript({ type: 'set-level', level: option.id }));
+        if (option.id === -1) {
+          setHlsAutoLevel(true);
+          setHlsCurrentLevel(-1);
+        } else {
+          setHlsAutoLevel(false);
+          setHlsCurrentLevel(option.id);
         }
-      } else if (pickerKind === 'language') {
-        if (useHlsWebView) {
-          hlsWebRef.current?.injectJavaScript(buildHlsCmdScript({ type: 'set-audio-track', id: option.id }));
-          setHlsCurrentAudioTrack(option.id);
-        } else if (useEmbedWebView) {
-          embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'set-audio-track', id: option.id }));
-          setEmbedControls((prev) => (prev ? { ...prev, currentAudioTrack: option.id } : prev));
-        }
+      } else if (pickerKind === 'language' && useOsmaniHls) {
+        hlsWebRef.current?.injectJavaScript(buildHlsCmdScript({ type: 'set-audio-track', id: option.id }));
+        setHlsCurrentAudioTrack(option.id);
       }
       setPickerKind(null);
       bumpAutoHideTimer();
     },
-    [pickerKind, useHlsWebView, useEmbedWebView, bumpAutoHideTimer],
+    [pickerKind, useOsmaniHls, bumpAutoHideTimer],
   );
 
   const closePicker = useCallback(() => {
@@ -1579,16 +1364,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         onPress: () =>
           setResizeMode((m) => {
             const next = m === 'contain' ? 'cover' : 'contain';
-            if (useHlsWebView) {
-              const fit = next === 'cover' ? 'cover' : 'contain';
-              hlsWebRef.current?.injectJavaScript(
-                `(function(){try{var v=document.getElementById('v');if(v)v.style.objectFit=${JSON.stringify(fit)};}catch(e){}})();true;`,
-              );
-            } else if (useEmbedWebView) {
-              const fit = next === 'cover' ? 'cover' : 'contain';
-              embedWebRef.current?.injectJavaScript(
-                `(function(){try{var v=document.querySelector('video');if(v)v.style.objectFit=${JSON.stringify(fit)};}catch(e){}})();true;`,
-              );
+            if (useOsmaniHls) {
+              injectHlsVideoObjectFit(hlsWebRef, next);
             }
             return next;
           }),
@@ -1613,8 +1390,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       qualityModel.available,
       qualityModel.currentLabel,
       resizeMode,
-      useHlsWebView,
-      useEmbedWebView,
+      useOsmaniHls,
       onPlayPause,
       openLanguagePicker,
       openQualityPicker,
@@ -1690,10 +1466,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       ) : null}
 
       {/*
-        Routing:
-          - HLS (.m3u8)     → expo-av / ExoPlayer + stream-proxy (default); optional hls.js WebView if playerType=webview
-          - .mp4 / .ts ... → expo-av native
-          - everything else (player.php, embed pages, iframe HTML) → plain WebView
+        Osmani TV only:
+          - HLS / stream-proxy → chromeless hls.js (Osmani controls for tracks + play/pause/fill)
+          - .mp4 / .ts         → expo-av native
       */}
       <View style={styles.playerStage}>
         <View pointerEvents="none" style={styles.videoUnderlay} />
@@ -1712,7 +1487,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             useNativeControls={false}
             pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
           />
-        ) : useHlsWebView ? (
+        ) : useOsmaniHls && hlsWebViewSource ? (
           <WebView
             key={`hls-${playerEpoch}`}
             ref={hlsWebRef}
@@ -1724,34 +1499,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             domStorageEnabled
             originWhitelist={['*']}
             mixedContentMode="always"
-            onLoadStart={onEmbedLoadStart}
-            onLoadEnd={onEmbedLoadEnd}
+            onLoadStart={onHlsShellLoadStart}
+            onLoadEnd={onHlsShellLoadEnd}
             onMessage={onHlsWebMessage}
             onHttpError={onHlsWebHttpError}
             onError={onHlsWebError}
             pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
           />
-        ) : (
-          <WebView
-            key={`embed-${playerEpoch}`}
-            ref={embedWebRef}
-            style={styles.video}
-            source={embedWebViewSource}
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            javaScriptEnabled
-            domStorageEnabled
-            originWhitelist={['*']}
-            mixedContentMode="always"
-            injectedJavaScript={embedBridgeJs}
-            onLoadStart={onEmbedLoadStart}
-            onLoadEnd={onEmbedLoadEnd}
-            onMessage={onEmbedMessage}
-            onError={onEmbedError}
-            onHttpError={onEmbedHttpError}
-            pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
-          />
-        )}
+        ) : null}
 
         {!pickerKind ? (
           <Pressable
