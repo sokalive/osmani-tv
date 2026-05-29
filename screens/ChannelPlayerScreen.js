@@ -300,6 +300,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     isPlaying: null,
   });
   const controlsOpacity = useRef(new Animated.Value(1)).current;
+  const statusBarHiddenRef = useRef(true);
 
   const [isPlaying, setIsPlaying] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -1540,6 +1541,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
               hlsWebRef.current?.injectJavaScript(
                 `(function(){try{var v=document.getElementById('v');if(v)v.style.objectFit=${JSON.stringify(fit)};}catch(e){}})();true;`,
               );
+            } else if (useEmbedWebView) {
+              const fit = next === 'cover' ? 'cover' : 'contain';
+              embedWebRef.current?.injectJavaScript(
+                `(function(){try{var v=document.querySelector('video');if(v)v.style.objectFit=${JSON.stringify(fit)};}catch(e){}})();true;`,
+              );
             }
             return next;
           }),
@@ -1548,8 +1554,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         key: 'fullscreen',
         icon: 'resize',
         label: 'Full Screen',
-        onPress: async () => {
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        onPress: () => {
+          statusBarHiddenRef.current = !statusBarHiddenRef.current;
+          StatusBar.setHidden(statusBarHiddenRef.current);
+          if (statusBarHiddenRef.current) {
+            void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+          }
         },
       },
     ],
@@ -1561,6 +1571,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       qualityModel.currentLabel,
       resizeMode,
       useHlsWebView,
+      useEmbedWebView,
       onPlayPause,
       openLanguagePicker,
       openQualityPicker,
@@ -1641,7 +1652,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           - .mp4 / .ts ... → expo-av native
           - everything else (player.php, embed pages, iframe HTML) → plain WebView
       */}
-      <Pressable style={{ flex: 1 }} onPress={revealControlsUser}>
+      <View style={styles.playerStage}>
         <View pointerEvents="none" style={styles.videoUnderlay} />
 
         {useNativePlayer && nativeVideoSource ? (
@@ -1656,6 +1667,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             onPlaybackStatusUpdate={onStatusUpdate}
             onError={onError}
             useNativeControls={false}
+            pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
           />
         ) : useHlsWebView ? (
           <WebView
@@ -1674,6 +1686,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             onMessage={onHlsWebMessage}
             onHttpError={onHlsWebHttpError}
             onError={onHlsWebError}
+            pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
           />
         ) : (
           <WebView
@@ -1693,15 +1706,26 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             onMessage={onEmbedMessage}
             onError={onEmbedError}
             onHttpError={onEmbedHttpError}
+            pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
           />
         )}
 
+        {!pickerKind ? (
+          <Pressable
+            style={styles.videoTapTarget}
+            onPress={revealControlsUser}
+            pointerEvents={controlsVisible ? 'box-none' : 'auto'}
+            accessibilityRole="button"
+            accessibilityLabel="Show player controls"
+          />
+        ) : null}
+
         {/* CONTROLS */}
         {controlsVisible && (
-          <Animated.View style={[styles.controls, { opacity: controlsOpacity }]} pointerEvents="box-none">
+          <Animated.View style={[styles.controls, { opacity: controlsOpacity }]} pointerEvents="box-none" collapsable={false}>
 
             {/* TOP */}
-            <View style={[styles.topBar, { paddingTop: Math.max(8, insets.top) }]}>
+            <View style={[styles.topBar, { paddingTop: Math.max(8, insets.top) }]} pointerEvents="box-none">
               <Pressable onPress={() => navigation.goBack()} style={styles.topBack}>
                 <Ionicons name="arrow-back" size={26} color="#fff" />
               </Pressable>
@@ -1715,9 +1739,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             </View>
 
             {/* CENTER */}
-            <View style={styles.center}>
+            <View style={styles.center} pointerEvents="box-none">
               {(isBuffering || playbackError) ? (
-                <View style={styles.bufferingWrap}>
+                <View style={styles.bufferingWrap} pointerEvents="auto">
                   {isBuffering ? <ActivityIndicator size="large" color="#FFFFFF" /> : null}
                   <Text style={styles.bufferingText}>
                     {playbackError ? 'Hitilafu ya uchezi' : 'Inapakia moja kwa moja...'}
@@ -1734,12 +1758,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
               ) : null}
             </View>
 
-            <View style={[styles.bottom, { paddingBottom: Math.max(12, insets.bottom + 4) }]}>
+            <View
+              style={[styles.bottom, { paddingBottom: Math.max(12, insets.bottom + 4) }]}
+              pointerEvents="box-none"
+            >
               {bottomActions.map((action) => (
                 <Pressable
                   key={action.key}
                   style={styles.actionBtn}
-                  onPress={() => {
+                  pointerEvents="auto"
+                  onPress={(e) => {
+                    e?.stopPropagation?.();
                     action.onPress();
                     revealControlsUser();
                   }}
@@ -1784,7 +1813,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             </Pressable>
           </Pressable>
         ) : null}
-      </Pressable>
+      </View>
     </View>
   );
 }
@@ -1836,8 +1865,16 @@ const styles = StyleSheet.create({
     color: '#FEE2E2',
   },
 
+  playerStage: {
+    flex: 1,
+  },
   video: {
     ...StyleSheet.absoluteFillObject,
+  },
+  videoTapTarget: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 5,
+    elevation: 5,
   },
 
   controls: {
@@ -1923,6 +1960,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 8,
+    zIndex: 12,
+    elevation: 12,
   },
   actionBtn: {
     flex: 1,
@@ -1935,6 +1974,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 8,
     gap: 3,
+    zIndex: 13,
+    elevation: 13,
   },
   actionLabel: {
     color: '#E5E7EB',
