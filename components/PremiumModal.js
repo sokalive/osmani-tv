@@ -34,6 +34,7 @@ import { BASE_URL } from '../api';
 import { verifySubscription } from '../api/subscription';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
+import { cacheSecurityPhone } from '../lib/security/securityPhone';
 import { formatSubscriptionExpiry } from '../lib/formatExpiry';
 
 const ACCENT = '#FACC15';
@@ -545,6 +546,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         device_id: deviceId,
         device_fingerprint: deviceFingerprint,
       };
+      void cacheSecurityPhone(payPayload.phone);
       const startPayment =
         checkoutProvider === 'sonicpesa' ? createSonicpesaOrder : createPayment;
       const { order_id: oid, expiresInSeconds } = await startPayment(payPayload);

@@ -1,7 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import Constants from 'expo-constants';
 import { reportSecurityDevice } from '../api/security';
+import { SECURITY_BLOCK_MESSAGE } from '../lib/security/constants';
 import { resolveEnforcement } from '../lib/security/riskEngine';
 import { runRuntimeSecurityScan } from '../lib/security/runtimeScan';
 
@@ -26,38 +27,55 @@ export function SecurityProvider({ children }) {
   const [signals, setSignals] = useState([]);
   const [details, setDetails] = useState({});
   const [serverEnforcement, setServerEnforcement] = useState(null);
-  const [warningDismissed, setWarningDismissed] = useState(false);
+  const [serverPlaybackAllowed, setServerPlaybackAllowed] = useState(null);
   const scanRunning = useRef(false);
 
   const mode = useMemo(() => readSecurityMode(), []);
 
+  const applyServerReport = useCallback((report) => {
+    if (!report) return;
+    if (typeof report.enforcement === 'string' && report.enforcement.trim()) {
+      setServerEnforcement(report.enforcement.trim().toLowerCase());
+    }
+    if (report.playbackAllowed === false) {
+      setServerPlaybackAllowed(false);
+    } else if (report.playbackAllowed === true) {
+      setServerPlaybackAllowed(true);
+    }
+    if (report.blocked === true && report.playbackAllowed !== true) {
+      setServerPlaybackAllowed(false);
+      setServerEnforcement((prev) => prev || 'block');
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     if (scanRunning.current) return;
     scanRunning.current = true;
+    const detected_at = new Date().toISOString();
     try {
       const scan = await runRuntimeSecurityScan();
       setScore(scan.score);
       setTier(scan.tier);
       setSignals(scan.signals);
       setDetails(scan.details);
+      setLoading(false);
 
       const report = await reportSecurityDevice({
         signals: scan.signals,
         risk_score: scan.score,
         details: scan.details,
+        detected_at,
       });
-      if (report?.enforcement) {
-        setServerEnforcement(report.enforcement);
-      }
+      applyServerReport(report);
     } catch (err) {
       if (__DEV__) {
         console.log('[security] scan failed:', String(err));
       }
-    } finally {
       setLoading(false);
+    } finally {
       scanRunning.current = false;
     }
-  }, []);
+  }, [applyServerReport]);
 
   useEffect(() => {
     void refresh();
@@ -68,8 +86,15 @@ export function SecurityProvider({ children }) {
   }, [refresh]);
 
   const enforcement = useMemo(
-    () => resolveEnforcement(tier, mode, serverEnforcement),
-    [tier, mode, serverEnforcement],
+    () =>
+      resolveEnforcement({
+        signals,
+        tier,
+        mode,
+        serverEnforcement,
+        serverPlaybackAllowed,
+      }),
+    [signals, tier, mode, serverEnforcement, serverPlaybackAllowed],
   );
 
   const value = useMemo(
@@ -81,9 +106,8 @@ export function SecurityProvider({ children }) {
       details,
       mode,
       serverEnforcement,
+      serverPlaybackAllowed,
       ...enforcement,
-      warningDismissed,
-      dismissWarning: () => setWarningDismissed(true),
       refresh,
     }),
     [
@@ -94,8 +118,8 @@ export function SecurityProvider({ children }) {
       details,
       mode,
       serverEnforcement,
+      serverPlaybackAllowed,
       enforcement,
-      warningDismissed,
       refresh,
     ],
   );
@@ -115,8 +139,7 @@ export function useSecurity() {
       showWarning: false,
       blockPlayback: false,
       limitedPlayback: false,
-      warningDismissed: true,
-      dismissWarning: () => {},
+      serverPlaybackAllowed: null,
       refresh: async () => {},
     };
   }
@@ -127,39 +150,33 @@ export function useSecurity() {
  * @returns {{ allowed: boolean; message: string; tier: string; score: number }}
  */
 export function usePlaybackSecurityGate() {
-  const { loading, canPlay, blockPlayback, tier, score, showWarning, limitedPlayback } = useSecurity();
+  const { canPlay, blockPlayback, tier, score } = useSecurity();
 
-  if (loading || canPlay !== false && !blockPlayback) {
+  if (blockPlayback || canPlay === false) {
     return {
-      allowed: true,
-      message: '',
+      allowed: false,
+      message: SECURITY_BLOCK_MESSAGE,
       tier,
       score,
-      showWarning,
-      limitedPlayback,
+      showWarning: false,
+      limitedPlayback: false,
     };
   }
 
   return {
-    allowed: false,
-    message:
-      'Kifaa chako kimegunduliwa na hatari ya usalama. Tafadhali wasiliana na msaada wa Osmani TV ili kuendelea kutazama.',
+    allowed: true,
+    message: '',
     tier,
     score,
-    showWarning: true,
+    showWarning: false,
     limitedPlayback: false,
   };
 }
 
 export function assertPlaybackAllowed(security) {
   if (!security) return { ok: true };
-  if (security.loading) return { ok: true };
   if (security.blockPlayback || security.canPlay === false) {
-    return {
-      ok: false,
-      message:
-        'Uchezaji umezuiwa kwa muda kwa sababu ya usalama wa kifaa. Wasiliana na msaada wa Osmani TV.',
-    };
+    return { ok: false, message: SECURITY_BLOCK_MESSAGE };
   }
   return { ok: true };
 }

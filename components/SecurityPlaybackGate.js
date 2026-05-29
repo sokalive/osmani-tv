@@ -12,9 +12,6 @@ export function SecurityPlaybackBlock({ onBack }) {
       <Ionicons name="shield-outline" size={56} color="#facc15" />
       <Text style={styles.blockTitle}>Usalama wa kifaa</Text>
       <Text style={styles.blockBody}>{gate.message}</Text>
-      <Text style={styles.blockMeta}>
-        Kiwango: {gate.tier} · Alama: {gate.score}
-      </Text>
       {onBack ? (
         <Pressable style={styles.blockBtn} onPress={onBack}>
           <Text style={styles.blockBtnText}>Rudi nyuma</Text>
@@ -24,27 +21,9 @@ export function SecurityPlaybackBlock({ onBack }) {
   );
 }
 
+/** Security warnings/limited playback removed under strict zero-tolerance policy. */
 export function SecurityPlayerBanner() {
-  const { showWarning, warningDismissed, dismissWarning, tier, score, limitedPlayback } = useSecurity();
-  const gate = usePlaybackSecurityGate();
-
-  if (!showWarning || warningDismissed || !gate.allowed) return null;
-
-  return (
-    <View style={styles.banner} pointerEvents="box-none">
-      <View style={styles.bannerInner}>
-        <Ionicons name="warning-outline" size={18} color="#fbbf24" />
-        <Text style={styles.bannerText} numberOfLines={3}>
-          {limitedPlayback
-            ? `Onyo la usalama (${tier}, ${score}): uchezaji mdogo unatumika.`
-            : `Onyo la usalama (${tier}, ${score}): kifaa kinaweza kuwa kimebadilishwa.`}
-        </Text>
-        <Pressable onPress={dismissWarning} hitSlop={12}>
-          <Ionicons name="close" size={20} color="#e5e7eb" />
-        </Pressable>
-      </View>
-    </View>
-  );
+  return null;
 }
 
 export function SecurityScanSplash() {
@@ -79,11 +58,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
-  blockMeta: {
-    color: '#9ca3af',
-    fontSize: 12,
-    marginTop: 14,
-  },
   blockBtn: {
     marginTop: 24,
     backgroundColor: '#facc15',
@@ -95,30 +69,6 @@ const styles = StyleSheet.create({
     color: '#111',
     fontWeight: '700',
     fontSize: 15,
-  },
-  banner: {
-    position: 'absolute',
-    top: 48,
-    left: 12,
-    right: 12,
-    zIndex: 40,
-  },
-  bannerInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(17,24,39,0.92)',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(251,191,36,0.35)',
-  },
-  bannerText: {
-    flex: 1,
-    color: '#f3f4f6',
-    fontSize: 12,
-    lineHeight: 16,
   },
   splash: {
     ...StyleSheet.absoluteFillObject,

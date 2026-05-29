@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_URL } from '../api';
+import { cacheSecurityPhone, pickPhoneFromApiBody } from '../lib/security/securityPhone';
 
 /**
  * Device-bound subscription HTTP client.
@@ -439,6 +440,7 @@ function normalizeVerifyResponse(body, fallback = {}) {
       plan_duration_days: null,
       plans: [],
       manualGiftAckKey: null,
+      phone: null,
       raw: body,
       ...fallback,
     };
@@ -490,6 +492,7 @@ function normalizeVerifyResponse(body, fallback = {}) {
     plan_duration_days: planDurationDays,
     plans: pickPlans(body),
     deviceId: pickStringList(body.device_id, body.deviceId),
+    phone: pickPhoneFromApiBody(body),
     manualGiftAckKey: pickManualGiftAckKey(body),
     raw: body,
   };
@@ -535,6 +538,7 @@ export async function verifySubscription(deviceId, deviceFingerprint) {
       return { active: false, expiresAt: null, error: `HTTP ${res.status}`, raw: body };
     }
     const out = normalizeVerifyResponse(body);
+    if (out.phone) void cacheSecurityPhone(out.phone);
     console.log('[SUBSCRIPTION_VERIFY]', 'response', { active: out.active, expiresAt: out.expiresAt });
     console.log('[MANUAL_GIFT]', 'verify_subscription_payload', {
       manualGiftAckKey: out.manualGiftAckKey ?? null,
@@ -580,6 +584,7 @@ export async function recoverSubscription(deviceId, deviceFingerprint) {
       return { active: false, expiresAt: null, error: `HTTP ${res.status}` };
     }
     const out = normalizeVerifyResponse(body);
+    if (out.phone) void cacheSecurityPhone(out.phone);
     console.log('[SUBSCRIPTION_RECOVER]', 'response', { active: out.active, expiresAt: out.expiresAt });
     console.log('[MANUAL_GIFT]', 'recover_payload', {
       manualGiftAckKey: out.manualGiftAckKey ?? null,

@@ -44,7 +44,8 @@ import {
   SecurityPlayerBanner,
 } from '../components/SecurityPlaybackGate';
 import TrialWatchOverlay from '../components/TrialWatchOverlay';
-import { usePlaybackSecurityGate } from '../context/SecurityContext';
+import { usePlaybackSecurityGate, useSecurity } from '../context/SecurityContext';
+import { PLAYER_SECURITY_POLL_MS } from '../lib/security/constants';
 import { useTrialWatchSession } from '../hooks/useTrialWatchSession';
 import {
   channelIsPremiumAccess,
@@ -133,6 +134,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     trialWatchSettings,
     requestPaymentModal,
   } = useOsmaniApp();
+  const security = useSecurity();
   const playbackSecurity = usePlaybackSecurityGate();
   const channel = liveChannel ?? initialChannel;
   const channelIsPremium = channelIsPremiumAccess(channel, { freeMode });
@@ -294,6 +296,47 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   /** One auto-hide arm per player mount (epoch); playback/message spam must not reset the timer. */
   const playbackHideArmedRef = useRef(false);
   const AUTO_HIDE_MS = 4000;
+
+  const stopPlaybackForSecurity = useCallback(async () => {
+    try {
+      await videoRef.current?.pauseAsync?.();
+      await videoRef.current?.stopAsync?.();
+      await videoRef.current?.unloadAsync?.();
+    } catch {
+      /* ignore */
+    }
+    try {
+      hlsWebRef.current?.injectJavaScript(
+        `(function(){try{var v=document.getElementById('v');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
+      );
+    } catch {
+      /* ignore */
+    }
+    try {
+      embedWebRef.current?.injectJavaScript(
+        `(function(){try{var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
+      );
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!playbackSecurity.allowed) {
+      void stopPlaybackForSecurity();
+    }
+  }, [playbackSecurity.allowed, stopPlaybackForSecurity]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void security.refresh();
+      const pollId = setInterval(() => {
+        void security.refresh();
+      }, PLAYER_SECURITY_POLL_MS);
+      return () => clearInterval(pollId);
+    }, [security.refresh]),
+  );
+
   const lastStatusRef = useRef({
     isLoaded: null,
     isBuffering: null,
