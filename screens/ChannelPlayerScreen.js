@@ -1827,7 +1827,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             onHttpError={onEmbedHttpError}
             pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
           />
-        )}
+        ) : null}
 
         {!pickerKind ? (
           <Pressable
