@@ -30,7 +30,6 @@ import {
   looksLikeHlsPlaybackUri,
   logPlaybackDiagnostics,
   logSegmentDiagnostics,
-  prepareNativeDirectHlsManifest,
   resolveHlsPlaybackManifestUrl,
   shouldUseDirectHlsSegments,
 } from '../lib/hlsPlayback';
@@ -138,6 +137,29 @@ function logPlayerBuffer(event, detail) {
   }
 }
 
+/** Stable signature of playback URLs — used to skip redundant native remounts. */
+function playbackUrlsSignature(ch) {
+  if (!ch) return '';
+  return [
+    ch.url,
+    ch.directStreamUrl,
+    ch.proxyFallbackUrl,
+    ch.backupStream1,
+    ch.backupStream2,
+    ch.streamDeliveryMode,
+  ]
+    .map((u) => String(u ?? ''))
+    .join('|');
+}
+
+/**
+ * @param {string} path
+ * @param {Record<string, unknown>} [detail]
+ */
+function logPlayerInterrupt(path, detail = {}) {
+  console.log('[player][interrupt]', path, detail);
+}
+
 export default function ChannelPlayerScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const initialChannel = route?.params?.channel ?? null;
@@ -192,7 +214,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   /** When direct/auto playback fails, retry once through CDN stream-proxy. */
   const [hlsForceProxy, setHlsForceProxy] = useState(false);
-  const [nativePreparedManifestUri, setNativePreparedManifestUri] = useState('');
   const manifestRefreshAttemptRef = useRef(0);
   const uri = streams[currentUrlIndex];
   const headers = useMemo(
@@ -255,34 +276,43 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       const found = findRawChannelById(rawChannels, channelId);
       if (!found) return false;
       const next = buildPlayerChannelFromRow(found.raw, found.index, freeMode);
+      const urlsChanged = playbackUrlsSignature(channel) !== playbackUrlsSignature(next);
       logSegmentDiagnostics('manifest_refresh', {
         reason,
         channelId,
         directStreamUrl: next.directStreamUrl ?? null,
+        urlsChanged,
       });
       setLiveChannel(next);
       setHlsForceProxy(false);
-      setNativePreparedManifestUri('');
       setPlaybackError('');
-      setIsBuffering(true);
-      setPlayerEpoch((e) => e + 1);
+      if (urlsChanged) {
+        logPlayerInterrupt('manifest_catalog_remount', { reason });
+        setIsBuffering(true);
+        setPlayerEpoch((e) => e + 1);
+      } else {
+        logPlayerInterrupt('manifest_catalog_skip_remount', { reason });
+      }
       return true;
     },
-    [channel?.id, channel?.channel_id, rawChannels, freeMode],
+    [channel, rawChannels, freeMode],
   );
 
-  /** expo-av source: HLS plays through proxy URL so Exo gets a stable manifest; override extension when URI has no .m3u8 suffix. */
+  /**
+   * expo-av source: remote HLS manifest only (live refresh). Native Exo must not use
+   * static data: manifests — they freeze the live window and cause repeated stalls.
+   */
   const nativeVideoSource = useMemo(() => {
     if (!useNativePlayer || !uri) return null;
     if (looksLikeHlsPlaybackUri(uri)) {
-      const u = nativePreparedManifestUri || hlsManifestUrl || uri;
+      const u = hlsManifestUrl || uri;
       return {
         uri: u,
         overrideFileExtensionAndroid: 'm3u8',
       };
     }
     return { uri, headers };
-  }, [useNativePlayer, uri, hlsManifestUrl, nativePreparedManifestUri, headers]);
+  }, [useNativePlayer, uri, hlsManifestUrl, headers]);
 
   const hlsWebViewSource = useMemo(() => {
     if (!useHlsWebView || !hlsManifestUrl) return null;
@@ -439,52 +469,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, [uri]);
 
   useEffect(() => {
-    if (
-      !useNativePlayer ||
-      !isHlsManifest ||
-      !hlsManifestUrl ||
-      !useDirectHlsSegments ||
-      hlsForceProxy
-    ) {
-      setNativePreparedManifestUri('');
-      return undefined;
-    }
-    let cancelled = false;
-    (async () => {
-      const result = await prepareNativeDirectHlsManifest(hlsManifestUrl, headers);
-      if (cancelled) return;
-      if (result.tokenExpired) {
-        logSegmentDiagnostics('manifest_token_expired', { url: hlsManifestUrl });
-        refreshManifestFromCatalog('manifest_token_expired');
-        return;
-      }
-      if (result.rewritten) {
-        logSegmentDiagnostics('native_manifest_prepared', {
-          dataUri: result.uri.startsWith('data:'),
-        });
-        setNativePreparedManifestUri(result.uri);
-      } else {
-        setNativePreparedManifestUri('');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    useNativePlayer,
-    isHlsManifest,
-    hlsManifestUrl,
-    useDirectHlsSegments,
-    hlsForceProxy,
-    headers,
-    playerEpoch,
-    refreshManifestFromCatalog,
-  ]);
-
-  useEffect(() => {
+    logPlayerInterrupt('channel_change_remount', {
+      channelId: channel?.id ?? channel?.channel_id ?? null,
+    });
     setCurrentUrlIndex(0);
     setHlsForceProxy(false);
-    setNativePreparedManifestUri('');
     manifestRefreshAttemptRef.current = 0;
     setIsBuffering(true);
     setPlaybackError('');
@@ -507,7 +496,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setPlayerShellHidden(false);
     setPlaybackSuppressed(false);
     setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
-  }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
+  }, [
+    channel?.id,
+    channel?.channel_id,
+    channel?.name,
+    channel?.url,
+    channel?.directStreamUrl,
+    channel?.proxyFallbackUrl,
+    channel?.streamDeliveryMode,
+    channel?.backupStream1,
+    channel?.backupStream2,
+  ]);
 
   useEffect(() => {
     if (!uri) return;
@@ -520,7 +519,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       stream_delivery_mode: channel?.streamDeliveryMode ?? 'proxy',
       hls_force_proxy: hlsForceProxy,
       direct_hls_segments: useDirectHlsSegments,
-      native_manifest_prepared: Boolean(nativePreparedManifestUri),
+      native_remote_manifest: useNativePlayer && Boolean(hlsManifestUrl),
       embed_headers_present: Boolean(
         embedWebViewSource?.headers && Object.keys(embedWebViewSource.headers).length,
       ),
@@ -533,7 +532,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     hlsForceProxy,
     channel?.streamDeliveryMode,
     useDirectHlsSegments,
-    nativePreparedManifestUri,
+    useNativePlayer,
     embedWebViewSource?.headers,
   ]);
 
@@ -733,8 +732,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           fallback_reason: 'segment_or_manifest_error',
         });
         logSegmentDiagnostics('proxy_fallback', { reason });
+        logPlayerInterrupt('proxy_fallback_remount', { reason });
         setHlsForceProxy(true);
-        setNativePreparedManifestUri('');
         setPlaybackError('');
         setIsBuffering(true);
         setPlayerEpoch((e) => e + 1);
@@ -743,6 +742,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       if (currentUrlIndex < streams.length - 1) {
         logPlaybackDiagnostics('backup_stream_rotate', {
           reason: reasonText,
+          from: currentUrlIndex,
+          to: currentUrlIndex + 1,
+        });
+        logPlayerInterrupt('backup_stream_remount', {
+          reason,
           from: currentUrlIndex,
           to: currentUrlIndex + 1,
         });
@@ -784,6 +788,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   /** User-only: fresh mount without automatic timers or replay loops. */
   const manualReloadSameStream = useCallback(() => {
+    logPlayerInterrupt('manual_reload_remount', {});
     setHlsForceProxy(false);
     setPlaybackError('');
     setIsBuffering(true);
