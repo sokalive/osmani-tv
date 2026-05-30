@@ -59,6 +59,7 @@ import {
   teardownPlayback,
 } from '../lib/playerTeardown';
 import { playbackStreamIdentity } from '../lib/playbackStreamIdentity';
+import { fetchNativeHlsManifestTracks } from '../lib/nativeHlsManifestTracks';
 
 /**
  * Pick a playback engine:
@@ -435,6 +436,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [hlsAudioTracks, setHlsAudioTracks] = useState([]);
   const [hlsCurrentAudioTrack, setHlsCurrentAudioTrack] = useState(-1);
 
+  /** Native Exo: parsed from the same HLS manifest URL (expo-av exposes no track API). */
+  const [nativeManifestVariants, setNativeManifestVariants] = useState([]);
+  const [nativeManifestAudioTracks, setNativeManifestAudioTracks] = useState([]);
+  const [nativeSelectedVariantId, setNativeSelectedVariantId] = useState(-1);
+  const [nativeSelectedAudioId, setNativeSelectedAudioId] = useState(-1);
+
   /** Embed-page detection state (populated by embed bridge). */
   const [embedControls, setEmbedControls] = useState(null);
   const [embedHasControls, setEmbedHasControls] = useState(null); // null=unknown, false=none, true=yes
@@ -481,6 +488,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setHlsAutoLevel(true);
     setHlsAudioTracks([]);
     setHlsCurrentAudioTrack(-1);
+    setNativeManifestVariants([]);
+    setNativeManifestAudioTracks([]);
+    setNativeSelectedVariantId(-1);
+    setNativeSelectedAudioId(-1);
     setEmbedControls(null);
     setEmbedHasControls(null);
     setPickerKind(null);
@@ -534,6 +545,32 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       cancelled = true;
     };
   }, [useNativePlayer, nativeVideoSource]);
+
+  /** Parse master manifest for variant/audio metadata (read-only; same URL Exo plays). */
+  useEffect(() => {
+    if (!useNativePlayer || !isHlsManifest || !hlsManifestUrl) {
+      setNativeManifestVariants([]);
+      setNativeManifestAudioTracks([]);
+      setNativeSelectedVariantId(-1);
+      setNativeSelectedAudioId(-1);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      const parsed = await fetchNativeHlsManifestTracks(hlsManifestUrl, headers);
+      if (cancelled) return;
+      setNativeManifestVariants(parsed.variants);
+      setNativeManifestAudioTracks(parsed.audioTracks);
+      setNativeSelectedVariantId(-1);
+      const defaultAudio = parsed.audioTracks.find((t) => t.default);
+      setNativeSelectedAudioId(
+        defaultAudio ? defaultAudio.id : parsed.audioTracks.length === 1 ? 0 : -1,
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [useNativePlayer, isHlsManifest, hlsManifestUrl, headers]);
 
   useEffect(() => {
     if (!useNativePlayer) return undefined;
@@ -1762,8 +1799,31 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       const current = options.find((o) => o.selected) ?? options[0];
       return { available: true, options, currentLabel: current?.label ?? 'Auto' };
     }
+    if (useNativePlayer && nativeManifestVariants.length) {
+      const selectedId = nativeSelectedVariantId;
+      const options = [
+        { id: -1, label: 'Auto', selected: selectedId === -1 },
+        ...nativeManifestVariants.map((v) => ({
+          id: v.id,
+          label: v.label,
+          selected: selectedId === v.id,
+        })),
+      ];
+      const current = options.find((o) => o.selected) ?? options[0];
+      return { available: true, options, currentLabel: current?.label ?? 'Auto' };
+    }
     return { available: false, options: [], currentLabel: useNativePlayer ? 'Auto' : '—' };
-  }, [useHlsWebView, useEmbedWebView, useNativePlayer, hlsLevels, hlsCurrentLevel, hlsAutoLevel, embedControls]);
+  }, [
+    useHlsWebView,
+    useEmbedWebView,
+    useNativePlayer,
+    hlsLevels,
+    hlsCurrentLevel,
+    hlsAutoLevel,
+    embedControls,
+    nativeManifestVariants,
+    nativeSelectedVariantId,
+  ]);
 
   /** Language / audio track picker model. */
   const languageModel = useMemo(() => {
@@ -1786,42 +1846,60 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       const current = options.find((o) => o.selected) ?? options[0];
       return { available: true, options, currentLabel: current?.label ?? '—' };
     }
+    if (useNativePlayer && nativeManifestAudioTracks.length) {
+      const selectedId =
+        nativeSelectedAudioId >= 0
+          ? nativeSelectedAudioId
+          : nativeManifestAudioTracks.find((t) => t.default)?.id ?? 0;
+      const options = nativeManifestAudioTracks.map((t) => ({
+        id: t.id,
+        label: t.label,
+        selected: selectedId === t.id,
+      }));
+      const current = options.find((o) => o.selected) ?? options[0];
+      return { available: true, options, currentLabel: current?.label ?? '—' };
+    }
     return { available: false, options: [], currentLabel: '—' };
-  }, [useHlsWebView, useEmbedWebView, hlsAudioTracks, hlsCurrentAudioTrack, embedControls]);
+  }, [
+    useHlsWebView,
+    useEmbedWebView,
+    useNativePlayer,
+    hlsAudioTracks,
+    hlsCurrentAudioTrack,
+    embedControls,
+    nativeManifestAudioTracks,
+    nativeSelectedAudioId,
+  ]);
+
+  const applyNativeHlsPlaybackUri = useCallback(async (playbackUri) => {
+    const u = String(playbackUri ?? '').trim();
+    if (!u || !videoRef.current?.loadAsync) return false;
+    const source = {
+      uri: u,
+      overrideFileExtensionAndroid: 'm3u8',
+    };
+    try {
+      logPlayerInterrupt('native_track_selection_load', { uriPrefix: u.slice(0, 96) });
+      await videoRef.current.loadAsync(source, { shouldPlay: true });
+      nativeLoadedUriRef.current = u;
+      return true;
+    } catch (e) {
+      console.log('[player][native-hls-tracks] load failed:', e?.message ?? e);
+      return false;
+    }
+  }, []);
 
   const openQualityPicker = useCallback(() => {
     revealControlsUser();
-    if (useNativePlayer) {
-      Alert.alert('Quality', 'Auto (default) — native player itachagua ubora yenyewe.');
-      return;
-    }
-    if (!qualityModel.available) {
-      if (useEmbedWebView && embedHasControls === false) {
-        Alert.alert('Quality', 'Stream hii inadhibiti ubora ndani ya page yenyewe.');
-        return;
-      }
-      Alert.alert('Quality', useHlsWebView ? 'Inasubiri taarifa za ubora kutoka kwenye stream...' : 'Quality controls hazijapatikana bado.');
-      return;
-    }
+    if (!qualityModel.available) return;
     setPickerKind('quality');
-  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, qualityModel.available, revealControlsUser]);
+  }, [qualityModel.available, revealControlsUser]);
 
   const openLanguagePicker = useCallback(() => {
     revealControlsUser();
-    if (useNativePlayer) {
-      Alert.alert('Lugha', 'Native player haitumii audio tracks za ziada.');
-      return;
-    }
-    if (!languageModel.available) {
-      if (useEmbedWebView && embedHasControls === false) {
-        Alert.alert('Lugha', 'Stream hii inadhibiti audio/lugha ndani ya page yenyewe.');
-        return;
-      }
-      Alert.alert('Lugha', useHlsWebView ? 'Stream hii haina audio tracks za ziada.' : 'Audio tracks hazijapatikana bado.');
-      return;
-    }
+    if (!languageModel.available) return;
     setPickerKind('language');
-  }, [useNativePlayer, useHlsWebView, useEmbedWebView, embedHasControls, languageModel.available, revealControlsUser]);
+  }, [languageModel.available, revealControlsUser]);
 
   const onPickOption = useCallback(
     (option) => {
@@ -1838,6 +1916,16 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         } else if (useEmbedWebView) {
           embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'set-level', level: option.id }));
           setEmbedControls((prev) => (prev ? { ...prev, currentQuality: option.id } : prev));
+        } else if (useNativePlayer) {
+          setNativeSelectedVariantId(option.id);
+          if (option.id === -1) {
+            void applyNativeHlsPlaybackUri(hlsManifestUrl || uri);
+          } else {
+            const variant = nativeManifestVariants.find((v) => v.id === option.id);
+            if (variant?.uri) {
+              void applyNativeHlsPlaybackUri(variant.uri);
+            }
+          }
         }
       } else if (pickerKind === 'language') {
         if (useHlsWebView) {
@@ -1846,12 +1934,46 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         } else if (useEmbedWebView) {
           embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'set-audio-track', id: option.id }));
           setEmbedControls((prev) => (prev ? { ...prev, currentAudioTrack: option.id } : prev));
+        } else if (useNativePlayer) {
+          setNativeSelectedAudioId(option.id);
+          const track = nativeManifestAudioTracks.find((t) => t.id === option.id);
+          if (track?.uri) {
+            void (async () => {
+              const parsed = await fetchNativeHlsManifestTracks(track.uri, headers);
+              if (parsed.isMaster && parsed.variants.length) {
+                const best = parsed.variants[parsed.variants.length - 1];
+                await applyNativeHlsPlaybackUri(best.uri);
+              } else if (parsed.isMaster) {
+                await applyNativeHlsPlaybackUri(track.uri);
+              } else {
+                devLog('[native-hls-tracks] audio_group_switch_unsupported', {
+                  label: track.label,
+                });
+              }
+            })();
+          } else {
+            devLog('[native-hls-tracks] audio_group_switch_unsupported', {
+              label: track?.label ?? option.id,
+            });
+          }
         }
       }
       setPickerKind(null);
       bumpAutoHideTimer();
     },
-    [pickerKind, useHlsWebView, useEmbedWebView, bumpAutoHideTimer],
+    [
+      pickerKind,
+      useHlsWebView,
+      useEmbedWebView,
+      useNativePlayer,
+      bumpAutoHideTimer,
+      applyNativeHlsPlaybackUri,
+      hlsManifestUrl,
+      uri,
+      nativeManifestVariants,
+      nativeManifestAudioTracks,
+      headers,
+    ],
   );
 
   const closePicker = useCallback(() => {

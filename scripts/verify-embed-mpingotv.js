@@ -117,5 +117,21 @@ if (beinPlan.playUrl !== directToken) {
   fail(`Bein playUrl must stay stream-direct, got ${beinPlan.playUrl}`);
 } else pass('Bein hybrid playUrl stays stream-direct');
 
+if (!bridgeSrc.includes('function detectShaka()')) {
+  fail('embed bridge must detect Shaka Player (MpingoTV DASH)');
+} else pass('embed bridge detects Shaka Player');
+
+if (!bridgeSrc.includes('function detectHlsJs()')) {
+  fail('embed bridge must detect HLS.js (MpingoTV HLS)');
+} else pass('embed bridge detects HLS.js');
+
+if (!playerSrc.includes('if (!qualityModel.available) return')) {
+  fail('quality picker must not show fallback alerts');
+} else pass('quality picker has no fallback alerts');
+
+if (!playerSrc.includes('if (!languageModel.available) return')) {
+  fail('language picker must not show fallback alerts');
+} else pass('language picker has no fallback alerts');
+
 if (process.exitCode) process.exit(1);
 console.log('[verify-embed-mpingotv] ok');

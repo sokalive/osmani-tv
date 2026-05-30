@@ -92,5 +92,9 @@ if (
   fail('token rotation preserves stream identity');
 } else pass('token rotation preserves stream identity');
 
+if (!screen.includes('fetchNativeHlsManifestTracks')) {
+  fail('native manifest track sidecar for quality UI');
+} else pass('native manifest track sidecar for quality UI');
+
 if (process.exitCode) process.exit(1);
 console.log('[verify-native-exo-playback] ok');
