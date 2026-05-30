@@ -125,11 +125,11 @@ if (!bridgeSrc.includes('function detectHlsJs()')) {
   fail('embed bridge must detect HLS.js (MpingoTV HLS)');
 } else pass('embed bridge detects HLS.js');
 
-if (!playerSrc.includes('if (!qualityModel.available) return')) {
+if (!playerSrc.includes('qualityModel.options?.length ?? 0) === 0')) {
   fail('quality picker must not show fallback alerts');
 } else pass('quality picker has no fallback alerts');
 
-if (!playerSrc.includes('if (!languageModel.available) return')) {
+if (!playerSrc.includes('languageModel.options?.length ?? 0) === 0')) {
   fail('language picker must not show fallback alerts');
 } else pass('language picker has no fallback alerts');
 

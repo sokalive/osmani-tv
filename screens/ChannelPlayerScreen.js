@@ -59,7 +59,7 @@ import {
   teardownPlayback,
 } from '../lib/playerTeardown';
 import { playbackStreamIdentity } from '../lib/playbackStreamIdentity';
-import { fetchNativeHlsManifestTracks } from '../lib/nativeHlsManifestTracks';
+import { fetchNativeHlsManifestTracksForPlayback } from '../lib/nativeHlsManifestTracks';
 
 /**
  * Pick a playback engine:
@@ -557,7 +557,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
     let cancelled = false;
     (async () => {
-      const parsed = await fetchNativeHlsManifestTracks(hlsManifestUrl, headers);
+      const parsed = await fetchNativeHlsManifestTracksForPlayback(hlsManifestUrl, uri, headers);
       if (cancelled) return;
       setNativeManifestVariants(parsed.variants);
       setNativeManifestAudioTracks(parsed.audioTracks);
@@ -570,7 +570,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     return () => {
       cancelled = true;
     };
-  }, [useNativePlayer, isHlsManifest, hlsManifestUrl, headers]);
+  }, [useNativePlayer, isHlsManifest, hlsManifestUrl, uri, headers]);
 
   useEffect(() => {
     if (!useNativePlayer) return undefined;
@@ -1891,15 +1891,19 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const openQualityPicker = useCallback(() => {
     revealControlsUser();
-    if (!qualityModel.available) return;
+    if ((qualityModel.options?.length ?? 0) === 0) return;
+    pickerKindRef.current = 'quality';
+    clearHideTimer();
     setPickerKind('quality');
-  }, [qualityModel.available, revealControlsUser]);
+  }, [qualityModel.options, revealControlsUser, clearHideTimer]);
 
   const openLanguagePicker = useCallback(() => {
     revealControlsUser();
-    if (!languageModel.available) return;
+    if ((languageModel.options?.length ?? 0) === 0) return;
+    pickerKindRef.current = 'language';
+    clearHideTimer();
     setPickerKind('language');
-  }, [languageModel.available, revealControlsUser]);
+  }, [languageModel.options, revealControlsUser, clearHideTimer]);
 
   const onPickOption = useCallback(
     (option) => {
@@ -1939,7 +1943,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           const track = nativeManifestAudioTracks.find((t) => t.id === option.id);
           if (track?.uri) {
             void (async () => {
-              const parsed = await fetchNativeHlsManifestTracks(track.uri, headers);
+              const parsed = await fetchNativeHlsManifestTracksForPlayback(track.uri, track.uri, headers);
               if (parsed.isMaster && parsed.variants.length) {
                 const best = parsed.variants[parsed.variants.length - 1];
                 await applyNativeHlsPlaybackUri(best.uri);
@@ -2202,7 +2206,15 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           <Pressable
             style={styles.videoTapTarget}
             onPress={revealControlsUser}
-            pointerEvents={controlsVisible ? 'box-none' : 'auto'}
+            pointerEvents={
+              useNativePlayer
+                ? controlsVisible
+                  ? 'none'
+                  : 'auto'
+                : controlsVisible
+                  ? 'box-none'
+                  : 'auto'
+            }
             accessibilityRole="button"
             accessibilityLabel="Show player controls"
           />
@@ -2249,7 +2261,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             </View>
 
             <View
-              style={[styles.bottom, { paddingBottom: Math.max(12, insets.bottom + 4) }]}
+              style={[
+                styles.bottom,
+                { paddingBottom: Math.max(12, insets.bottom + 4) },
+                useNativePlayer ? styles.bottomNativePicker : null,
+              ]}
               pointerEvents="box-none"
             >
               {bottomActions.map((action) => (
@@ -2272,7 +2288,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           </Animated.View>
         )}
 
-        {pickerKind && activePickerModel ? (
+        {pickerKind && activePickerModel?.options?.length ? (
           <Pressable style={styles.pickerBackdrop} onPress={closePicker}>
             <Pressable style={styles.pickerSheet} onPress={() => {}}>
               <View style={styles.pickerHeader}>
@@ -2456,6 +2472,10 @@ const styles = StyleSheet.create({
     gap: 8,
     zIndex: 12,
     elevation: 12,
+  },
+  bottomNativePicker: {
+    zIndex: 16,
+    elevation: 16,
   },
   actionBtn: {
     flex: 1,

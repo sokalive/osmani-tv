@@ -52,9 +52,17 @@ if (!parsed.audioTracks[0].uri.includes('eng/index.m3u8')) {
   fail('audio URIs resolved against manifest base');
 } else pass('audio URIs resolved against manifest base');
 
-if (!screen.includes('fetchNativeHlsManifestTracks')) {
-  fail('ChannelPlayerScreen imports fetchNativeHlsManifestTracks');
+if (!screen.includes('fetchNativeHlsManifestTracksForPlayback')) {
+  fail('ChannelPlayerScreen imports fetchNativeHlsManifestTracksForPlayback');
 } else pass('manifest fetch wired in ChannelPlayerScreen');
+
+if (!screen.includes('pickerKindRef.current = \'quality\'')) {
+  fail('native quality picker must sync pickerKindRef before opening');
+} else pass('native quality picker syncs pickerKindRef');
+
+if (!screen.includes('qualityModel.options?.length ?? 0) === 0')) {
+  fail('quality picker opens from options.length not stale available flag');
+} else pass('quality picker uses options.length gate');
 
 if (!screen.includes('nativeManifestVariants')) {
   fail('nativeManifestVariants state missing');
