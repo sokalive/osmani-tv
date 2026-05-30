@@ -123,6 +123,20 @@ function playbackFailureMessage(reasonText) {
 
 /** Stable tag for expo-keep-awake (Android FLAG_KEEP_SCREEN_ON while watching). */
 const PLAYER_KEEP_AWAKE_TAG = 'osmani-channel-player';
+/** Native Exo: debounce full-screen buffer overlay after first playback start. */
+const NATIVE_BUFFER_OVERLAY_DEBOUNCE_MS = 2000;
+
+/**
+ * @param {string} event
+ * @param {unknown} [detail]
+ */
+function logPlayerBuffer(event, detail) {
+  if (detail !== undefined) {
+    console.log('[player][buffer]', event, detail);
+  } else {
+    console.log('[player][buffer]', event);
+  }
+}
 
 export default function ChannelPlayerScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
@@ -292,7 +306,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const embedBridgeJs = useMemo(() => buildEmbedBridgeJs(), []);
   const embedPageBootstrapJs = useMemo(() => buildEmbedPageBootstrapJs(), []);
   const [isBuffering, setIsBuffering] = useState(true);
+  const [showNativeBufferOverlay, setShowNativeBufferOverlay] = useState(true);
   const [playbackError, setPlaybackError] = useState('');
+  const nativePlaybackStartedRef = useRef(false);
+  const nativeBufferDebounceRef = useRef(null);
+  const nativeOverlayVisibleRef = useRef(false);
+  const clearNativeBufferDebounceRef = useRef(() => {});
   const [playerEpoch, setPlayerEpoch] = useState(0);
   const liveLabel = 'LIVE';
 
@@ -750,6 +769,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   );
 
   const applyPlaybackFailure = useCallback((reasonText) => {
+    clearNativeBufferDebounceRef.current();
+    if (nativeOverlayVisibleRef.current) {
+      logPlayerBuffer('overlay_hide', 'playback_error');
+      nativeOverlayVisibleRef.current = false;
+    }
+    setShowNativeBufferOverlay(false);
     setIsBuffering(false);
     setPlaybackError(playbackFailureMessage(reasonText));
     clearHideTimer();
@@ -951,6 +976,82 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       hideTimer.current = null;
     }
   }, []);
+
+  const clearNativeBufferDebounce = useCallback(() => {
+    if (nativeBufferDebounceRef.current) {
+      clearTimeout(nativeBufferDebounceRef.current);
+      nativeBufferDebounceRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    clearNativeBufferDebounceRef.current = clearNativeBufferDebounce;
+  }, [clearNativeBufferDebounce]);
+
+  const hideNativeBufferOverlay = useCallback((reason) => {
+    clearNativeBufferDebounce();
+    if (nativeOverlayVisibleRef.current) {
+      logPlayerBuffer('overlay_hide', reason);
+      nativeOverlayVisibleRef.current = false;
+      setShowNativeBufferOverlay(false);
+    }
+  }, [clearNativeBufferDebounce]);
+
+  const resetNativeBufferUiForLoad = useCallback(
+    (reason) => {
+      clearNativeBufferDebounce();
+      nativePlaybackStartedRef.current = false;
+      nativeOverlayVisibleRef.current = true;
+      setShowNativeBufferOverlay(true);
+      logPlayerBuffer('overlay_show', reason);
+    },
+    [clearNativeBufferDebounce],
+  );
+
+  const applyNativeBufferStatus = useCallback(
+    ({ playing, nativeBuffering }) => {
+      const stalled = !playing && nativeBuffering;
+
+      if (playing) {
+        if (!nativePlaybackStartedRef.current) {
+          nativePlaybackStartedRef.current = true;
+          logPlayerBuffer('buffer_end', 'first_play');
+        } else if (nativeBufferDebounceRef.current || nativeOverlayVisibleRef.current) {
+          logPlayerBuffer('buffer_end', 'resumed');
+        }
+        hideNativeBufferOverlay('resumed');
+        return;
+      }
+
+      if (!nativePlaybackStartedRef.current) {
+        if (stalled && !nativeOverlayVisibleRef.current) {
+          nativeOverlayVisibleRef.current = true;
+          setShowNativeBufferOverlay(true);
+          logPlayerBuffer('overlay_show', 'initial_load');
+        }
+        return;
+      }
+
+      if (!stalled) return;
+
+      if (nativeOverlayVisibleRef.current || nativeBufferDebounceRef.current) return;
+
+      logPlayerBuffer('buffer_start', 'rebuffer');
+      nativeBufferDebounceRef.current = setTimeout(() => {
+        nativeBufferDebounceRef.current = null;
+        nativeOverlayVisibleRef.current = true;
+        setShowNativeBufferOverlay(true);
+        logPlayerBuffer('overlay_show', 'debounced_rebuffer');
+      }, NATIVE_BUFFER_OVERLAY_DEBOUNCE_MS);
+    },
+    [hideNativeBufferOverlay],
+  );
+
+  useEffect(() => {
+    if (!useNativePlayer) return undefined;
+    resetNativeBufferUiForLoad('player_mount');
+    return () => clearNativeBufferDebounce();
+  }, [playerEpoch, useNativePlayer, resetNativeBufferUiForLoad, clearNativeBufferDebounce]);
 
   const hideControls = useCallback(() => {
     if (pickerKindRef.current) return;
@@ -1224,6 +1325,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       }
       return;
     }
+    const prevPlaying = Boolean(lastStatusRef.current.isPlaying);
     const prev = lastStatusRef.current;
     const nextState = {
       isLoaded: Boolean(status.isLoaded),
@@ -1243,12 +1345,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       });
       lastStatusRef.current = nextState;
     }
-    const prevPlaying = lastStatusRef.current.isPlaying === true;
     const playing = Boolean(status.isPlaying);
     const nativeBuffering = Boolean(status.isBuffering);
-    // Exo/HLS often keeps isBuffering true briefly (or stuck) while isPlaying is
-    // already true — hide the blocking loader as soon as playback has started.
-    setIsBuffering(playing ? false : nativeBuffering);
+    applyNativeBufferStatus({ playing, nativeBuffering });
     setIsPlaying(playing);
     setPlaybackError('');
     if (playing && !prevPlaying) {
@@ -1859,9 +1958,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
             {/* CENTER */}
             <View style={styles.center} pointerEvents="box-none">
-              {(isBuffering || playbackError) ? (
+              {(playbackError || (useNativePlayer ? showNativeBufferOverlay : isBuffering)) ? (
                 <View style={styles.bufferingWrap} pointerEvents="auto">
-                  {isBuffering ? <ActivityIndicator size="large" color="#FFFFFF" /> : null}
+                  {(useNativePlayer ? showNativeBufferOverlay : isBuffering) && !playbackError ? (
+                    <ActivityIndicator size="large" color="#FFFFFF" />
+                  ) : null}
                   <Text style={styles.bufferingText}>
                     {playbackError ? 'Hitilafu ya uchezi' : 'Inapakia moja kwa moja...'}
                   </Text>
