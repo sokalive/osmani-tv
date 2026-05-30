@@ -43,6 +43,15 @@ else pass('exitPlayer helper');
 if (!screen.includes('playbackSurfacesMounted')) fail('playbackSurfacesMounted gate missing');
 else pass('playbackSurfacesMounted gate');
 
+if (!screen.includes('playerShellHidden')) fail('playerShellHidden shell gate missing');
+else pass('playerShellHidden shell gate');
+
+if (!screen.includes('rootHidden')) fail('rootHidden transparent shell missing');
+else pass('rootHidden transparent shell');
+
+if (!screen.includes('hideShell: false')) fail('security teardown preserves shell');
+else pass('security teardown preserves shell');
+
 if (!screen.includes('playerLifecycleRef')) fail('playerLifecycleRef missing');
 else pass('playerLifecycleRef for trial guard');
 

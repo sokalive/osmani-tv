@@ -312,6 +312,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const exitPlayerRef = useRef(null);
   const statusBarHiddenRef = useRef(true);
   const [playbackSurfacesMounted, setPlaybackSurfacesMounted] = useState(true);
+  const [playerShellHidden, setPlayerShellHidden] = useState(false);
 
   const runPlaybackTeardown = useCallback(async (reason, opts = {}) => {
     if (teardownDoneRef.current && !opts.force) {
@@ -323,6 +324,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setPickerKind(null);
     pickerKindRef.current = null;
     setPlaybackSurfacesMounted(false);
+    if (opts.hideShell !== false) {
+      setPlayerShellHidden(true);
+      logPlayerTeardown('shell_hidden', reason);
+    }
     await teardownPlayback({
       reason,
       videoRef,
@@ -335,7 +340,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, []);
 
   const stopPlaybackForSecurity = useCallback(async () => {
-    await runPlaybackTeardown('security', { resetChrome: false, force: true });
+    await runPlaybackTeardown('security', { resetChrome: false, force: true, hideShell: false });
   }, [runPlaybackTeardown]);
 
   useEffect(() => {
@@ -480,6 +485,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     allowNavigationRemoveRef.current = false;
     playerLifecycleRef.current.tearingDown = false;
     setPlaybackSurfacesMounted(true);
+    setPlayerShellHidden(false);
     setPlaybackSuppressed(false);
     setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
   }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
@@ -1683,6 +1689,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     ],
   );
 
+  if (playerShellHidden) {
+    return <View style={styles.rootHidden} pointerEvents="none" collapsable={false} />;
+  }
+
   if (!playbackSecurity.allowed) {
     return (
       <View style={[styles.root, styles.gateScreen]}>
@@ -1758,7 +1768,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           - everything else (player.php, embed pages, iframe HTML) → plain WebView
       */}
       <View style={styles.playerStage}>
-        <View pointerEvents="none" style={styles.videoUnderlay} />
+        {playbackSurfacesMounted ? (
+          <View pointerEvents="none" style={styles.videoUnderlay} />
+        ) : null}
 
         {playbackSurfacesMounted && useNativePlayer && nativeVideoSource ? (
           <Video
@@ -1927,6 +1939,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000' },
+  rootHidden: { flex: 1, backgroundColor: 'transparent' },
   videoUnderlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000000',
