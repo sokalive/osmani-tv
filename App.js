@@ -1,7 +1,7 @@
 import 'react-native-gesture-handler';
 import './lib/startupSplashBoot';
 import './lib/oneSignalBoot';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   createNavigationContainerRef,
@@ -60,7 +60,8 @@ import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startExpoUpdatesClient } from './lib/expoUpdatesClient';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
 import { setupOneSignal } from './lib/oneSignal';
-import { resolveMainTabFromOsmaniUrl } from './lib/osmaniDeepLink';
+import { dispatchOsmaniDeepLink } from './lib/osmaniDeepLinkDispatch';
+import OsmaniDeepLinkGate from './components/OsmaniDeepLinkGate';
 import { resolveStream } from './lib/channelStream';
 import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBarLayout';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
@@ -92,11 +93,8 @@ const Stack = createNativeStackNavigator();
 /** Single ref for WhatsApp FAB visibility (must not use hooks outside a navigator). */
 const navigationRef = createNavigationContainerRef();
 
-/** Cold start: OneSignal may open before `NavigationContainer` is ready — queue then flush in `onReady`. */
+/** Cold start: deep link may arrive before NavigationContainer is ready — flush in onReady. */
 const pendingOsmaniUrlRef = { current: /** @type {string | null} */ (null) };
-const openOsmaniUrlRef = {
-  current: /** @param {string} _url */ (_url) => {},
-};
 
 const osmaniLinking = {
   prefixes: ['osmani://'],
@@ -110,6 +108,7 @@ const osmaniLinking = {
           'Akaunti Yangu': 'akaunti',
         },
       },
+      /** Channel opens are handled in OsmaniDeepLinkGate (catalog + subscription gate). */
     },
   },
 };
@@ -1492,19 +1491,6 @@ export default function App() {
   useStartupSplash();
   useGlobalSecureScreen();
 
-  useLayoutEffect(() => {
-    openOsmaniUrlRef.current = (url) => {
-      const tab = resolveMainTabFromOsmaniUrl(url);
-      if (!tab) return;
-      if (navigationRef.isReady()) {
-        pendingOsmaniUrlRef.current = null;
-        navigationRef.navigate('MainTabs', { screen: tab });
-      } else {
-        pendingOsmaniUrlRef.current = url;
-      }
-    };
-  });
-
   useEffect(() => {
     void trackInstallOnce();
     void startPresence();
@@ -1512,9 +1498,7 @@ export default function App() {
     startUpdateClient();
     const stopExpoUpdates = startExpoUpdatesClient();
     const stopOneSignal = setupOneSignal({
-      onOpenUrl: (url) => {
-        openOsmaniUrlRef.current(url);
-      },
+      onOpenUrl: dispatchOsmaniDeepLink,
     });
     return () => {
       void stopPresence();
@@ -1556,12 +1540,16 @@ export default function App() {
                 const pending = pendingOsmaniUrlRef.current;
                 if (pending) {
                   pendingOsmaniUrlRef.current = null;
-                  openOsmaniUrlRef.current(pending);
+                  dispatchOsmaniDeepLink(pending);
                 }
               }}
               onStateChange={() => setNavigationRevision((n) => n + 1)}
             >
               <RootNavigator />
+              <OsmaniDeepLinkGate
+                navigationRef={navigationRef}
+                pendingUrlRef={pendingOsmaniUrlRef}
+              />
             </NavigationContainer>
             <GlobalEmergencyGate />
             <WhatsAppFloatingButtonGate
