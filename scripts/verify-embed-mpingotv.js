@@ -125,13 +125,13 @@ if (!bridgeSrc.includes('function detectHlsJs()')) {
   fail('embed bridge must detect HLS.js (MpingoTV HLS)');
 } else pass('embed bridge detects HLS.js');
 
-if (!playerSrc.includes('qualityModel.options?.length ?? 0) === 0')) {
-  fail('quality picker must not show fallback alerts');
-} else pass('quality picker has no fallback alerts');
+if (!playerSrc.includes('useNativePlayer') || !playerSrc.includes('Channel hii haina quality za kuchagua.')) {
+  fail('native-only empty quality feedback missing');
+} else pass('native-only empty quality feedback present');
 
-if (!playerSrc.includes('languageModel.options?.length ?? 0) === 0')) {
-  fail('language picker must not show fallback alerts');
-} else pass('language picker has no fallback alerts');
+if (!playerSrc.includes('Channel hii haina sauti za kubadili.')) {
+  fail('native-only empty language feedback missing');
+} else pass('native-only empty language feedback present');
 
 if (process.exitCode) process.exit(1);
 console.log('[verify-embed-mpingotv] ok');

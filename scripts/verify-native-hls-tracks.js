@@ -84,9 +84,13 @@ if (screen.includes('Quality controls hazijapatikana bado')) {
   fail('quality picker must not show hazijapatikana alert');
 } else pass('no quality hazijapatikana alert');
 
-if (screen.includes('if (useNativePlayer) {\n      Alert.alert(\'Quality\'')) {
-  fail('openQualityPicker must not block native when tracks available');
-} else pass('openQualityPicker allows native when tracks parsed');
+if (!screen.includes('Channel hii haina quality za kuchagua.')) {
+  fail('native quality tap shows empty-stream message');
+} else pass('native quality tap shows empty-stream message');
+
+if (!screen.includes('Channel hii haina sauti za kubadili.')) {
+  fail('native language tap shows empty-stream message');
+} else pass('native language tap shows empty-stream message');
 
 if (!screen.includes('audio_group_switch_unsupported')) {
   fail('grouped audio limitation logged');

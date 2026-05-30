@@ -1891,19 +1891,29 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const openQualityPicker = useCallback(() => {
     revealControlsUser();
-    if ((qualityModel.options?.length ?? 0) === 0) return;
+    if ((qualityModel.options?.length ?? 0) === 0) {
+      if (useNativePlayer) {
+        Alert.alert('Quality', 'Channel hii haina quality za kuchagua.');
+      }
+      return;
+    }
     pickerKindRef.current = 'quality';
     clearHideTimer();
     setPickerKind('quality');
-  }, [qualityModel.options, revealControlsUser, clearHideTimer]);
+  }, [qualityModel.options, useNativePlayer, revealControlsUser, clearHideTimer]);
 
   const openLanguagePicker = useCallback(() => {
     revealControlsUser();
-    if ((languageModel.options?.length ?? 0) === 0) return;
+    if ((languageModel.options?.length ?? 0) === 0) {
+      if (useNativePlayer) {
+        Alert.alert('Lugha', 'Channel hii haina sauti za kubadili.');
+      }
+      return;
+    }
     pickerKindRef.current = 'language';
     clearHideTimer();
     setPickerKind('language');
-  }, [languageModel.options, revealControlsUser, clearHideTimer]);
+  }, [languageModel.options, useNativePlayer, revealControlsUser, clearHideTimer]);
 
   const onPickOption = useCallback(
     (option) => {
