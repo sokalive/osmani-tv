@@ -31,6 +31,7 @@ function secondsFromMs(ms) {
  *   stopPlayback: () => void | Promise<void>;
  *   onExpired: (reason: 'trial' | 'preview') => void;
  *   navigation: { goBack?: () => void; navigate?: (name: string, params?: object) => void };
+ *   lifecycleRef?: { current: { focused?: boolean; mounted?: boolean; tearingDown?: boolean } };
  * }} options
  */
 export function useTrialWatchSession({
@@ -44,6 +45,7 @@ export function useTrialWatchSession({
   stopPlayback,
   onExpired,
   navigation,
+  lifecycleRef,
 }) {
   const boot =
     enabled &&
@@ -89,11 +91,26 @@ export function useTrialWatchSession({
     await saveTrialWatchState(stateRef.current);
   }, []);
 
+  const isPlayerScreenActive = useCallback(() => {
+    if (lifecycleRef?.current) {
+      return (
+        lifecycleRef.current.mounted !== false &&
+        lifecycleRef.current.focused === true
+      );
+    }
+    return screenFocusedRef.current;
+  }, [lifecycleRef]);
+
   const schedulePaymentModal = useCallback(
-    (reason) => {
+    (reason, opts = {}) => {
+      const trustExpiry = opts.trustExpiry === true;
       if (paymentDelayRef.current) clearTimeout(paymentDelayRef.current);
       paymentDelayRef.current = setTimeout(() => {
         paymentDelayRef.current = null;
+        if (!trustExpiry && !isPlayerScreenActive()) {
+          console.log('[player][trial]', 'skip_payment_modal', reason, 'inactive');
+          return;
+        }
         try {
           onExpired?.(reason);
         } catch {
@@ -101,13 +118,14 @@ export function useTrialWatchSession({
         }
       }, PAYMENT_MODAL_DELAY_MS);
     },
-    [onExpired],
+    [isPlayerScreenActive, onExpired],
   );
 
   const finishExpired = useCallback(
     async (reason) => {
       if (expiredRef.current) return;
       expiredRef.current = true;
+      const shouldCompleteExpiryFlow = isPlayerScreenActive();
       if (tickTimerRef.current) {
         clearInterval(tickTimerRef.current);
         tickTimerRef.current = null;
@@ -122,6 +140,10 @@ export function useTrialWatchSession({
         /* ignore */
       }
       InteractionManager.runAfterInteractions(() => {
+        if (!shouldCompleteExpiryFlow) {
+          console.log('[player][trial]', 'skip_nav_after_expiry', reason, 'inactive');
+          return;
+        }
         try {
           navigation?.navigate?.('MainTabs', { screen: 'Home' });
         } catch {
@@ -131,10 +153,10 @@ export function useTrialWatchSession({
             /* ignore */
           }
         }
-        schedulePaymentModal(reason);
+        schedulePaymentModal(reason, { trustExpiry: true });
       });
     },
-    [navigation, persistState, schedulePaymentModal, stopPlayback],
+    [isPlayerScreenActive, navigation, persistState, schedulePaymentModal, stopPlayback],
   );
 
   const applyAllowanceToSession = useCallback(

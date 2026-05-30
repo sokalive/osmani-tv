@@ -55,6 +55,10 @@ import {
   applyNativeVideoResizeMode,
   normalizeVideoResizeMode,
 } from '../lib/nativeVideoResize';
+import {
+  logPlayerTeardown,
+  teardownPlayback,
+} from '../lib/playerTeardown';
 
 /**
  * Pick a playback engine:
@@ -301,30 +305,38 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   /** One auto-hide arm per player mount (epoch); playback/message spam must not reset the timer. */
   const playbackHideArmedRef = useRef(false);
   const AUTO_HIDE_MS = 4000;
+  const allowNavigationRemoveRef = useRef(false);
+  const teardownDoneRef = useRef(false);
+  const exitInFlightRef = useRef(false);
+  const playerLifecycleRef = useRef({ focused: false, mounted: true, tearingDown: false });
+  const exitPlayerRef = useRef(null);
+  const statusBarHiddenRef = useRef(true);
+  const [playbackSurfacesMounted, setPlaybackSurfacesMounted] = useState(true);
+
+  const runPlaybackTeardown = useCallback(async (reason, opts = {}) => {
+    if (teardownDoneRef.current && !opts.force) {
+      logPlayerTeardown('skip_duplicate', reason);
+      return;
+    }
+    teardownDoneRef.current = true;
+    playerLifecycleRef.current.tearingDown = true;
+    setPickerKind(null);
+    pickerKindRef.current = null;
+    setPlaybackSurfacesMounted(false);
+    await teardownPlayback({
+      reason,
+      videoRef,
+      hlsWebRef,
+      embedWebRef,
+      resetChrome: opts.resetChrome !== false,
+    });
+    statusBarHiddenRef.current = false;
+    setPlayerEpoch((e) => e + 1);
+  }, []);
 
   const stopPlaybackForSecurity = useCallback(async () => {
-    try {
-      await videoRef.current?.pauseAsync?.();
-      await videoRef.current?.stopAsync?.();
-      await videoRef.current?.unloadAsync?.();
-    } catch {
-      /* ignore */
-    }
-    try {
-      hlsWebRef.current?.injectJavaScript(
-        `(function(){try{var v=document.getElementById('v');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
-      );
-    } catch {
-      /* ignore */
-    }
-    try {
-      embedWebRef.current?.injectJavaScript(
-        `(function(){try{var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
-      );
-    } catch {
-      /* ignore */
-    }
-  }, []);
+    await runPlaybackTeardown('security', { resetChrome: false, force: true });
+  }, [runPlaybackTeardown]);
 
   useEffect(() => {
     if (!playbackSecurity.allowed) {
@@ -348,7 +360,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     isPlaying: null,
   });
   const controlsOpacity = useRef(new Animated.Value(1)).current;
-  const statusBarHiddenRef = useRef(true);
 
   const [isPlaying, setIsPlaying] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
@@ -464,6 +475,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setPickerKind(null);
     playbackHideArmedRef.current = false;
     hardWallClockExpiryDoneRef.current = false;
+    teardownDoneRef.current = false;
+    exitInFlightRef.current = false;
+    allowNavigationRemoveRef.current = false;
+    playerLifecycleRef.current.tearingDown = false;
+    setPlaybackSurfacesMounted(true);
     setPlaybackSuppressed(false);
     setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
   }, [channel?.id, channel?.channel_id, channel?.name, channel?.url, channel?.backupStream1, channel?.backupStream2]);
@@ -542,9 +558,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       setAccessAllowed(ok);
       if (!ok) {
         console.log('[player][gate]', 'denied', { channel: channel?.name });
-        try {
-          navigation.goBack();
-        } catch {}
+        if (exitPlayerRef.current) {
+          void exitPlayerRef.current('gate_denied');
+        } else {
+          try {
+            navigation.goBack();
+          } catch {}
+        }
       }
     })();
     return () => {
@@ -568,9 +588,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       console.log('[player][gate]', `kill:${label}`);
       setAccessAllowed(false);
       void reverifySubscription(`player-${label}`);
-      try {
-        navigation.goBack();
-      } catch {}
+      if (exitPlayerRef.current) {
+        void exitPlayerRef.current(`gate_${label}`);
+      } else {
+        try {
+          navigation.goBack();
+        } catch {}
+      }
     };
     const offRevoked = subscribeRealtimeEvent('subscription_revoked', handleKill('revoked'));
     const offCompleted = subscribeRealtimeEvent('transfer_completed', handleKill('transfer_completed'));
@@ -590,24 +614,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     emergencyInterruptOnceRef.current = true;
     console.log('[player][emergency] interrupt_stop_playback');
     (async () => {
-      try {
-        await videoRef.current?.pauseAsync?.();
-        await videoRef.current?.unloadAsync?.();
-      } catch {}
-      try {
-        hlsWebRef.current?.injectJavaScript(
-          `(function(){try{var v=document.getElementById('v');if(v){v.pause();}}catch(e){}})();true;`,
-        );
-      } catch {}
-      try {
-        embedWebRef.current?.injectJavaScript(
-          `(function(){try{var v=document.querySelector('video');if(v)v.pause();}catch(e){}})();true;`,
-        );
-      } catch {}
-      try {
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
-        StatusBar.setHidden(false);
-      } catch {}
+      await runPlaybackTeardown('emergency');
+      allowNavigationRemoveRef.current = true;
       try {
         navigation.navigate('MainTabs', { screen: 'Home' });
       } catch {
@@ -616,7 +624,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         } catch {}
       }
     })();
-  }, [emergencyMode, navigation]);
+  }, [emergencyMode, navigation, runPlaybackTeardown]);
 
   // Realtime stream/channel updates from live app catalog.
   useEffect(() => {
@@ -642,7 +650,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if ((!showInApp || !isActive) && !channelDisabledNotified) {
       setChannelDisabledNotified(true);
       Alert.alert('Taarifa', 'Channel hii imezuiwa au kufichwa na admin.');
-      navigation.goBack();
+      if (exitPlayerRef.current) {
+        void exitPlayerRef.current('channel_disabled');
+      } else {
+        navigation.goBack();
+      }
       return;
     }
     const next = buildPlayerChannelFromRow(raw, index, freeMode);
@@ -770,14 +782,30 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     handlePlaybackFailure(errMsg);
   };
 
-  // ROTATION
+  // ROTATION — portrait/StatusBar also reset synchronously in exitPlayer / teardown.
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
     StatusBar.setHidden(true);
+    statusBarHiddenRef.current = true;
 
     return () => {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
       StatusBar.setHidden(false);
+    };
+  }, []);
+
+  useEffect(() => {
+    playerLifecycleRef.current.mounted = true;
+    return () => {
+      playerLifecycleRef.current.mounted = false;
+      if (!teardownDoneRef.current) {
+        void teardownPlayback({
+          reason: 'unmount_fallback',
+          videoRef,
+          hlsWebRef,
+          embedWebRef,
+        });
+      }
     };
   }, []);
 
@@ -821,16 +849,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }, []),
   );
 
-  // BACK
-  useEffect(() => {
-    const backAction = () => {
-      navigation.goBack();
-      return true;
-    };
-
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => backHandler.remove();
-  }, [navigation]);
+  useFocusEffect(
+    useCallback(() => {
+      playerLifecycleRef.current.focused = true;
+      return () => {
+        playerLifecycleRef.current.focused = false;
+        if (!allowNavigationRemoveRef.current && !teardownDoneRef.current) {
+          void runPlaybackTeardown('focus_blur', { resetChrome: true });
+        }
+      };
+    }, [runPlaybackTeardown]),
+  );
 
   // ANALYTICS: start session + heartbeat + stop on exit
   useEffect(() => {
@@ -976,48 +1005,76 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     return () => clearHideTimer();
   }, [clearHideTimer]);
 
+  const exitPlayer = useCallback(
+    async (source, pendingAction) => {
+      if (exitInFlightRef.current) {
+        logPlayerTeardown('exit_skip_inflight', source);
+        return;
+      }
+      exitInFlightRef.current = true;
+      logPlayerTeardown('exit_start', source);
+      clearHideTimer();
+      setPickerKind(null);
+      pickerKindRef.current = null;
+      await runPlaybackTeardown(`exit:${source}`);
+      allowNavigationRemoveRef.current = true;
+      try {
+        if (pendingAction) {
+          navigation.dispatch(pendingAction);
+        } else {
+          navigation.goBack();
+        }
+      } catch (e) {
+        logPlayerTeardown('exit_nav_error', e?.message ?? e);
+      }
+    },
+    [clearHideTimer, navigation, runPlaybackTeardown],
+  );
+
+  useEffect(() => {
+    exitPlayerRef.current = exitPlayer;
+  }, [exitPlayer]);
+
+  useEffect(() => {
+    const sub = navigation.addListener('beforeRemove', (e) => {
+      if (allowNavigationRemoveRef.current) return;
+      e.preventDefault();
+      void exitPlayer('beforeRemove', e.data.action);
+    });
+    return sub;
+  }, [navigation, exitPlayer]);
+
+  useEffect(() => {
+    const backAction = () => {
+      void exitPlayer('hardware_back');
+      return true;
+    };
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+    return () => backHandler.remove();
+  }, [exitPlayer]);
+
   const TEN_MIN_MS = 10 * 60 * 1000;
   const ONE_MIN_MS = 60 * 1000;
 
   const performHardExpiryShutdown = useCallback(async () => {
     if (hardWallClockExpiryDoneRef.current) return;
     hardWallClockExpiryDoneRef.current = true;
-    console.log('[player][expiry] hard_wallclock_shutdown');
+    logPlayerTeardown('expiry_wallclock_start');
     clearHideTimer();
     setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
     setPlaybackSuppressed(true);
     setPickerKind(null);
+    pickerKindRef.current = null;
     setIsBuffering(false);
     setIsPlaying(false);
 
-    try {
-      await videoRef.current?.pauseAsync?.();
-      await videoRef.current?.unloadAsync?.();
-    } catch {
-      /* ignore */
-    }
-    try {
-      hlsWebRef.current?.injectJavaScript(
-        `(function(){try{var v=document.getElementById('v');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
-      );
-    } catch {
-      /* ignore */
-    }
-    try {
-      embedWebRef.current?.injectJavaScript(
-        `(function(){try{var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
-      );
-    } catch {
-      /* ignore */
-    }
+    const shouldNavigate =
+      playerLifecycleRef.current.mounted && playerLifecycleRef.current.focused;
+    await runPlaybackTeardown('expiry_wallclock');
 
-    setPlayerEpoch((e) => e + 1);
-
-    try {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
-      StatusBar.setHidden(false);
-    } catch {
-      /* ignore */
+    if (!shouldNavigate) {
+      logPlayerTeardown('expiry_wallclock_skip_nav', 'inactive');
+      return;
     }
 
     try {
@@ -1026,6 +1083,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       console.log('[player][expiry] reverify_after_shutdown', e?.message ?? e);
     }
 
+    allowNavigationRemoveRef.current = true;
     try {
       navigation.navigate('MainTabs', {
         screen: 'Home',
@@ -1045,42 +1103,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         }
       }
     }
-  }, [clearHideTimer, navigation, reverifySubscription]);
+  }, [clearHideTimer, navigation, reverifySubscription, runPlaybackTeardown]);
 
   const stopTrialPlayback = useCallback(async () => {
     clearHideTimer();
     setPickerKind(null);
+    pickerKindRef.current = null;
     setPlaybackSuppressed(true);
     setIsPlaying(false);
     setIsBuffering(false);
-    try {
-      await videoRef.current?.pauseAsync?.();
-      await videoRef.current?.unloadAsync?.();
-    } catch {
-      /* ignore */
-    }
-    try {
-      hlsWebRef.current?.injectJavaScript(
-        `(function(){try{var v=document.getElementById('v');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
-      );
-    } catch {
-      /* ignore */
-    }
-    try {
-      embedWebRef.current?.injectJavaScript(
-        `(function(){try{var v=document.querySelector('video');if(v){v.pause();v.removeAttribute('src');v.load();}}catch(e){}})();true;`,
-      );
-    } catch {
-      /* ignore */
-    }
-    setPlayerEpoch((e) => e + 1);
-    try {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
-      StatusBar.setHidden(false);
-    } catch {
-      /* ignore */
-    }
-  }, [clearHideTimer]);
+    await runPlaybackTeardown('trial_expired', { resetChrome: true });
+  }, [clearHideTimer, runPlaybackTeardown]);
 
   const trialWatch = useTrialWatchSession({
     enabled: viaTrialPlayback && accessAllowed && !playbackSuppressed,
@@ -1094,6 +1127,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     stopPlayback: stopTrialPlayback,
     onExpired: () => requestPaymentModal(),
     navigation,
+    lifecycleRef: playerLifecycleRef,
   });
 
   useEffect(() => {
@@ -1652,7 +1686,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   if (!playbackSecurity.allowed) {
     return (
       <View style={[styles.root, styles.gateScreen]}>
-        <SecurityPlaybackBlock onBack={() => navigation.goBack()} />
+        <SecurityPlaybackBlock onBack={() => void exitPlayer('security_back')} />
       </View>
     );
   }
@@ -1726,7 +1760,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       <View style={styles.playerStage}>
         <View pointerEvents="none" style={styles.videoUnderlay} />
 
-        {useNativePlayer && nativeVideoSource ? (
+        {playbackSurfacesMounted && useNativePlayer && nativeVideoSource ? (
           <Video
             key={`native-${playerEpoch}`}
             ref={videoRef}
@@ -1741,7 +1775,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             useNativeControls={false}
             pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
           />
-        ) : useHlsWebView ? (
+        ) : playbackSurfacesMounted && useHlsWebView ? (
           <WebView
             key={`hls-${playerEpoch}`}
             ref={hlsWebRef}
@@ -1760,7 +1794,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             onError={onHlsWebError}
             pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
           />
-        ) : (
+        ) : playbackSurfacesMounted ? (
           <WebView
             key={`embed-${playerEpoch}`}
             ref={embedWebRef}
@@ -1799,7 +1833,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
             {/* TOP */}
             <View style={[styles.topBar, { paddingTop: Math.max(8, insets.top) }]} pointerEvents="box-none">
-              <Pressable onPress={() => navigation.goBack()} style={styles.topBack}>
+              <Pressable onPress={() => void exitPlayer('ui_back')} style={styles.topBack}>
                 <Ionicons name="arrow-back" size={26} color="#fff" />
               </Pressable>
               <View style={styles.titleBlock}>

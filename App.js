@@ -1423,7 +1423,7 @@ function RootNavigator() {
         name="ChannelPlayer"
         component={ChannelPlayerScreen}
         options={{
-          animation: 'fade',
+          animation: Platform.OS === 'android' ? 'slide_from_right' : 'fade',
           gestureEnabled: false,
         }}
       />
