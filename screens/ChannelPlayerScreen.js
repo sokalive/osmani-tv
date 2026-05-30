@@ -58,6 +58,7 @@ import {
   logPlayerTeardown,
   teardownPlayback,
 } from '../lib/playerTeardown';
+import { playbackStreamIdentity } from '../lib/playbackStreamIdentity';
 
 /**
  * Pick a playback engine:
@@ -137,25 +138,7 @@ function logPlayerBuffer(event, detail) {
   }
 }
 
-/** Stable signature of playback URLs — used to skip redundant native remounts. */
-function playbackUrlsSignature(ch) {
-  if (!ch) return '';
-  return [
-    ch.url,
-    ch.directStreamUrl,
-    ch.proxyFallbackUrl,
-    ch.backupStream1,
-    ch.backupStream2,
-    ch.streamDeliveryMode,
-  ]
-    .map((u) => String(u ?? ''))
-    .join('|');
-}
-
-/**
- * @param {string} path
- * @param {Record<string, unknown>} [detail]
- */
+/** Stable stream identity — token rotation alone must not remount Exo. */
 function logPlayerInterrupt(path, detail = {}) {
   console.log('[player][interrupt]', path, detail);
 }
@@ -215,6 +198,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   /** When direct/auto playback fails, retry once through CDN stream-proxy. */
   const [hlsForceProxy, setHlsForceProxy] = useState(false);
   const manifestRefreshAttemptRef = useRef(0);
+  const nativeLoadedUriRef = useRef('');
   const uri = streams[currentUrlIndex];
   const headers = useMemo(
     () => ({
@@ -225,6 +209,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     [channel?.referer, channel?.origin, channel?.userAgent],
   );
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
+  const streamIdentity = useMemo(() => playbackStreamIdentity(channel), [channel]);
   const playbackRoute = useMemo(
     () => pickPlaybackRoute(uri, normalizedPlayerType),
     [uri, normalizedPlayerType],
@@ -276,17 +261,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       const found = findRawChannelById(rawChannels, channelId);
       if (!found) return false;
       const next = buildPlayerChannelFromRow(found.raw, found.index, freeMode);
-      const urlsChanged = playbackUrlsSignature(channel) !== playbackUrlsSignature(next);
+      const identityChanged = playbackStreamIdentity(channel) !== playbackStreamIdentity(next);
       logSegmentDiagnostics('manifest_refresh', {
         reason,
         channelId,
         directStreamUrl: next.directStreamUrl ?? null,
-        urlsChanged,
+        identityChanged,
       });
       setLiveChannel(next);
       setHlsForceProxy(false);
       setPlaybackError('');
-      if (urlsChanged) {
+      if (identityChanged) {
         logPlayerInterrupt('manifest_catalog_remount', { reason });
         setIsBuffering(true);
         setPlayerEpoch((e) => e + 1);
@@ -499,14 +484,40 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, [
     channel?.id,
     channel?.channel_id,
-    channel?.name,
-    channel?.url,
-    channel?.directStreamUrl,
-    channel?.proxyFallbackUrl,
-    channel?.streamDeliveryMode,
-    channel?.backupStream1,
-    channel?.backupStream2,
+    streamIdentity,
   ]);
+
+  /** Rotate signed manifest URL in-place when catalog refreshes tokens (no Exo remount). */
+  useEffect(() => {
+    if (!useNativePlayer || !nativeVideoSource?.uri) return undefined;
+    const nextUri = String(nativeVideoSource.uri);
+    if (!nativeLoadedUriRef.current) {
+      nativeLoadedUriRef.current = nextUri;
+      return undefined;
+    }
+    if (nativeLoadedUriRef.current === nextUri) return undefined;
+    nativeLoadedUriRef.current = nextUri;
+    logPlayerInterrupt('native_source_hot_swap', { uriPrefix: nextUri.slice(0, 96) });
+    const ref = videoRef.current;
+    if (!ref?.loadAsync) return undefined;
+    let cancelled = false;
+    void ref
+      .loadAsync(nativeVideoSource, { shouldPlay: true })
+      .catch((e) => {
+        if (!cancelled) {
+          console.log('[player][debug] native hot-swap load failed:', e?.message ?? e);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [useNativePlayer, nativeVideoSource]);
+
+  useEffect(() => {
+    if (!useNativePlayer) return undefined;
+    nativeLoadedUriRef.current = '';
+    return undefined;
+  }, [playerEpoch, useNativePlayer]);
 
   useEffect(() => {
     if (!uri) return;
@@ -1889,7 +1900,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             onError={onError}
             onReadyForDisplay={onNativeReadyForDisplay}
             useNativeControls={false}
-            pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
+            pointerEvents="none"
           />
         ) : playbackSurfacesMounted && useHlsWebView ? (
           <WebView

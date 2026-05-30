@@ -8,6 +8,11 @@ const screen = fs.readFileSync(
   path.join(__dirname, '..', 'screens/ChannelPlayerScreen.js'),
   'utf8',
 );
+const hls = fs.readFileSync(path.join(__dirname, '..', 'lib/hlsPlayback.js'), 'utf8');
+const identity = fs.readFileSync(
+  path.join(__dirname, '..', 'lib/playbackStreamIdentity.js'),
+  'utf8',
+);
 
 function pass(msg) {
   console.log('PASS:', msg);
@@ -30,21 +35,50 @@ if (!screen.includes('hlsManifestUrl || uri')) {
   fail('native HLS source uses remote hlsManifestUrl');
 } else pass('native HLS source uses remote hlsManifestUrl');
 
-if (!screen.includes('playbackUrlsSignature')) {
-  fail('playbackUrlsSignature helper for skip redundant remounts');
-} else pass('playbackUrlsSignature helper');
+if (!screen.includes('playbackStreamIdentity')) {
+  fail('playbackStreamIdentity for stable remount gate');
+} else pass('playbackStreamIdentity for stable remount gate');
 
 if (!screen.includes('manifest_catalog_skip_remount')) {
-  fail('catalog refresh skips remount when URLs unchanged');
-} else pass('catalog refresh skips remount when URLs unchanged');
+  fail('catalog refresh skips remount when identity unchanged');
+} else pass('catalog refresh skips remount when identity unchanged');
 
-if (!screen.includes("logPlayerInterrupt('channel_change_remount'")) {
-  fail('channel change interrupt logging');
-} else pass('channel change interrupt logging');
+if (!screen.includes("logPlayerInterrupt('native_source_hot_swap'")) {
+  fail('native manifest hot-swap without remount');
+} else pass('native manifest hot-swap without remount');
 
-if (!screen.includes("logPlayerInterrupt('proxy_fallback_remount'")) {
-  fail('proxy fallback interrupt logging');
-} else pass('proxy fallback interrupt logging');
+if (!screen.includes('pointerEvents="none"')) {
+  fail('native Video pointerEvents none (hide source chrome)');
+} else pass('native Video pointerEvents none');
+
+if (!hls.includes('stream-direct')) {
+  fail('stream-direct URLs recognized as HLS for native Exo');
+} else pass('stream-direct URLs recognized as HLS');
+
+function looksLikeHlsPlaybackUriMirror(uri) {
+  const s = String(uri ?? '').trim();
+  if (!s) return false;
+  if (/\.m3u8(?:$|[?#&])/i.test(s)) return true;
+  if (/\/stream-direct(?:\?|$)/i.test(s)) return true;
+  return false;
+}
+
+if (!looksLikeHlsPlaybackUriMirror('https://osmanitv.b-cdn.net/stream-direct?token=abc')) {
+  fail('stream-direct runtime HLS detection');
+} else pass('stream-direct runtime HLS detection');
+
+const { playbackStreamIdentity, normalizeUrlForPlaybackIdentity } = require('../lib/playbackStreamIdentity');
+const a = normalizeUrlForPlaybackIdentity('https://x/hls?tok=1&e=2');
+const b = normalizeUrlForPlaybackIdentity('https://x/hls?tok=9&e=8');
+if (a !== b) fail('volatile query params stripped for identity');
+else pass('volatile query params stripped for identity');
+
+if (
+  playbackStreamIdentity({ url: 'https://x/a?tok=1' }) !==
+  playbackStreamIdentity({ url: 'https://x/a?tok=2' })
+) {
+  fail('token rotation preserves stream identity');
+} else pass('token rotation preserves stream identity');
 
 if (process.exitCode) process.exit(1);
 console.log('[verify-native-exo-playback] ok');
