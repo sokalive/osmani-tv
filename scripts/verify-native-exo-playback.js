@@ -51,6 +51,18 @@ if (!screen.includes('pointerEvents="none"')) {
   fail('native Video pointerEvents none (hide source chrome)');
 } else pass('native Video pointerEvents none');
 
+if (screen.includes('channel?.url') && screen.match(/gateForPlayback[\s\S]{0,800}channel\?\.url/)) {
+  fail('premium gate must not depend on channel.url (token rotation)');
+} else pass('premium gate ignores channel.url rotation');
+
+if (!screen.includes('premiumGateSessionRef')) {
+  fail('premiumGateSessionRef prevents re-gate during playback');
+} else pass('premiumGateSessionRef prevents re-gate during playback');
+
+if (!screen.includes("logPlayerInterrupt('native_stall_recovery'")) {
+  fail('native silent stall recovery');
+} else pass('native silent stall recovery');
+
 if (!hls.includes('stream-direct')) {
   fail('stream-direct URLs recognized as HLS for native Exo');
 } else pass('stream-direct URLs recognized as HLS');

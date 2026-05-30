@@ -125,6 +125,9 @@ function playbackFailureMessage(reasonText) {
 const PLAYER_KEEP_AWAKE_TAG = 'osmani-channel-player';
 /** Native Exo: debounce full-screen buffer overlay after first playback start. */
 const NATIVE_BUFFER_OVERLAY_DEBOUNCE_MS = 2000;
+/** Native Exo: frozen playback (not active rebuffer) before silent recovery. */
+const NATIVE_STALL_DETECT_MS = 12000;
+const NATIVE_STALL_RECOVERY_COOLDOWN_MS = 8000;
 
 /**
  * @param {string} event
@@ -199,6 +202,16 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [hlsForceProxy, setHlsForceProxy] = useState(false);
   const manifestRefreshAttemptRef = useRef(0);
   const nativeLoadedUriRef = useRef('');
+  /** Premium gate passed once per channel session — catalog token rotation must not re-gate. */
+  const premiumGateSessionRef = useRef({ channelKey: '', granted: false });
+  const nativeStallRef = useRef({
+    lastPositionMs: 0,
+    lastPlayableMs: 0,
+    lastProgressWallMs: 0,
+    recoveryAttempt: 0,
+    lastRecoveryWallMs: 0,
+    recovering: false,
+  });
   const uri = streams[currentUrlIndex];
   const headers = useMemo(
     () => ({
@@ -481,6 +494,15 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setPlayerShellHidden(false);
     setPlaybackSuppressed(false);
     setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
+    premiumGateSessionRef.current = { channelKey: '', granted: false };
+    nativeStallRef.current = {
+      lastPositionMs: 0,
+      lastPlayableMs: 0,
+      lastProgressWallMs: 0,
+      recoveryAttempt: 0,
+      lastRecoveryWallMs: 0,
+      recovering: false,
+    };
   }, [
     channel?.id,
     channel?.channel_id,
@@ -516,6 +538,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   useEffect(() => {
     if (!useNativePlayer) return undefined;
     nativeLoadedUriRef.current = '';
+    nativeStallRef.current = {
+      lastPositionMs: 0,
+      lastPlayableMs: 0,
+      lastProgressWallMs: 0,
+      recoveryAttempt: 0,
+      lastRecoveryWallMs: 0,
+      recovering: false,
+    };
     return undefined;
   }, [playerEpoch, useNativePlayer]);
 
@@ -566,24 +596,34 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   /**
    * Hard pre-play gate: APP -> BACKEND VERIFY -> PLAY.
    *
-   * The backend is the only source of truth for "active". We refuse to
-   * mount the player surface for premium channels until the backend
-   * confirms `active === true`. If it returns false, we navigate back
-   * immediately and the global TransferredAwayModal takes over.
+   * Runs once per channel session. Catalog/SSE signed-URL rotation must NOT
+   * re-trigger this gate (that was causing "Inathibitisha kifurushi…" flashes).
    */
   useEffect(() => {
     let cancelled = false;
     if (!channel) return undefined;
+    const channelKey = String(channel?.id ?? channel?.channel_id ?? '').trim();
+
     if (!channelIsPremium || freeMode) {
       setAccessChecked(true);
       setAccessAllowed(true);
+      premiumGateSessionRef.current = { channelKey, granted: true };
       return undefined;
     }
     if (viaTrialPlayback) {
       setAccessChecked(true);
       setAccessAllowed(true);
+      premiumGateSessionRef.current = { channelKey, granted: true };
       return undefined;
     }
+
+    if (
+      premiumGateSessionRef.current.granted &&
+      premiumGateSessionRef.current.channelKey === channelKey
+    ) {
+      return undefined;
+    }
+
     setAccessChecked(false);
     setAccessAllowed(false);
     (async () => {
@@ -591,7 +631,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       if (cancelled) return;
       setAccessChecked(true);
       setAccessAllowed(ok);
-      if (!ok) {
+      if (ok) {
+        premiumGateSessionRef.current = { channelKey, granted: true };
+      } else {
+        premiumGateSessionRef.current = { channelKey, granted: false };
         console.log('[player][gate]', 'denied', { channel: channel?.name });
         if (exitPlayerRef.current) {
           void exitPlayerRef.current('gate_denied');
@@ -608,7 +651,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, [
     channel?.id,
     channel?.channel_id,
-    channel?.url,
     channelIsPremium,
     freeMode,
     viaTrialPlayback,
@@ -805,6 +847,84 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setIsBuffering(true);
     setPlayerEpoch((e) => e + 1);
   }, []);
+
+  const tryNativeStallRecovery = useCallback(async () => {
+    const stall = nativeStallRef.current;
+    if (stall.recovering) return;
+    const now = Date.now();
+    if (now - stall.lastRecoveryWallMs < NATIVE_STALL_RECOVERY_COOLDOWN_MS) return;
+
+    stall.recovering = true;
+    stall.lastRecoveryWallMs = now;
+    stall.recoveryAttempt += 1;
+    const attempt = stall.recoveryAttempt;
+    const ref = videoRef.current;
+
+    logPlayerInterrupt('native_stall_recovery', { attempt });
+
+    try {
+      if (!ref) return;
+      if (attempt === 1) {
+        await ref.playAsync?.();
+      } else if (attempt === 2) {
+        const s = await ref.getStatusAsync?.();
+        const pos = s?.positionMillis;
+        if (typeof pos === 'number') {
+          await ref.setPositionAsync?.(pos);
+        }
+        await ref.playAsync?.();
+      } else if (attempt === 3 && nativeVideoSource) {
+        await ref.loadAsync?.(nativeVideoSource, { shouldPlay: true });
+        nativeLoadedUriRef.current = String(nativeVideoSource.uri ?? '');
+      } else {
+        stall.recoveryAttempt = 0;
+        manualReloadSameStream();
+        return;
+      }
+      stall.lastProgressWallMs = Date.now();
+    } catch (e) {
+      console.log('[player][stall]', 'recovery_failed', e?.message ?? e);
+    } finally {
+      stall.recovering = false;
+    }
+  }, [manualReloadSameStream, nativeVideoSource]);
+
+  const watchNativePlaybackProgress = useCallback(
+    (status) => {
+      if (!useNativePlayer || playbackErrorRef.current) return;
+      if (!status?.isLoaded || !nativePlaybackStartedRef.current) return;
+
+      const now = Date.now();
+      const pos = Number(status.positionMillis ?? 0);
+      const playable = Number(status.playableDurationMillis ?? 0);
+      const playing = Boolean(status.isPlaying);
+      const buffering = Boolean(status.isBuffering);
+      const stall = nativeStallRef.current;
+
+      if (buffering) return;
+
+      if (playing) {
+        const advanced =
+          pos > stall.lastPositionMs + 300 || playable > stall.lastPlayableMs + 300;
+        if (advanced || stall.lastProgressWallMs === 0) {
+          stall.lastPositionMs = pos;
+          stall.lastPlayableMs = playable;
+          stall.lastProgressWallMs = now;
+          if (advanced) stall.recoveryAttempt = 0;
+          return;
+        }
+        if (now - stall.lastProgressWallMs >= NATIVE_STALL_DETECT_MS) {
+          void tryNativeStallRecovery();
+        }
+        return;
+      }
+
+      if (now - stall.lastProgressWallMs >= NATIVE_STALL_DETECT_MS) {
+        void tryNativeStallRecovery();
+      }
+    },
+    [useNativePlayer, tryNativeStallRecovery],
+  );
 
   const handlePlaybackFailure = useCallback(
     (reasonText) => {
@@ -1319,7 +1439,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (!channelIsPremium || freeMode || !accessAllowed || playbackSuppressed) return undefined;
     const id = setInterval(() => {
       if (hardWallClockExpiryDoneRef.current) return;
-      void reverifySubscription('player-expiry-sync');
+      void (async () => {
+        const r = await reverifySubscription('player-expiry-sync');
+        if (r?.active !== false) return;
+        if (!premiumGateSessionRef.current.granted) return;
+        premiumGateSessionRef.current.granted = false;
+        setAccessChecked(true);
+        setAccessAllowed(false);
+        if (exitPlayerRef.current) {
+          void exitPlayerRef.current('gate_expiry_sync');
+        }
+      })();
     }, 120 * 1000);
     return () => clearInterval(id);
   }, [channelIsPremium, freeMode, accessAllowed, playbackSuppressed, reverifySubscription]);
@@ -1368,7 +1498,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setPlaybackError('');
     if (playing && !prevPlaying) {
       markPlaybackStartedForHide();
+      nativeStallRef.current.lastProgressWallMs = Date.now();
     }
+    watchNativePlaybackProgress(status);
   };
 
   const onEmbedLoadStart = () => {
