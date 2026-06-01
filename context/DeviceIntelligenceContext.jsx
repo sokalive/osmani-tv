@@ -15,6 +15,7 @@ import {
 import { DEVICE_INTELLIGENCE_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import {
   assertDeviceIntelligenceAllowed,
+  runDeviceIntelligenceNavigateHome,
   setDeviceIntelligenceAccessState,
 } from '../lib/deviceIntelligenceAccess';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
@@ -32,28 +33,37 @@ export function DeviceIntelligenceProvider({ children }) {
   const pollTimerRef = useRef(null);
   const runningRef = useRef(false);
   const blockedRef = useRef(false);
+  /** User pressed "Nimeelewa" — browse app; modal only on new block or restricted action. */
+  const blockedNoticeAckRef = useRef(false);
 
   const showBlockedModal = useCallback(() => {
     setBlockedModalVisible(true);
   }, []);
 
-  const dismissBlockedModal = useCallback(() => {
+  const acknowledgeBlockedNotice = useCallback(() => {
+    blockedNoticeAckRef.current = true;
     setBlockedModalVisible(false);
+    runDeviceIntelligenceNavigateHome();
   }, []);
 
   const dismissUnblockModal = useCallback(() => {
     setUnblockModalVisible(false);
   }, []);
 
-  const applyBlockedState = useCallback((nextBlocked, { showModal = true } = {}) => {
+  const applyBlockedState = useCallback((nextBlocked, { showModal = false } = {}) => {
     const wasBlocked = blockedRef.current;
     blockedRef.current = nextBlocked;
     setBlocked(nextBlocked);
     if (nextBlocked) {
       setUnblockModalVisible(false);
-      if (showModal) setBlockedModalVisible(true);
+      const newlyBlocked = !wasBlocked;
+      if (newlyBlocked) blockedNoticeAckRef.current = false;
+      if (showModal && (!blockedNoticeAckRef.current || newlyBlocked)) {
+        setBlockedModalVisible(true);
+      }
       return;
     }
+    blockedNoticeAckRef.current = false;
     setBlockedModalVisible(false);
     if (wasBlocked) setUnblockModalVisible(true);
   }, []);
@@ -69,7 +79,8 @@ export function DeviceIntelligenceProvider({ children }) {
       const prev = await readDeviceIntelligenceLastStatus();
       const result = await registerDeviceIntelligence();
       if (result.status === 'blocked' || result.blocked === true) {
-        applyBlockedState(true, { showModal: true });
+        const newlyBlocked = prev !== 'blocked' && !blockedRef.current;
+        applyBlockedState(true, { showModal: newlyBlocked || !blockedNoticeAckRef.current });
         return;
       }
       if (result.status === 'active') {
@@ -77,7 +88,7 @@ export function DeviceIntelligenceProvider({ children }) {
         return;
       }
       if (!result.ok && prev === 'blocked') {
-        applyBlockedState(true, { showModal: true });
+        applyBlockedState(true, { showModal: !blockedNoticeAckRef.current });
       }
     } finally {
       runningRef.current = false;
@@ -119,7 +130,7 @@ export function DeviceIntelligenceProvider({ children }) {
       blockedModalVisible,
       unblockModalVisible,
       showBlockedModal,
-      dismissBlockedModal,
+      acknowledgeBlockedNotice,
       dismissUnblockModal,
       refresh,
       guardUsage,
@@ -130,7 +141,7 @@ export function DeviceIntelligenceProvider({ children }) {
       blockedModalVisible,
       unblockModalVisible,
       showBlockedModal,
-      dismissBlockedModal,
+      acknowledgeBlockedNotice,
       dismissUnblockModal,
       refresh,
       guardUsage,
@@ -151,7 +162,7 @@ export function useDeviceIntelligence() {
       blockedModalVisible: false,
       unblockModalVisible: false,
       showBlockedModal: () => {},
-      dismissBlockedModal: () => {},
+      acknowledgeBlockedNotice: () => {},
       dismissUnblockModal: () => {},
       refresh: async () => {},
       guardUsage: () => ({ ok: true }),

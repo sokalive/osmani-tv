@@ -743,7 +743,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     })();
   }, [emergencyMode, navigation, runPlaybackTeardown]);
 
-  // Users Intelligence block: stop playback, exit player, return Home (block modal is global).
+  // Users Intelligence block: stop playback; "Nimeelewa" navigates Home via global gate.
   useEffect(() => {
     if (!deviceIntelligenceBlocked) {
       deviceIntelInterruptOnceRef.current = false;
@@ -752,18 +752,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (deviceIntelInterruptOnceRef.current) return;
     deviceIntelInterruptOnceRef.current = true;
     console.log('[player][device-intel] interrupt_stop_playback');
-    (async () => {
-      await runPlaybackTeardown('device_intelligence_blocked');
-      allowNavigationRemoveRef.current = true;
-      try {
-        navigation.navigate('MainTabs', { screen: 'Home' });
-      } catch {
-        try {
-          navigation.goBack();
-        } catch {}
-      }
-    })();
-  }, [deviceIntelligenceBlocked, navigation, runPlaybackTeardown]);
+    void runPlaybackTeardown('device_intelligence_blocked');
+  }, [deviceIntelligenceBlocked, runPlaybackTeardown]);
 
   // Realtime stream/channel updates from live app catalog.
   useEffect(() => {

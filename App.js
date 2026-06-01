@@ -1625,7 +1625,7 @@ export default function App() {
               />
             </NavigationContainer>
             <GlobalEmergencyGate />
-            <DeviceIntelligenceGate />
+            <DeviceIntelligenceGate navigationRef={navigationRef} />
             <WhatsAppFloatingButtonGate
               navigationRef={navigationRef}
               navigationRevision={navigationRevision}

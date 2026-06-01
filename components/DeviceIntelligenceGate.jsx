@@ -1,24 +1,39 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Modal, View } from 'react-native';
 import EmergencyModal from './EmergencyModal';
 import WhatsAppFloatingButton from './WhatsAppFloatingButton';
 import { useDeviceIntelligence } from '../context/DeviceIntelligenceContext';
+import { registerDeviceIntelligenceNavigateHome } from '../lib/deviceIntelligenceAccess';
 import { useRegisterBlockingSheet } from '../context/ModalSheetCoordinatorContext';
 
 /**
  * Users Intelligence block / unblock modals (Osmani centered popup).
- * WhatsApp FAB stays reachable above the block modal via a transparent overlay Modal.
+ * WhatsApp FAB stays reachable while blocked (including when the block modal is open).
+ *
+ * @param {{ navigationRef: import('@react-navigation/native').NavigationContainerRefWithCurrent<object> }} props
  */
-export default function DeviceIntelligenceGate() {
+export default function DeviceIntelligenceGate({ navigationRef }) {
   const {
     blocked,
     blockedModalVisible,
     unblockModalVisible,
-    dismissBlockedModal,
+    acknowledgeBlockedNotice,
     dismissUnblockModal,
   } = useDeviceIntelligence();
 
-  const blockSheetVisible = blocked && blockedModalVisible;
+  useEffect(() => {
+    registerDeviceIntelligenceNavigateHome(() => {
+      try {
+        if (!navigationRef?.isReady?.()) return;
+        navigationRef.navigate('MainTabs', { screen: 'Home' });
+      } catch {
+        /* ignore */
+      }
+    });
+    return () => registerDeviceIntelligenceNavigateHome(null);
+  }, [navigationRef]);
+
+  const blockSheetVisible = Boolean(blockedModalVisible);
   useRegisterBlockingSheet('device-intelligence-blocked', blockSheetVisible);
   useRegisterBlockingSheet('device-intelligence-unblocked', unblockModalVisible);
 
@@ -30,7 +45,7 @@ export default function DeviceIntelligenceGate() {
         message="Matumizi ya Osmani TV kwenye kifaa hiki yamefungiwa. Tafadhali wasiliana na huduma kwa wateja kwa maelezo zaidi."
         iconName="warning"
         primaryLabel="Nimeelewa"
-        onSawa={dismissBlockedModal}
+        onSawa={acknowledgeBlockedNotice}
       />
       <EmergencyModal
         visible={unblockModalVisible}
