@@ -153,32 +153,149 @@ function pickDataSubscription(body) {
   return isPlainObject(data?.subscription) ? data.subscription : null;
 }
 
-function pickAmount(body) {
+function pickPriceFromPlanRow(planRow) {
+  if (!isPlainObject(planRow)) return null;
+  return pickNumber(planRow.price, planRow.amount, planRow.Price, planRow.Amount);
+}
+
+function pickPlanId(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  const dataSub = pickDataSubscription(body);
+  const plan = pickPlan(body);
+  return pickTruthyString(
+    plan?.id,
+    plan?.plan_id,
+    plan?.planId,
+    sub?.plan_id,
+    sub?.planId,
+    dataSub?.plan_id,
+    dataSub?.planId,
+    body.plan_id,
+    body.planId,
+    data?.plan_id,
+    data?.planId,
+  );
+}
+
+function pickResolvablePlanName(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  const dataSub = pickDataSubscription(body);
+  const plan = pickPlan(body);
+  return pickTruthyString(
+    plan?.name,
+    plan?.title,
+    dataSub?.plan_name,
+    dataSub?.planName,
+    sub?.plan_name,
+    sub?.planName,
+    body.plan_name,
+    body.planName,
+    data?.plan_name,
+    data?.planName,
+  );
+}
+
+/** Canonical package price from the active subscription's linked plan record. */
+function pickAmountFromLinkedPlan(body) {
   if (!isPlainObject(body)) return null;
   const data = isPlainObject(body.data) ? body.data : null;
   const sub = isPlainObject(body.subscription) ? body.subscription : null;
   const dataSub = pickDataSubscription(body);
   const dataSubPlan = isPlainObject(dataSub?.plan) ? dataSub.plan : null;
-  const plan = isPlainObject(body.plan) ? body.plan : null;
+  const rootPlan = isPlainObject(body.plan) ? body.plan : null;
   const subPlan = isPlainObject(sub?.plan) ? sub.plan : null;
-  const pay = isPlainObject(body.payment) ? body.payment : null;
+  const dataPlan = isPlainObject(data?.plan) ? data.plan : null;
+  const pickedPlan = pickPlan(body);
+
+  for (const mg of collectManualGiftObjects(body)) {
+    const mgPlan = isPlainObject(mg?.plan) ? mg.plan : null;
+    const fromGift = pickNumber(
+      pickPriceFromPlanRow(mgPlan),
+      mg?.plan_price,
+      mg?.planPrice,
+      mg?.package_price,
+      mg?.packagePrice,
+    );
+    if (fromGift != null) return fromGift;
+  }
+
   return pickNumber(
-    body.amount,
-    body.price,
-    data?.amount,
-    data?.price,
+    pickPriceFromPlanRow(pickedPlan),
+    pickPriceFromPlanRow(rootPlan),
+    pickPriceFromPlanRow(subPlan),
+    pickPriceFromPlanRow(dataSubPlan),
+    pickPriceFromPlanRow(dataPlan),
+    sub?.plan_price,
+    sub?.planPrice,
+    dataSub?.plan_price,
+    dataSub?.planPrice,
+    body.plan_price,
+    body.planPrice,
+    data?.plan_price,
+    data?.planPrice,
+  );
+}
+
+function pickAmountFromPlansCatalog(body) {
+  const plans = pickPlans(body);
+  if (!plans.length) return null;
+  const wantId = pickPlanId(body);
+  if (wantId) {
+    for (const p of plans) {
+      const id = String(p?.id ?? p?.plan_id ?? p?.planId ?? '').trim();
+      if (id && id === wantId) {
+        const price = pickPriceFromPlanRow(p);
+        if (price != null) return price;
+      }
+    }
+  }
+  const wantName = pickResolvablePlanName(body);
+  if (wantName) {
+    const norm = wantName.trim().toLowerCase();
+    for (const p of plans) {
+      const label = String(p?.name ?? p?.title ?? '').trim().toLowerCase();
+      if (label && label === norm) {
+        const price = pickPriceFromPlanRow(p);
+        if (price != null) return price;
+      }
+    }
+  }
+  if (plans.length === 1) {
+    const price = pickPriceFromPlanRow(plans[0]);
+    if (price != null) return price;
+  }
+  return null;
+}
+
+function pickAmount(body) {
+  if (!isPlainObject(body)) return null;
+  const linkedPlanPrice = pickAmountFromLinkedPlan(body);
+  if (linkedPlanPrice != null) return linkedPlanPrice;
+
+  const catalogPrice = pickAmountFromPlansCatalog(body);
+  if (catalogPrice != null) return catalogPrice;
+
+  const data = isPlainObject(body.data) ? body.data : null;
+  const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  const dataSub = pickDataSubscription(body);
+  const pay = isPlainObject(body.payment) ? body.payment : null;
+
+  // Payment / transaction amount before generic subscription placeholders (e.g. admin manual `1000`).
+  return pickNumber(
+    pay?.amount,
+    pay?.price,
     sub?.amount,
     sub?.price,
     dataSub?.amount,
     dataSub?.price,
-    dataSubPlan?.price,
-    dataSubPlan?.amount,
-    plan?.price,
-    plan?.amount,
-    subPlan?.price,
-    subPlan?.amount,
-    pay?.amount,
-    pay?.price,
+    data?.amount,
+    data?.price,
+    body.amount,
+    body.price,
   );
 }
 

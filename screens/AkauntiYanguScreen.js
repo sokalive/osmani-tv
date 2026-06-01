@@ -86,23 +86,27 @@ function formatPrice(amount, currency) {
 
 function resolveSubscriptionPaymentLabel(details) {
   if (!details) return null;
-  const direct = formatPrice(details.amount, details.currency);
-  if (direct) return direct;
-  const want = String(details.planName ?? '').trim().toLowerCase();
   const plans = Array.isArray(details.plans) ? details.plans : [];
   const pickFromPlan = (p) =>
     formatPrice(
       p?.price ?? p?.amount ?? p?.Price ?? p?.Amount,
       p?.currency ?? p?.currency_code ?? p?.currencyCode ?? details.currency,
     );
+  const want = String(details.planName ?? '').trim().toLowerCase();
   if (want) {
     for (const p of plans) {
       const label = String(p?.name ?? p?.title ?? '').trim().toLowerCase();
-      if (label && label === want) return pickFromPlan(p);
+      if (label && label === want) {
+        const fromPlan = pickFromPlan(p);
+        if (fromPlan) return fromPlan;
+      }
     }
   }
-  if (plans.length === 1) return pickFromPlan(plans[0]);
-  return null;
+  if (plans.length === 1) {
+    const fromPlan = pickFromPlan(plans[0]);
+    if (fromPlan) return fromPlan;
+  }
+  return formatPrice(details.amount, details.currency);
 }
 
 function formatOfferCooldownMmSs(totalSeconds) {
