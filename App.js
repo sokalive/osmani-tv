@@ -1168,7 +1168,7 @@ function ChannelCatalogScreen({
           <View style={styles.offlineBanner}>
             <Ionicons name="cloud-offline-outline" size={16} color="#FBBF24" />
             <Text style={styles.offlineBannerText}>
-              Hakuna muunganisho wa intaneti. Baadhi ya taarifa zinaweza kuwa za zamani.
+              Tafadhali hakikisha una kifurushi cha intaneti kinachofanya kazi. Angalia salio la kifurushi chako kisha ujaribu tena.
             </Text>
           </View>
         ) : null}
@@ -1334,8 +1334,8 @@ function ChannelCatalogScreen({
       ) : null}
       <EmergencyModal
         visible={offlineModalVisible}
-        title="Hakuna Muunganisho wa Intaneti"
-        message="Haujaunganishwa kwenye intaneti. Tafadhali washa data au Wi-Fi kisha ujaribu tena."
+        title="Muunganisho wa Intaneti Unahitajika"
+        message="Tafadhali hakikisha una kifurushi cha intaneti kinachofanya kazi. Angalia salio la kifurushi chako au washa data/Wi-Fi kisha ujaribu tena."
         iconName="cloud-offline"
         primaryLabel="Jaribu Tena"
         secondaryLabel="Funga"
