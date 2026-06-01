@@ -21,6 +21,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import HamishaKifurushiModal from '../components/HamishaKifurushiModal';
 import PremiumModal from '../components/PremiumModal';
 import { redeemOfferCode } from '../api/subscription';
+import { useDeviceIntelligence } from '../context/DeviceIntelligenceContext';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { formatSubscriptionExpiry } from '../lib/formatExpiry';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
@@ -148,6 +149,15 @@ export default function AkauntiYanguScreen() {
     freeMode,
     refreshSubscription,
   } = useOsmaniApp();
+  const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
+
+  const guardAccountAction = useCallback(
+    (fn) => {
+      if (guardDeviceIntelligence().ok === false) return;
+      fn();
+    },
+    [guardDeviceIntelligence],
+  );
 
   // Local "now" tick used ONLY by the visual progress bar interpolator.
   // Trust for access decisions still flows through the backend — see
@@ -273,6 +283,7 @@ export default function AkauntiYanguScreen() {
   const cooldownActive = cooldownRemainingSec > 0;
 
   const handleRedeemOfferCode = useCallback(async () => {
+    if (guardDeviceIntelligence().ok === false) return;
     const raw = offerCodeInput.trim();
     if (!raw || redeemBusy || cooldownActive) return;
     setRedeemBusy(true);
@@ -304,6 +315,7 @@ export default function AkauntiYanguScreen() {
     cooldownActive,
     refreshSubscription,
     navigation,
+    guardDeviceIntelligence,
   ]);
 
   return (
@@ -398,7 +410,7 @@ export default function AkauntiYanguScreen() {
 
         <Pressable
           style={styles.hamishaTransferCardOuter}
-          onPress={() => setHamishaModalVisible(true)}
+          onPress={() => guardAccountAction(() => setHamishaModalVisible(true))}
           accessibilityRole="button"
           accessibilityLabel="Hamisha Kifurushi"
         >
@@ -413,7 +425,10 @@ export default function AkauntiYanguScreen() {
           </LinearGradient>
         </Pressable>
 
-        <Pressable style={styles.primaryWrap} onPress={() => setPremiumModalVisible(true)}>
+        <Pressable
+          style={styles.primaryWrap}
+          onPress={() => guardAccountAction(() => setPremiumModalVisible(true))}
+        >
           <LinearGradient
             colors={[COLORS.yellow, '#E5A020']}
             start={{ x: 0, y: 0.5 }}
@@ -465,7 +480,7 @@ export default function AkauntiYanguScreen() {
           />
           <Pressable
             style={[styles.offerSubmitOuter, (cooldownActive || redeemBusy || !offerCodeInput.trim()) && styles.offerSubmitOuterDisabled]}
-            onPress={() => void handleRedeemOfferCode()}
+            onPress={() => guardAccountAction(() => void handleRedeemOfferCode())}
             disabled={cooldownActive || redeemBusy || !offerCodeInput.trim()}
           >
             <LinearGradient

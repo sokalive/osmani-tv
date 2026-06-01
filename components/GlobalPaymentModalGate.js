@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useDeviceIntelligence } from '../context/DeviceIntelligenceContext';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { useRegisterBlockingSheet } from '../context/ModalSheetCoordinatorContext';
 import PremiumModal from './PremiumModal';
@@ -8,13 +9,18 @@ import PremiumModal from './PremiumModal';
  */
 export default function GlobalPaymentModalGate() {
   const { paymentModalRequest, reverifySubscription } = useOsmaniApp();
+  const { blocked: deviceIntelligenceBlocked, guardUsage: guardDeviceIntelligence } =
+    useDeviceIntelligence();
   const [visible, setVisible] = useState(false);
   useRegisterBlockingSheet('global-payment-modal', visible);
 
   useEffect(() => {
-    if (!paymentModalRequest) return;
+    if (!paymentModalRequest || deviceIntelligenceBlocked) {
+      if (deviceIntelligenceBlocked && paymentModalRequest) guardDeviceIntelligence();
+      return;
+    }
     setVisible(true);
-  }, [paymentModalRequest]);
+  }, [paymentModalRequest, deviceIntelligenceBlocked, guardDeviceIntelligence]);
 
   return (
     <PremiumModal

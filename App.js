@@ -32,6 +32,7 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { MaintenanceHomeCentered } from './components/MaintenanceScreen';
 import EmergencyModal from './components/EmergencyModal';
+import DeviceIntelligenceGate from './components/DeviceIntelligenceGate';
 import PremiumModal from './components/PremiumModal';
 import SubscriptionExpiryReminderModal from './components/SubscriptionExpiryReminderModal';
 import HomeExpiryFloatingBanner from './components/HomeExpiryFloatingBanner';
@@ -46,6 +47,7 @@ import GlobalPaymentModalGate from './components/GlobalPaymentModalGate';
 import AkauntiYanguScreen from './screens/AkauntiYanguScreen';
 import ChannelPlayerScreen from './screens/ChannelPlayerScreen';
 import { OsmaniAppProvider, useOsmaniApp } from './context/OsmaniAppContext';
+import { DeviceIntelligenceProvider, useDeviceIntelligence } from './context/DeviceIntelligenceContext';
 import { SecurityProvider, useSecurity } from './context/SecurityContext';
 import {
   ModalSheetCoordinatorProvider,
@@ -285,6 +287,7 @@ function ChannelCatalogScreen({
     premiumPlaybackReady,
   } = useOsmaniApp();
   const security = useSecurity();
+  const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [expiryReminderVisible, setExpiryReminderVisible] = useState(false);
@@ -368,12 +371,19 @@ function ChannelCatalogScreen({
     if (!enableHomeExpiryReminder) return;
     if (route?.params?.openPremiumAfterExpiry === true) {
       void (async () => {
+        if (guardDeviceIntelligence().ok === false) return;
         await awaitPremiumAccessSnapshot?.();
         setPremiumModalVisible(true);
       })();
       navigation.setParams({ openPremiumAfterExpiry: false });
     }
-  }, [enableHomeExpiryReminder, navigation, route?.params?.openPremiumAfterExpiry, awaitPremiumAccessSnapshot]);
+  }, [
+    enableHomeExpiryReminder,
+    navigation,
+    route?.params?.openPremiumAfterExpiry,
+    awaitPremiumAccessSnapshot,
+    guardDeviceIntelligence,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -804,8 +814,9 @@ function ChannelCatalogScreen({
   }, [syncPendingGiftBlocking]);
 
   const openPremiumModal = useCallback(() => {
+    if (guardDeviceIntelligence().ok === false) return;
     setPremiumModalVisible(true);
-  }, []);
+  }, [guardDeviceIntelligence]);
 
   const onRenewFromExpiryReminder = useCallback(() => {
     setExpiryReminderVisible(false);
@@ -930,6 +941,7 @@ function ChannelCatalogScreen({
 
   const handleCardPress = useCallback(
     async (item) => {
+      if (guardDeviceIntelligence().ok === false) return;
       if (isOffline) {
         setOfflineModalVisible(true);
         return;
@@ -953,6 +965,7 @@ function ChannelCatalogScreen({
       premiumPlaybackReady,
       awaitPremiumAccessSnapshot,
       isOffline,
+      guardDeviceIntelligence,
     ],
   );
 
@@ -1580,8 +1593,9 @@ export default function App() {
     <SafeAreaProvider style={styles.appRoot}>
       <StatusBar style="light" backgroundColor="#000000" />
       <OsmaniAppProvider>
-        <SecurityProvider>
-          <ModalSheetCoordinatorProvider>
+        <DeviceIntelligenceProvider>
+          <SecurityProvider>
+            <ModalSheetCoordinatorProvider>
             <NavigationContainer
               ref={navigationRef}
               linking={osmaniLinking}
@@ -1611,6 +1625,7 @@ export default function App() {
               />
             </NavigationContainer>
             <GlobalEmergencyGate />
+            <DeviceIntelligenceGate />
             <WhatsAppFloatingButtonGate
               navigationRef={navigationRef}
               navigationRevision={navigationRevision}
@@ -1620,8 +1635,9 @@ export default function App() {
             <OtaDebugOverlay />
             <SubscriptionLifecycleGates />
             <GlobalPaymentModalGate />
-          </ModalSheetCoordinatorProvider>
-        </SecurityProvider>
+            </ModalSheetCoordinatorProvider>
+          </SecurityProvider>
+        </DeviceIntelligenceProvider>
       </OsmaniAppProvider>
     </SafeAreaProvider>
   );
