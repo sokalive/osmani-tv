@@ -21,6 +21,12 @@ function assertContains(rel, needle, label) {
 }
 
 assertContains('api/usersIntelligence.js', 'registerDeviceIntelligence', 'register API');
+assertContains('api/usersIntelligence.js', '/api/users-intelligence/register', 'production register path');
+assertContains('api/usersIntelligence.js', 'registry?.blocked', 'registry blocked parse');
+assertContains('lib/deviceIntelligencePayload.js', 'device_id', 'device_id in payload');
+assertContains('context/DeviceIntelligenceContext.jsx', '15 * 1000', '15s access poll');
+assertContains('lib/adminSseRefreshEvents.js', 'device_blocked', 'SSE block event');
+assertContains('screens/ChannelPlayerScreen.js', 'device_intelligence_blocked', 'player teardown on block');
 assertContains('lib/deviceIntelligencePayload.js', 'device_fingerprint', 'fingerprint field');
 assertContains('lib/deviceIntelligencePayload.js', 'android_id', 'android id field');
 assertContains('api/usersIntelligence.js', 'last_seen', 'last seen field');

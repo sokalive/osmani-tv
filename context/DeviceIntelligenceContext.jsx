@@ -12,12 +12,15 @@ import {
   readDeviceIntelligenceLastStatus,
   registerDeviceIntelligence,
 } from '../api/usersIntelligence';
+import { DEVICE_INTELLIGENCE_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import {
   assertDeviceIntelligenceAllowed,
   setDeviceIntelligenceAccessState,
 } from '../lib/deviceIntelligenceAccess';
+import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 
-const POLL_MS = 90 * 1000;
+/** Active-session access check interval while app is foregrounded. */
+const POLL_MS = 15 * 1000;
 
 const DeviceIntelligenceContext = createContext(null);
 
@@ -28,6 +31,7 @@ export function DeviceIntelligenceProvider({ children }) {
   const [ready, setReady] = useState(false);
   const pollTimerRef = useRef(null);
   const runningRef = useRef(false);
+  const blockedRef = useRef(false);
 
   const showBlockedModal = useCallback(() => {
     setBlockedModalVisible(true);
@@ -41,6 +45,19 @@ export function DeviceIntelligenceProvider({ children }) {
     setUnblockModalVisible(false);
   }, []);
 
+  const applyBlockedState = useCallback((nextBlocked, { showModal = true } = {}) => {
+    const wasBlocked = blockedRef.current;
+    blockedRef.current = nextBlocked;
+    setBlocked(nextBlocked);
+    if (nextBlocked) {
+      setUnblockModalVisible(false);
+      if (showModal) setBlockedModalVisible(true);
+      return;
+    }
+    setBlockedModalVisible(false);
+    if (wasBlocked) setUnblockModalVisible(true);
+  }, []);
+
   useEffect(() => {
     setDeviceIntelligenceAccessState({ blocked, showBlockedModal });
   }, [blocked, showBlockedModal]);
@@ -51,27 +68,22 @@ export function DeviceIntelligenceProvider({ children }) {
     try {
       const prev = await readDeviceIntelligenceLastStatus();
       const result = await registerDeviceIntelligence();
-      if (result.status === 'blocked') {
-        setBlocked(true);
-        setBlockedModalVisible(true);
-        setUnblockModalVisible(false);
+      if (result.status === 'blocked' || result.blocked === true) {
+        applyBlockedState(true, { showModal: true });
         return;
       }
       if (result.status === 'active') {
-        setBlocked(false);
-        setBlockedModalVisible(false);
-        if (prev === 'blocked') setUnblockModalVisible(true);
+        applyBlockedState(false);
         return;
       }
       if (!result.ok && prev === 'blocked') {
-        setBlocked(true);
-        setBlockedModalVisible(true);
+        applyBlockedState(true, { showModal: true });
       }
     } finally {
       runningRef.current = false;
       setReady(true);
     }
-  }, []);
+  }, [applyBlockedState]);
 
   useEffect(() => {
     void refresh();
@@ -84,6 +96,17 @@ export function DeviceIntelligenceProvider({ children }) {
     return () => {
       sub.remove();
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, [refresh]);
+
+  useEffect(() => {
+    const unsubs = DEVICE_INTELLIGENCE_SSE_EVENTS.map((eventName) =>
+      subscribeRealtimeEvent(eventName, () => {
+        void refresh();
+      }),
+    );
+    return () => {
+      for (const off of unsubs) off();
     };
   }, [refresh]);
 

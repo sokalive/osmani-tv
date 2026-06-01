@@ -43,6 +43,7 @@ import {
   SecurityPlayerBanner,
 } from '../components/SecurityPlaybackGate';
 import TrialWatchOverlay from '../components/TrialWatchOverlay';
+import { useDeviceIntelligence } from '../context/DeviceIntelligenceContext';
 import { usePlaybackSecurityGate, useSecurity } from '../context/SecurityContext';
 import { PLAYER_SECURITY_POLL_MS } from '../lib/security/constants';
 import { useTrialWatchSession } from '../hooks/useTrialWatchSession';
@@ -166,6 +167,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     requestPaymentModal,
   } = useOsmaniApp();
   const security = useSecurity();
+  const { blocked: deviceIntelligenceBlocked } = useDeviceIntelligence();
   const playbackSecurity = usePlaybackSecurityGate();
   const channel = liveChannel ?? initialChannel;
   const channelIsPremium = channelIsPremiumAccess(channel, { freeMode });
@@ -454,6 +456,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const pingTimerRef = useRef(null);
   const stopSentRef = useRef(false);
   const emergencyInterruptOnceRef = useRef(false);
+  const deviceIntelInterruptOnceRef = useRef(false);
   /** True after hard expiry: no Video/WebView surfaces (buffers cleared by unmount). */
   const [playbackSuppressed, setPlaybackSuppressed] = useState(false);
   const hardWallClockExpiryDoneRef = useRef(false);
@@ -739,6 +742,28 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       }
     })();
   }, [emergencyMode, navigation, runPlaybackTeardown]);
+
+  // Users Intelligence block: stop playback, exit player, return Home (block modal is global).
+  useEffect(() => {
+    if (!deviceIntelligenceBlocked) {
+      deviceIntelInterruptOnceRef.current = false;
+      return;
+    }
+    if (deviceIntelInterruptOnceRef.current) return;
+    deviceIntelInterruptOnceRef.current = true;
+    console.log('[player][device-intel] interrupt_stop_playback');
+    (async () => {
+      await runPlaybackTeardown('device_intelligence_blocked');
+      allowNavigationRemoveRef.current = true;
+      try {
+        navigation.navigate('MainTabs', { screen: 'Home' });
+      } catch {
+        try {
+          navigation.goBack();
+        } catch {}
+      }
+    })();
+  }, [deviceIntelligenceBlocked, navigation, runPlaybackTeardown]);
 
   // Realtime stream/channel updates from live app catalog.
   useEffect(() => {
