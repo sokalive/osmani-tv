@@ -272,6 +272,7 @@ function ChannelCatalogScreen({
     serverHealth,
     loading,
     error,
+    isOffline,
     refresh,
     isSubscribed,
     subscriptionExpiresAt,
@@ -290,11 +291,13 @@ function ChannelCatalogScreen({
   const [expiryReminderRemainingMs, setExpiryReminderRemainingMs] = useState(0);
   const [homeFloaterVisible, setHomeFloaterVisible] = useState(false);
   const [manualGiftVisible, setManualGiftVisible] = useState(false);
+  const [offlineModalVisible, setOfflineModalVisible] = useState(false);
   const [manualGiftAckBusy, setManualGiftAckBusy] = useState(false);
   const [manualGiftAckLoaded, setManualGiftAckLoaded] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [bannerVisibilityClock, setBannerVisibilityClock] = useState(() => Date.now());
+  const wasOfflineRef = useRef(false);
 
   /** Once per mount: log real API shape + derived section (production-safe diagnostic). */
   const catalogShapeLoggedRef = useRef(false);
@@ -872,19 +875,27 @@ function ChannelCatalogScreen({
   }, [rawBanners, bannerVisibilityClock]);
 
   const onPullRefresh = useCallback(async () => {
+    if (isOffline) {
+      setOfflineModalVisible(true);
+      return;
+    }
     setPullRefreshing(true);
     try {
-      await refresh({ showGlobalLoading: false, forceNetwork: true });
+      await refresh({ showGlobalLoading: false, forceNetwork: true, preserveDataOnError: true });
     } finally {
       setPullRefreshing(false);
     }
-  }, [refresh]);
+  }, [isOffline, refresh]);
 
   const handleRefresh = useCallback(() => {
+    if (isOffline) {
+      setOfflineModalVisible(true);
+      return;
+    }
     setSelectedFilter('Zote');
     setRefreshKey((k) => k + 1);
-    refresh({ showGlobalLoading: false, forceNetwork: true });
-  }, [refresh]);
+    refresh({ showGlobalLoading: false, forceNetwork: true, preserveDataOnError: true });
+  }, [isOffline, refresh]);
 
   const onBannerEmergency = useCallback(() => {
     requestEmergencyModal();
@@ -919,6 +930,10 @@ function ChannelCatalogScreen({
 
   const handleCardPress = useCallback(
     async (item) => {
+      if (isOffline) {
+        setOfflineModalVisible(true);
+        return;
+      }
       if (maintenanceMode) return;
       if (emergencyMode) {
         requestEmergencyModal();
@@ -937,8 +952,20 @@ function ChannelCatalogScreen({
       freeMode,
       premiumPlaybackReady,
       awaitPremiumAccessSnapshot,
+      isOffline,
     ],
   );
+
+  useEffect(() => {
+    if (isOffline) {
+      wasOfflineRef.current = true;
+      return;
+    }
+    if (wasOfflineRef.current) {
+      wasOfflineRef.current = false;
+      void refresh({ showGlobalLoading: false, preserveDataOnError: true });
+    }
+  }, [isOffline, refresh]);
 
   const renderCard = ({ item }) => {
     return (
@@ -1137,7 +1164,15 @@ function ChannelCatalogScreen({
             <Text style={styles.channelsStatusText}>Inapakia chaneli…</Text>
           </View>
         ) : null}
-        {error && !channelsPendingInitialLoad ? (
+        {isOffline ? (
+          <View style={styles.offlineBanner}>
+            <Ionicons name="cloud-offline-outline" size={16} color="#FBBF24" />
+            <Text style={styles.offlineBannerText}>
+              Hakuna muunganisho wa intaneti. Baadhi ya taarifa zinaweza kuwa za zamani.
+            </Text>
+          </View>
+        ) : null}
+        {error && !channelsPendingInitialLoad && !isOffline ? (
           <Text style={styles.channelsErrorText}>{error}</Text>
         ) : null}
 
@@ -1186,9 +1221,11 @@ function ChannelCatalogScreen({
             <Text style={styles.sectionTitle}>
               {catalogGridSectionTitle(navigatorTabKey, selectedFilter)}
             </Text>
-            <View style={styles.countBadge}>
-              <Text style={styles.countBadgeText}>{displayChannels.length}</Text>
-            </View>
+            {!isOffline || displayChannels.length > 0 ? (
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>{displayChannels.length}</Text>
+              </View>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -1228,8 +1265,11 @@ function ChannelCatalogScreen({
         </View>
       );
     }
+    if (isOffline) {
+      return <Text style={styles.channelsEmptyText}>Unganisha intaneti kuendelea kupata taarifa mpya.</Text>;
+    }
     return <Text style={styles.channelsEmptyText}>Hakuna chaneli bado.</Text>;
-  }, [channelsPendingInitialLoad, maintenanceMode]);
+  }, [channelsPendingInitialLoad, maintenanceMode, isOffline]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }} edges={['top']}>
@@ -1292,6 +1332,25 @@ function ChannelCatalogScreen({
           onCancel={dismissExpiryReminder}
         />
       ) : null}
+      <EmergencyModal
+        visible={offlineModalVisible}
+        title="Hakuna Muunganisho wa Intaneti"
+        message="Haujaunganishwa kwenye intaneti. Tafadhali washa data au Wi-Fi kisha ujaribu tena."
+        iconName="cloud-offline"
+        primaryLabel="Jaribu Tena"
+        secondaryLabel="Funga"
+        onSawa={() => {
+          if (isOffline) {
+            setOfflineModalVisible(false);
+            return;
+          }
+          setOfflineModalVisible(false);
+          setSelectedFilter('Zote');
+          setRefreshKey((k) => k + 1);
+          void refresh({ showGlobalLoading: false, forceNetwork: true, preserveDataOnError: true });
+        }}
+        onSecondary={() => setOfflineModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -1775,6 +1834,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 12,
     paddingHorizontal: 2,
+  },
+  offlineBanner: {
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(251,191,36,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.35)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  offlineBannerText: {
+    color: '#FDE68A',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 18,
   },
   /** Fills channel region below header when grid is hidden (maintenance). */
   maintenanceChannelArea: {

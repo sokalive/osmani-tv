@@ -5,15 +5,33 @@ import { Ionicons } from '@expo/vector-icons';
 const MESSAGE =
   'Hitilafu imetokea. Timu yetu ya ufundi inaishughulikia. Tafadhali jaribu tena baadaye.';
 
-export default function EmergencyModal({ visible, onSawa }) {
+export default function EmergencyModal({
+  visible,
+  onSawa,
+  title = 'Taarifa',
+  message = MESSAGE,
+  iconName = 'warning',
+  primaryLabel = 'Sawa',
+  secondaryLabel = '',
+  onSecondary,
+}) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onSawa}>
       <View style={styles.backdrop}>
         <View style={styles.card}>
-          <Ionicons name="warning" size={52} color="#EF4444" style={styles.icon} />
-          <Text style={styles.message}>{MESSAGE}</Text>
+          <Ionicons name={iconName} size={52} color="#EF4444" style={styles.icon} />
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.message}>{message}</Text>
+          {secondaryLabel ? (
+            <Pressable
+              style={({ pressed }) => [styles.secondaryButton, pressed && styles.buttonPressed]}
+              onPress={onSecondary || onSawa}
+            >
+              <Text style={styles.secondaryButtonLabel}>{secondaryLabel}</Text>
+            </Pressable>
+          ) : null}
           <Pressable style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]} onPress={onSawa}>
-            <Text style={styles.buttonLabel}>Sawa</Text>
+            <Text style={styles.buttonLabel}>{primaryLabel}</Text>
           </Pressable>
         </View>
       </View>
@@ -41,7 +59,13 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(239,68,68,0.35)',
   },
   icon: {
-    marginBottom: 18,
+    marginBottom: 10,
+  },
+  title: {
+    color: '#F9FAFB',
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 10,
   },
   message: {
     color: '#F3F4F6',
@@ -49,6 +73,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     lineHeight: 24,
+  },
+  secondaryButton: {
+    marginTop: 16,
+    minWidth: 160,
+    paddingVertical: 13,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.5)',
+    alignItems: 'center',
+    backgroundColor: 'rgba(30,41,59,0.35)',
+  },
+  secondaryButtonLabel: {
+    color: '#E5E7EB',
+    fontSize: 15,
+    fontWeight: '800',
   },
   button: {
     marginTop: 26,

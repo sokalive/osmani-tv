@@ -21,6 +21,7 @@ import {
   readBannersCache,
   writeBannersCache,
 } from '../lib/bannersCache';
+import { readChannelsCache, writeChannelsCache } from '../lib/channelsCache';
 import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
@@ -41,6 +42,17 @@ const LIVE_SYNC_BASE_MS = 30000;
 const LIVE_SYNC_MAX_MS = 120000;
 /** Admin flags poll while foreground; SSE is primary — conservative interval for cost. */
 const SETTINGS_POLL_MS = 10000;
+
+function isLikelyOfflineError(errorLike) {
+  const msg = String(errorLike?.message ?? errorLike ?? '').toLowerCase();
+  return (
+    msg.includes('network request failed') ||
+    msg.includes('networkerror') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('internet') ||
+    msg.includes('offline')
+  );
+}
 
 const OsmaniAppContext = createContext(null);
 
@@ -87,6 +99,7 @@ export function OsmaniAppProvider({ children }) {
   const [rawBanners, setRawBanners] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isOffline, setIsOffline] = useState(false);
   const [serverHealth, setServerHealth] = useState(null);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState(null);
@@ -303,6 +316,10 @@ export function OsmaniAppProvider({ children }) {
     let cancelled = false;
     (async () => {
       await dropLegacyBannersCache();
+      const cachedChannels = await readChannelsCache();
+      if (!cancelled && cachedChannels?.channels?.length) {
+        setRawChannels(sortChannelsByAdminOrder(cachedChannels.channels));
+      }
       const cached = await readBannersCache();
       if (cancelled || !cached?.banners?.length) return;
       const enriched = enrichBannersForViewer(cached.banners);
@@ -371,7 +388,7 @@ export function OsmaniAppProvider({ children }) {
 
   const refresh = useCallback(async (opts = {}) => {
     const showGlobalLoading = opts.showGlobalLoading !== false;
-    const preserveDataOnError = opts.preserveDataOnError === true;
+    const preserveDataOnError = opts.preserveDataOnError !== false;
     const skipSettingsFromHttp = opts.skipSettingsFromHttp === true;
     const forceNetwork = opts.forceNetwork === true;
     const catalogOpts = forceNetwork ? { force: true } : {};
@@ -412,16 +429,24 @@ export function OsmaniAppProvider({ children }) {
         trialWatchSettingsRef.current = TRIAL_WATCH_FAIL_CLOSED;
         setTrialWatchSettings(TRIAL_WATCH_FAIL_CLOSED);
       }
-      setRawChannels(sortChannelsByAdminOrder(Array.isArray(list) ? list : []));
+      const nextChannels = sortChannelsByAdminOrder(Array.isArray(list) ? list : []);
+      setRawChannels(nextChannels);
+      await writeChannelsCache(nextChannels);
       const nextBanners = Array.isArray(bannersResult) ? bannersResult : null;
       setRawBanners((prev) => (nextBanners != null ? nextBanners : prev));
+      setIsOffline(false);
       if (nextBanners != null) {
         await dropLegacyBannersCache();
         await writeBannersCache(nextBanners);
         logBannerRuntimeDiagnostics(nextBanners);
       }
     } catch (e) {
-      setError(e?.message ?? 'Failed to load');
+      if (isLikelyOfflineError(e)) {
+        setIsOffline(true);
+        setError(null);
+      } else {
+        setError(e?.message ?? 'Failed to load');
+      }
       if (!preserveDataOnError) {
         setRawChannels([]);
       }
@@ -835,6 +860,7 @@ export function OsmaniAppProvider({ children }) {
       serverHealth,
       loading,
       error,
+      isOffline,
       refresh,
       refreshSettingsOnly,
       isSubscribed,
@@ -879,6 +905,7 @@ export function OsmaniAppProvider({ children }) {
       serverHealth,
       loading,
       error,
+      isOffline,
       refresh,
       refreshSettingsOnly,
       isSubscribed,
