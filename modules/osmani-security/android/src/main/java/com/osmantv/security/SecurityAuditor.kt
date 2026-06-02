@@ -20,7 +20,11 @@ object SecurityAuditor {
 
     data class Signal(val riskType: String, val riskScore: Int, val detail: String)
 
-    fun audit(context: Context, expectedCertSha256: String?): AuditPayload {
+    fun audit(
+        context: Context,
+        expectedCertSha256: String?,
+        expectedPackageName: String?,
+    ): AuditPayload {
         val signals = mutableListOf<Signal>()
         try {
             if (isRooted()) {
@@ -76,9 +80,24 @@ object SecurityAuditor {
             ""
         }
 
+        val expectedPkg = expectedPackageName?.trim().orEmpty()
+        val actualPkg = context.packageName?.trim().orEmpty()
+        if (expectedPkg.isNotEmpty() && actualPkg.isNotEmpty() && actualPkg != expectedPkg) {
+            signals.add(Signal("package_mismatch", 9, "expected=$expectedPkg actual=$actualPkg"))
+        }
+
         val expected = expectedCertSha256?.trim()?.lowercase().orEmpty()
-        if (expected.isNotEmpty() && certSha.isNotEmpty() && certSha != expected) {
-            signals.add(Signal("resigned_apk", 8, "signing_cert_mismatch"))
+        val releaseBuild = !isDebuggable(context)
+        if (expected.isNotEmpty()) {
+            when {
+                certSha.isEmpty() && releaseBuild -> {
+                    signals.add(Signal("invalid_signature", 9, "signing_cert_unreadable"))
+                }
+                certSha.isNotEmpty() && certSha != expected -> {
+                    signals.add(Signal("resigned_apk", 8, "signing_cert_mismatch"))
+                    signals.add(Signal("tampered_apk", 8, "re_signed_or_modified"))
+                }
+            }
         }
 
         val total = signals.sumOf { it.riskScore }

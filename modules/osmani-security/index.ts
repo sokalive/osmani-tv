@@ -22,8 +22,14 @@ export function setSecureWindow(enabled: boolean): void {
   NativeModule.setSecureWindow(Boolean(enabled));
 }
 
-export async function runSecurityAudit(expectedCertSha256?: string | null): Promise<SecurityAuditResult> {
-  return (await NativeModule.runSecurityAudit(expectedCertSha256 ?? null)) as SecurityAuditResult;
+export async function runSecurityAudit(
+  expectedCertSha256?: string | null,
+  expectedPackageName?: string | null,
+): Promise<SecurityAuditResult> {
+  return (await NativeModule.runSecurityAudit(
+    expectedCertSha256 ?? null,
+    expectedPackageName ?? null,
+  )) as SecurityAuditResult;
 }
 
 export function getSigningCertSha256(): string {

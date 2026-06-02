@@ -139,6 +139,16 @@ export async function reportSecurityDevice(args) {
     detected_at,
     details: {
       platform: Platform.OS,
+      device_id: deviceId,
+      device_fingerprint: deviceFingerprint,
+      integrity: {
+        expected_package: args?.details?.expected_package ?? null,
+        package_name: args?.details?.package_name ?? null,
+        package_matches: args?.details?.package_matches ?? null,
+        signing_cert_sha256: args?.details?.signing_cert_sha256 ?? null,
+        signing_cert_matches: args?.details?.signing_cert_matches ?? null,
+        expected_cert_configured: args?.details?.expected_cert_configured ?? null,
+      },
       ...(args?.details ?? {}),
     },
     app_version,

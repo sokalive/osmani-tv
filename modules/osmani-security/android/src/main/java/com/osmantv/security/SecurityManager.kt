@@ -35,7 +35,7 @@ class SecurityManager : Module() {
             }
         }
 
-        AsyncFunction("runSecurityAudit") { expectedCertSha256: String? ->
+        AsyncFunction("runSecurityAudit") { expectedCertSha256: String?, expectedPackageName: String? ->
             val ctx = appContext.reactContext
                 ?: return@AsyncFunction Bundle().apply {
                     putInt("total_score", 0)
@@ -46,7 +46,7 @@ class SecurityManager : Module() {
                     putParcelableArrayList("signals", arrayListOf())
                 }
 
-            val payload = SecurityAuditor.audit(ctx, expectedCertSha256)
+            val payload = SecurityAuditor.audit(ctx, expectedCertSha256, expectedPackageName)
             val info = try {
                 val flags = 0
                 ctx.packageManager.getPackageInfo(ctx.packageName, flags)

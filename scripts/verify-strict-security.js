@@ -42,6 +42,8 @@ const SWAHILI =
 
 assertContains('lib/security/constants.js', 'root_detected', 'threat types defined');
 assertContains('lib/security/constants.js', 'resigned_apk', 'resigned_apk threat');
+assertContains('lib/security/constants.js', 'package_mismatch', 'package_mismatch threat');
+assertContains('lib/security/constants.js', 'invalid_signature', 'invalid_signature threat');
 assertContains('lib/security/constants.js', SWAHILI, 'Swahili block message constant');
 assertContains('lib/security/riskEngine.js', 'hasThreatSignals', 'zero-tolerance uses hasThreatSignals');
 assertContains('lib/security/riskEngine.js', 'blockPlayback: true', 'block state defined');
@@ -79,6 +81,9 @@ const THREAT_SET = new Set([
   'debug_detected',
   'hook_detected',
   'resigned_apk',
+  'invalid_signature',
+  'package_mismatch',
+  'tampered_apk',
   'jailbreak_ios',
 ]);
 
