@@ -92,6 +92,16 @@ function resolveSubscriptionPaymentLabel(details) {
       p?.price ?? p?.amount ?? p?.Price ?? p?.Amount,
       p?.currency ?? p?.currency_code ?? p?.currencyCode ?? details.currency,
     );
+  const wantId = String(details.planId ?? details.plan_id ?? '').trim();
+  if (wantId) {
+    for (const p of plans) {
+      const id = String(p?.id ?? p?.plan_id ?? p?.planId ?? '').trim();
+      if (id && id === wantId) {
+        const fromPlan = pickFromPlan(p);
+        if (fromPlan) return fromPlan;
+      }
+    }
+  }
   const want = String(details.planName ?? '').trim().toLowerCase();
   if (want) {
     for (const p of plans) {

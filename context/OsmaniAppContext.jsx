@@ -189,6 +189,7 @@ export function OsmaniAppProvider({ children }) {
               amount: r.amount ?? null,
               currency: r.currency ?? null,
               planName: r.planName ?? null,
+              planId: r.planId ?? null,
               planDurationDays: r.planDurationDays ?? r.plan_duration_days ?? null,
               plan_duration_days: r.plan_duration_days ?? r.planDurationDays ?? null,
               startedAt: r.startedAt ?? null,

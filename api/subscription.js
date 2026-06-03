@@ -271,13 +271,92 @@ function pickAmountFromPlansCatalog(body) {
   return null;
 }
 
+function pickDurationFromPlanRow(planRow) {
+  if (!isPlainObject(planRow)) return null;
+  return pickNumber(
+    planRow.duration_days,
+    planRow.durationDays,
+    planRow.days,
+    planRow.plan_duration_days,
+    planRow.planDurationDays,
+  );
+}
+
+function pickDurationFromPlansCatalog(body) {
+  const plans = pickPlans(body);
+  if (!plans.length) return null;
+  const wantId = pickPlanId(body);
+  if (wantId) {
+    for (const p of plans) {
+      const id = String(p?.id ?? p?.plan_id ?? p?.planId ?? '').trim();
+      if (id && id === wantId) {
+        const days = pickDurationFromPlanRow(p);
+        if (days != null) return days;
+      }
+    }
+  }
+  const wantName = pickResolvablePlanName(body);
+  if (wantName) {
+    const norm = wantName.trim().toLowerCase();
+    for (const p of plans) {
+      const label = String(p?.name ?? p?.title ?? '').trim().toLowerCase();
+      if (label && label === norm) {
+        const days = pickDurationFromPlanRow(p);
+        if (days != null) return days;
+      }
+    }
+  }
+  if (plans.length === 1) {
+    const days = pickDurationFromPlanRow(plans[0]);
+    if (days != null) return days;
+  }
+  return null;
+}
+
+/** Canonical package duration from active subscription plan_id/name + plans catalog. */
+function pickPlanDurationDays(body) {
+  if (!isPlainObject(body)) return null;
+
+  const catalogDays = pickDurationFromPlansCatalog(body);
+  if (catalogDays != null) return catalogDays;
+
+  const nestedSub = pickDataSubscription(body);
+  const subRoot = isPlainObject(body.subscription) ? body.subscription : null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const plan = pickPlan(body);
+
+  return pickNumber(
+    plan?.duration_days,
+    plan?.durationDays,
+    plan?.days,
+    plan?.plan_duration_days,
+    plan?.planDurationDays,
+    nestedSub?.plan_duration_days,
+    nestedSub?.planDurationDays,
+    nestedSub?.duration_days,
+    subRoot?.plan_duration_days,
+    subRoot?.planDurationDays,
+    subRoot?.duration_days,
+    body.plan_duration_days,
+    body.planDurationDays,
+    data?.plan_duration_days,
+    data?.planDurationDays,
+    data?.duration_days,
+    data?.durationDays,
+    body.duration_days,
+    body.durationDays,
+  );
+}
+
 function pickAmount(body) {
   if (!isPlainObject(body)) return null;
-  const linkedPlanPrice = pickAmountFromLinkedPlan(body);
-  if (linkedPlanPrice != null) return linkedPlanPrice;
 
+  // Subscription plan_id/name + catalog beats stale embedded plan objects (common on admin grants).
   const catalogPrice = pickAmountFromPlansCatalog(body);
   if (catalogPrice != null) return catalogPrice;
+
+  const linkedPlanPrice = pickAmountFromLinkedPlan(body);
+  if (linkedPlanPrice != null) return linkedPlanPrice;
 
   const data = isPlainObject(body.data) ? body.data : null;
   const sub = isPlainObject(body.subscription) ? body.subscription : null;
@@ -576,27 +655,8 @@ function normalizeVerifyResponse(body, fallback = {}) {
     body.plan_name ??
     body.planName ??
     null;
-  const planDurationDays = pickNumber(
-    plan?.duration_days,
-    plan?.durationDays,
-    plan?.days,
-    plan?.plan_duration_days,
-    plan?.planDurationDays,
-    nestedSub?.plan_duration_days,
-    nestedSub?.planDurationDays,
-    nestedSub?.duration_days,
-    subRoot?.plan_duration_days,
-    subRoot?.planDurationDays,
-    subRoot?.duration_days,
-    body.plan_duration_days,
-    body.planDurationDays,
-    data?.plan_duration_days,
-    data?.planDurationDays,
-    data?.duration_days,
-    data?.durationDays,
-    body.duration_days,
-    body.durationDays,
-  );
+  const planDurationDays = pickPlanDurationDays(body);
+  const planId = pickPlanId(body);
   return {
     active: pickActive(body),
     expiresAt: pickExpiresAt(body),
@@ -605,6 +665,7 @@ function normalizeVerifyResponse(body, fallback = {}) {
     amount: pickAmount(body),
     currency: pickCurrency(body),
     planName: planName != null ? String(planName) : null,
+    planId: planId != null ? String(planId) : null,
     planDurationDays,
     plan_duration_days: planDurationDays,
     plans: pickPlans(body),
