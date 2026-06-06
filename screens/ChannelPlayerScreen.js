@@ -26,9 +26,7 @@ import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
 import { buildPlaybackRequestHeaders } from '../lib/authorizedPackageName';
-import { pickPlaybackRoute } from '../lib/playbackRoute';
 import {
-  buildChromeWebViewSource,
   CHROME_WEBVIEW_PROPS,
   resolveChromeUserAgent,
 } from '../lib/chromePlayerWebView';
@@ -68,6 +66,35 @@ import {
 } from '../lib/playerTeardown';
 import { playbackStreamIdentity } from '../lib/playbackStreamIdentity';
 import { fetchNativeHlsManifestTracksForPlayback } from '../lib/nativeHlsManifestTracks';
+
+/**
+ * Pick a playback engine (stable routing from e196fff + chrome-only branch).
+ *   HLS (.m3u8)     → native (Exo) by default; webview → hls-webview; chrome → chrome-webview
+ *   .mp4/.ts/.mts  → native; chrome → chrome-webview
+ *   player.php etc → embed-webview; chrome → chrome-webview
+ */
+function pickPlaybackRoute(url, playerTypeNorm) {
+  const s = String(url ?? '');
+  if (!s.trim()) {
+    return playerTypeNorm === 'chrome' ? 'chrome-webview' : 'embed-webview';
+  }
+  const lower = s.split(/[#?]/)[0].toLowerCase();
+  if (looksLikeHlsPlaybackUri(s)) {
+    if (playerTypeNorm === 'webview') return 'hls-webview';
+    if (playerTypeNorm === 'chrome') return 'chrome-webview';
+    return 'native';
+  }
+  if (/\.mp4$/i.test(lower)) {
+    if (playerTypeNorm === 'chrome') return 'chrome-webview';
+    return 'native';
+  }
+  if (/\.(?:m2ts|mts|ts)$/i.test(lower)) {
+    if (playerTypeNorm === 'chrome') return 'chrome-webview';
+    return 'native';
+  }
+  if (playerTypeNorm === 'chrome') return 'chrome-webview';
+  return 'embed-webview';
+}
 
 function baseUrlFromUrl(url) {
   try {
@@ -203,7 +230,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     recovering: false,
   });
   const uri = streams[currentUrlIndex];
-  const headers = useMemo(() => buildPlaybackRequestHeaders(channel), [channel]);
+  /** Stream headers for native sidecar fetch + direct media (no package headers on HLS manifest). */
+  const headers = useMemo(
+    () => ({
+      ...(channel?.referer && { Referer: channel.referer }),
+      ...(channel?.origin && { Origin: channel.origin }),
+      ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
+    }),
+    [channel?.referer, channel?.origin, channel?.userAgent],
+  );
+  /** WebView/Chrome page load headers (includes authorizedPackageName when configured). */
+  const webPlaybackHeaders = useMemo(() => buildPlaybackRequestHeaders(channel), [channel]);
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
   const streamIdentity = useMemo(() => playbackStreamIdentity(channel), [channel]);
   const playbackRoute = useMemo(
@@ -287,17 +324,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
    */
   const nativeVideoSource = useMemo(() => {
     if (!useNativePlayer || !uri) return null;
-    const headerEntries = Object.entries(headers).filter(([, v]) => v != null && String(v).trim() !== '');
-    const playbackHeaders = headerEntries.length ? Object.fromEntries(headerEntries) : undefined;
     if (looksLikeHlsPlaybackUri(uri)) {
       const u = hlsManifestUrl || uri;
       return {
         uri: u,
         overrideFileExtensionAndroid: 'm3u8',
-        ...(playbackHeaders ? { headers: playbackHeaders } : {}),
       };
     }
-    return { uri, ...(playbackHeaders ? { headers: playbackHeaders } : {}) };
+    return { uri, headers };
   }, [useNativePlayer, uri, hlsManifestUrl, headers]);
 
   const hlsWebViewSource = useMemo(() => {
@@ -314,14 +348,22 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   /** Plain WebView source for player.php / embed/iframe HTML pages. Headers as-is. */
   const embedWebViewSource = useMemo(() => {
     if (!useEmbedWebView) return null;
-    return buildChromeWebViewSource(uri, headers);
-  }, [useEmbedWebView, uri, headers]);
+    const hEntries = Object.entries(webPlaybackHeaders).filter(
+      ([, v]) => v != null && String(v).trim() !== '',
+    );
+    if (!hEntries.length) return { uri };
+    return { uri, headers: Object.fromEntries(hEntries) };
+  }, [useEmbedWebView, uri, webPlaybackHeaders]);
 
   /** Chromium WebView for admin playerType=chrome (Mpingo embed pages, full browser features). */
   const chromeWebViewSource = useMemo(() => {
     if (!useChromeWebView) return null;
-    return buildChromeWebViewSource(uri, headers);
-  }, [useChromeWebView, uri, headers]);
+    const hEntries = Object.entries(webPlaybackHeaders).filter(
+      ([, v]) => v != null && String(v).trim() !== '',
+    );
+    if (!hEntries.length) return { uri };
+    return { uri, headers: Object.fromEntries(hEntries) };
+  }, [useChromeWebView, uri, webPlaybackHeaders]);
 
   const chromeUserAgent = useMemo(
     () => resolveChromeUserAgent(channel?.userAgent ?? channel?.user_agent),

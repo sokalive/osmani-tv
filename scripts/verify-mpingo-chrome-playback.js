@@ -123,9 +123,10 @@ section('authorizedPackageName', () => {
   assert(bootstrap.includes('com.test.pkg'));
   pass('authorizedPackageName', 'embed bootstrap injects package into page');
 
+  assert(playerSrc.includes('webPlaybackHeaders'));
   assert(playerSrc.includes('buildPlaybackRequestHeaders'));
   assert(playerSrc.includes('buildEmbedPageBootstrapJs({'));
-  pass('authorizedPackageName', 'ChannelPlayerScreen uses playback headers + bootstrap');
+  pass('authorizedPackageName', 'package headers scoped to WebView/Chrome surfaces only');
 });
 
 section('playerType normalization', () => {
@@ -194,9 +195,8 @@ section('Chrome player routing', () => {
   assert(playerSrc.includes('chromeWebRef'));
   pass('Chrome', 'ChannelPlayerScreen renders dedicated Chrome WebView');
 
-  assert(!playerSrc.includes('function pickPlaybackRoute('));
-  assert(playerSrc.includes("from '../lib/playbackRoute'"));
-  pass('Chrome', 'pickPlaybackRoute centralized in lib/playbackRoute.js');
+  assert(!playerSrc.includes("from '../lib/playbackRoute'"));
+  pass('Chrome', 'pickPlaybackRoute inline in ChannelPlayerScreen (stable e196fff base)');
 });
 
 section('catalog + identity', () => {
@@ -240,6 +240,10 @@ section('screen wiring sanity', () => {
     fail('screen', 'legacy pickOsmaniPlaybackRoute must not return');
   } else pass('screen', 'no pickOsmaniPlaybackRoute');
 
+  if (!playerSrc.includes('function pickPlaybackRoute(')) {
+    fail('screen', 'pickPlaybackRoute must be inline in ChannelPlayerScreen');
+  } else pass('screen', 'pickPlaybackRoute inline');
+
   if (!playerSrc.includes('useNativePlayer')) fail('screen', 'native path missing');
   else pass('screen', 'native Exo path present');
 
@@ -248,6 +252,14 @@ section('screen wiring sanity', () => {
 
   if (!playerSrc.includes('useEmbedWebView')) fail('screen', 'embed-webview path missing');
   else pass('screen', 'embed-webview path present');
+
+  if (!playerSrc.includes('useChromeWebView')) fail('screen', 'chrome-webview path missing');
+  else pass('screen', 'chrome-webview path present');
+
+  const hlsNativeSourceBlock = playerSrc.match(/if \(looksLikeHlsPlaybackUri\(uri\)\) \{[\s\S]*?\n    \}/);
+  if (hlsNativeSourceBlock && /\bheaders\b/.test(hlsNativeSourceBlock[0])) {
+    fail('screen', 'native HLS must not pass headers to Exo source');
+  } else pass('screen', 'native HLS Exo source has no headers');
 });
 
 console.log('\n=== REGRESSION REPORT ===');

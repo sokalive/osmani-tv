@@ -19,13 +19,12 @@ function fail(label, detail) {
   process.exitCode = 1;
 }
 
-if (player.includes('function pickPlaybackRoute(')) {
-  fail('pickPlaybackRoute must live in lib/playbackRoute.js');
-} else pass('pickPlaybackRoute moved to lib/playbackRoute.js');
+if (player.includes('function pickPlaybackRoute(')) pass('pickPlaybackRoute inline in ChannelPlayerScreen');
+else fail('pickPlaybackRoute must be inline in ChannelPlayerScreen');
 
 if (!fs.existsSync(path.join(root, 'lib/playbackRoute.js'))) {
   fail('lib/playbackRoute.js missing');
-} else pass('playbackRoute.js present');
+} else pass('playbackRoute.js present for verify scripts');
 
 if (player.includes('pickOsmaniPlaybackRoute')) fail('broken pickOsmaniPlaybackRoute still referenced');
 else pass('pickOsmaniPlaybackRoute removed');
