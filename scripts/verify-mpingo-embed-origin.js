@@ -46,8 +46,8 @@ else pass('embed load start diagnostic logging');
 if (!playerSrc.includes('onNavigationStateChange')) fail('embed navigation logging');
 else pass('embed navigation logging');
 
-if (!streamSrc.includes('resolveProviderEmbedPageUrl(candidate)')) fail('finalizePlaybackPlan unwraps embed');
-else pass('finalizePlaybackPlan unwraps embed');
+if (!streamSrc.includes('embedFromRaw')) fail('finalizePlaybackPlan embed from rawUrl only');
+else pass('finalizePlaybackPlan embed from rawUrl only');
 
 if (!hlsSrc.includes('isProviderEmbedPageUrl(s)) return false')) fail('HLS detection excludes embed pages');
 else pass('HLS detection excludes embed pages');

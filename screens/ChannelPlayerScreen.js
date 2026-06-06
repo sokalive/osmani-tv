@@ -37,7 +37,8 @@ import { devLog } from '../lib/devLog';
 import { STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
 import { buildEmbedBridgeJs, buildEmbedPageBootstrapJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
-import { isProviderEmbedPageUrl, resolveProviderEmbedPageUrl } from '../lib/embedPlaybackUrl';
+import { resolveProviderEmbedPageUrl } from '../lib/embedPlaybackUrl';
+import { pickPlaybackRoute } from '../lib/playbackRoute';
 import { getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
 import {
   SecurityPlaybackBlock,
@@ -62,27 +63,6 @@ import {
 } from '../lib/playerTeardown';
 import { playbackStreamIdentity } from '../lib/playbackStreamIdentity';
 import { fetchNativeHlsManifestTracksForPlayback } from '../lib/nativeHlsManifestTracks';
-
-/**
- * Pick a playback engine:
- *   HLS (.m3u8)     → 'native' by default (expo-av / ExoPlayer + stream-proxy manifest URL)
- *                    Admin may force 'hls-webview' when playerType is `webview`.
- *   .mp4/.ts/.mts  → 'native' (expo-av direct)
- *   anything else  → 'embed-webview' (player.php / iframe pages)
- */
-function pickPlaybackRoute(url, playerTypeNorm) {
-  const s = String(url ?? '');
-  if (!s.trim()) return 'embed-webview';
-  if (isProviderEmbedPageUrl(s)) return 'embed-webview';
-  const lower = s.split(/[#?]/)[0].toLowerCase();
-  if (looksLikeHlsPlaybackUri(s)) {
-    if (playerTypeNorm === 'webview') return 'hls-webview';
-    return 'native';
-  }
-  if (/\.mp4$/i.test(lower)) return 'native';
-  if (/\.(?:m2ts|mts|ts)$/i.test(lower)) return 'native';
-  return 'embed-webview';
-}
 
 function baseUrlFromUrl(url) {
   try {
