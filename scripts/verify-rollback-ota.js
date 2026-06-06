@@ -38,9 +38,13 @@ const player = fs.readFileSync(
   path.join(__dirname, '..', 'screens/ChannelPlayerScreen.js'),
   'utf8',
 );
-if (player.includes('chromePlayerWebView') || player.includes('authorizedPackageName')) {
-  fail('Chrome player / authorizedPackageName must not be present after rollback');
-} else pass('no Chrome player / authorizedPackageName in player screen');
+if (!player.includes('CHROME_WEBVIEW_PROPS')) {
+  fail('ChannelPlayerScreen must include Mpingo Chrome WebView props');
+} else pass('Mpingo Chrome WebView props present in player screen');
+
+if (player.includes('authorizedPackageName')) {
+  fail('authorizedPackageName must not be present');
+} else pass('no authorizedPackageName in player screen');
 
 if (player.includes('overrideFileExtensionAndroid: \'m3u8\'')) {
   pass('native HLS uses m3u8 extension hint (e196fff-style Exo source)');
