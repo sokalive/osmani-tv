@@ -120,8 +120,8 @@ function looksLikeHls(uri) {
 
 function pickRoute(url, pt) {
   const s = String(url ?? '').trim();
-  if (!s) return pt === 'chrome' ? 'chrome-webview' : 'embed-webview';
-  if (isEmbed(s)) return pt === 'chrome' ? 'chrome-webview' : 'embed-webview';
+  if (!s) return 'embed-webview';
+  if (isEmbed(s)) return 'embed-webview';
   if (looksLikeHls(s)) {
     if (pt === 'webview') return 'hls-webview';
     return 'native';
@@ -155,8 +155,6 @@ const cases = [
   { name: 'YCN raw exo', url: ycn, pt: 'exo', want: 'native' },
   { name: 'Mpingo webview', url: mpingo, pt: 'webview', want: 'embed-webview' },
   { name: 'Mpingo exo', url: mpingo, pt: 'exo', want: 'embed-webview' },
-  { name: 'Mpingo chrome', url: mpingo.replace('channel=1', 'channel=2'), pt: 'chrome', want: 'chrome-webview' },
-  { name: 'Bein chrome stays native', url: directRender, pt: 'chrome', want: 'native' },
 ];
 
 for (const c of cases) {
