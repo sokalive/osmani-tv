@@ -73,7 +73,6 @@ import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
 import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
 import { useStartupSplash } from './hooks/useStartupSplash';
-import { awaitEmbeddedLaunchGate } from './lib/embeddedLaunchGate';
 import {
   clearPendingManualGiftKey,
   readManualGiftAck,
@@ -1359,23 +1358,7 @@ function AppTabs() {
 
 export default function App() {
   const [navigationRevision, setNavigationRevision] = useState(0);
-  const [appBootReady, setAppBootReady] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    void awaitEmbeddedLaunchGate()
-      .catch((e) => {
-        console.log('[embedded-launch-gate]', 'app_boot_error', e?.message ?? e);
-      })
-      .finally(() => {
-        if (!cancelled) setAppBootReady(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useStartupSplash(appBootReady);
+  useStartupSplash();
   useGlobalSecureScreen();
 
   useEffect(() => {
@@ -1403,15 +1386,6 @@ export default function App() {
       }
     };
   }, []);
-
-  if (!appBootReady) {
-    return (
-      <SafeAreaProvider style={styles.appRoot}>
-        <StatusBar style="light" backgroundColor="#000000" />
-        <View style={styles.bootGate} />
-      </SafeAreaProvider>
-    );
-  }
 
   return (
     <SafeAreaProvider style={styles.appRoot}>
@@ -1541,10 +1515,6 @@ function SubscriptionLifecycleGates() {
 
 const styles = StyleSheet.create({
   appRoot: {
-    flex: 1,
-    backgroundColor: '#000000',
-  },
-  bootGate: {
     flex: 1,
     backgroundColor: '#000000',
   },

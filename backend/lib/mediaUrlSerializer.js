@@ -19,18 +19,10 @@ function isStreamProxyUrl(input) {
   return /\/stream-proxy(?:\?|$)/i.test(String(input ?? ""));
 }
 
-function isStreamDirectUrl(input) {
-  return /\/stream-direct(?:\?|$)/i.test(String(input ?? ""));
-}
-
 function rewriteLegacyRenderMediaUrl(input) {
   if (input == null) return input;
   const s = String(input).trim();
   if (!s) return s;
-
-  if (isStreamDirectUrl(s)) {
-    return s;
-  }
 
   if (s.startsWith("/")) {
     return `${mediaCdnBase()}${s}`;
@@ -96,9 +88,7 @@ function enrichChannelForViewer(row) {
     out.direct_stream_url ?? out.directStreamUrl ?? "",
   ).trim();
   if (directRaw) {
-    const direct = isStreamDirectUrl(directRaw)
-      ? directRaw
-      : rewriteLegacyRenderMediaUrl(directRaw);
+    const direct = rewriteLegacyRenderMediaUrl(directRaw);
     out.direct_stream_url = direct;
     out.directStreamUrl = direct;
   }

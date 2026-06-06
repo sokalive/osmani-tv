@@ -137,8 +137,8 @@ module.exports = {
     updates: {
       enabled: true,
       url: EXPO_UPDATES_URL,
-      /** Native may fetch OTA before JS on cold start (requires APK rebuild). */
-      checkAutomatically: 'ON_LOAD',
+      /** Expo rolls back to the embedded bundle after crash loops on a bad OTA. */
+      checkAutomatically: 'ON_ERROR_RECOVERY',
       /** Wait up to 30s for an update on cold start before using the cached bundle. */
       fallbackToCacheTimeout: 30000,
     },
