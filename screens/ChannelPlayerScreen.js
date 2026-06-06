@@ -38,10 +38,6 @@ import { STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
 import { buildEmbedBridgeJs, buildEmbedPageBootstrapJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
 import { resolveProviderEmbedPageUrl } from '../lib/embedPlaybackUrl';
-import {
-  buildMpingoEmbedPlaybackHeaders,
-  readMpingoEmbedAuthorizedPackageName,
-} from '../lib/authorizedPackageName';
 import { pickPlaybackRoute } from '../lib/playbackRoute';
 import { getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
 import {
@@ -318,43 +314,16 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     return resolveProviderEmbedPageUrl(uri) || uri;
   }, [useEmbedWebView, uri]);
 
-  /** Mpingo player.php embed only — native Exo / hls.js must not receive package headers. */
-  const embedPlaybackHeaders = useMemo(
-    () => buildMpingoEmbedPlaybackHeaders(channel, embedTargetUri),
-    [
-      channel?.referer,
-      channel?.origin,
-      channel?.userAgent,
-      channel?.authorizedPackageName,
-      channel?.authorized_package_name,
-      embedTargetUri,
-    ],
-  );
-
   const embedWebViewSource = useMemo(() => {
     if (!embedTargetUri) return null;
     const baseUrl = baseUrlFromUrl(embedTargetUri);
-    const hEntries = Object.entries(embedPlaybackHeaders).filter(
-      ([, v]) => v != null && String(v).trim() !== '',
-    );
+    const hEntries = Object.entries(headers).filter(([, v]) => v != null && String(v).trim() !== '');
     if (!hEntries.length) return { uri: embedTargetUri, baseUrl };
     return { uri: embedTargetUri, baseUrl, headers: Object.fromEntries(hEntries) };
-  }, [embedTargetUri, embedPlaybackHeaders]);
-
-  const embedAuthorizedPackageName = useMemo(
-    () => readMpingoEmbedAuthorizedPackageName(channel, embedTargetUri),
-    [
-      channel?.authorizedPackageName,
-      channel?.authorized_package_name,
-      embedTargetUri,
-    ],
-  );
+  }, [embedTargetUri, headers]);
 
   const embedBridgeJs = useMemo(() => buildEmbedBridgeJs(), []);
-  const embedPageBootstrapJs = useMemo(
-    () => buildEmbedPageBootstrapJs({ authorizedPackageName: embedAuthorizedPackageName }),
-    [embedAuthorizedPackageName],
-  );
+  const embedPageBootstrapJs = useMemo(() => buildEmbedPageBootstrapJs(), []);
   const [isBuffering, setIsBuffering] = useState(true);
   const [showNativeBufferOverlay, setShowNativeBufferOverlay] = useState(true);
   const [playbackError, setPlaybackError] = useState('');
@@ -820,8 +789,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         String(p.userAgent ?? '') !== String(next.userAgent ?? '') ||
         String(p.playerType ?? '') !== String(next.playerType ?? '') ||
         String(p.streamDeliveryMode ?? '') !== String(next.streamDeliveryMode ?? '') ||
-        String(p.proxyFallbackUrl ?? '') !== String(next.proxyFallbackUrl ?? '') ||
-        String(p.authorizedPackageName ?? '') !== String(next.authorizedPackageName ?? '');
+        String(p.proxyFallbackUrl ?? '') !== String(next.proxyFallbackUrl ?? '');
       return changed ? next : prev;
     });
   }, [rawChannels, freeMode, liveChannel, route?.params?.channel, navigation, channelDisabledNotified]);

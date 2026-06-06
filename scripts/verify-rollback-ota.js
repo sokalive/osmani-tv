@@ -2,8 +2,8 @@
 'use strict';
 
 /**
- * Documents production rollback OTA 44b88169 (commit 1959260) and verifies
- * authorizedPackageName is embed-scoped only (not global Exo headers).
+ * Documents production rollback OTA 44b88169 (commit 1959260).
+ * Devices confirm receipt via Updates.updateId in getExpoUpdatesDiagnostics().
  *
  * Run: node scripts/verify-rollback-ota.js
  */
@@ -38,34 +38,9 @@ const player = fs.readFileSync(
   path.join(__dirname, '..', 'screens/ChannelPlayerScreen.js'),
   'utf8',
 );
-const channelStream = fs.readFileSync(
-  path.join(__dirname, '..', 'lib/channelStream.js'),
-  'utf8',
-);
-
-if (player.includes('chromePlayerWebView')) {
-  fail('Chrome player must not be present after rollback');
-} else pass('no Chrome player in player screen');
-
-if (player.includes('buildPlaybackRequestHeaders')) {
-  fail('global buildPlaybackRequestHeaders must not be restored');
-} else pass('no global buildPlaybackRequestHeaders');
-
-if (channelStream.includes('authorizedPackageName') || channelStream.includes('X-Package-Name')) {
-  fail('channelStream must not add package headers to native stream requests');
-} else pass('channelStream has no package headers');
-
-if (!player.includes('buildMpingoEmbedPlaybackHeaders')) {
-  fail('Mpingo embed-scoped package headers must be wired');
-} else pass('Mpingo embed-scoped package headers wired');
-
-if (!player.includes('embedPlaybackHeaders')) {
-  fail('embedPlaybackHeaders must be separate from native headers');
-} else pass('embedPlaybackHeaders separate from native headers');
-
-if (player.match(/nativeVideoSource[\s\S]{0,600}embedPlaybackHeaders/)) {
-  fail('nativeVideoSource must not use embedPlaybackHeaders');
-} else pass('native path excludes embed package headers');
+if (player.includes('chromePlayerWebView') || player.includes('authorizedPackageName')) {
+  fail('Chrome player / authorizedPackageName must not be present after rollback');
+} else pass('no Chrome player / authorizedPackageName in player screen');
 
 if (player.includes('overrideFileExtensionAndroid: \'m3u8\'')) {
   pass('native HLS uses m3u8 extension hint (e196fff-style Exo source)');

@@ -54,18 +54,6 @@ if (!bridgeSrc.includes('buildEmbedPageBootstrapJs')) {
   fail('embed page bootstrap missing');
 } else pass('embed page bootstrap');
 
-if (!bridgeSrc.includes('__OSMANI_AUTHORIZED_PACKAGE__')) {
-  fail('embed bootstrap must support Mpingo authorized package');
-} else pass('embed bootstrap supports authorized package');
-
-if (!playerSrc.includes('buildMpingoEmbedPlaybackHeaders')) {
-  fail('Mpingo embed package headers missing');
-} else pass('Mpingo embed package headers wired');
-
-if (!playerSrc.includes('embedPlaybackHeaders')) {
-  fail('embedPlaybackHeaders must be separate from native headers');
-} else pass('embedPlaybackHeaders separate from native headers');
-
 if (!playerSrc.includes('injectedJavaScriptBeforeContentLoaded={embedPageBootstrapJs}')) {
   fail('embed bootstrap not wired into WebView');
 } else pass('embed bootstrap wired');

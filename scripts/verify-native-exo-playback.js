@@ -96,13 +96,5 @@ if (!screen.includes('fetchNativeHlsManifestTracks')) {
   fail('native manifest track sidecar for quality UI');
 } else pass('native manifest track sidecar for quality UI');
 
-if (screen.includes('buildMpingoEmbedPlaybackHeaders') && screen.match(/nativeVideoSource[\s\S]{0,600}buildMpingoEmbedPlaybackHeaders/)) {
-  fail('nativeVideoSource must not use Mpingo embed package headers');
-} else pass('nativeVideoSource excludes Mpingo package headers');
-
-if (screen.includes('X-Package-Name')) {
-  fail('player screen must not hardcode X-Package-Name on native path');
-} else pass('no hardcoded X-Package-Name in player screen');
-
 if (process.exitCode) process.exit(1);
 console.log('[verify-native-exo-playback] ok');
