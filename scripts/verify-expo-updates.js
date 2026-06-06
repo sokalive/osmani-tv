@@ -24,7 +24,7 @@ assert(
   String(expo.updates?.url || '').includes('u.expo.dev'),
   'updates.url must point at Expo Updates CDN',
 );
-assert(expo.updates?.checkAutomatically === 'ON_ERROR_RECOVERY', 'checkAutomatically must be ON_ERROR_RECOVERY');
+assert(expo.updates?.checkAutomatically === 'ON_LOAD', 'checkAutomatically must be ON_LOAD');
 assert(Number(expo.updates?.fallbackToCacheTimeout) >= 0, 'fallbackToCacheTimeout required');
 
 assert(eas.build?.production?.channel === 'production', 'production build channel missing');

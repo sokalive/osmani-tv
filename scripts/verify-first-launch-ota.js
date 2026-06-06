@@ -2,7 +2,8 @@
 'use strict';
 
 /**
- * Fresh install: embedded launch must sync OTA before playback surfaces open.
+ * Fresh install: block UI until OTA gate completes; repair CDN stream-direct;
+ * recover stale subscriptions.php playback with same-session OTA reload.
  *
  * Run: node scripts/verify-first-launch-ota.js
  */
@@ -27,56 +28,59 @@ function pass(msg) {
 
 const splashBootSrc = read('lib/startupSplashBoot.js');
 const gateSrc = read('lib/embeddedLaunchGate.js');
-const splashSrc = read('hooks/useStartupSplash.js');
-const appSrc = read('App.js');
-const updatesSrc = read('lib/expoUpdatesClient.js');
+const recoverySrc = read('lib/freshInstallPlaybackRecovery.js');
+const playerSrc = read('screens/ChannelPlayerScreen.js');
+const rowSrc = read('lib/playerChannelFromRow.js');
 const mediaSrc = read('lib/mediaDelivery.js');
-const hlsSrc = read('lib/hlsPlayback.js');
+const backendSrc = read('backend/lib/mediaUrlSerializer.js');
+const appConfig = require(path.join(root, 'app.config.js'));
 
 if (!splashBootSrc.includes('beginEmbeddedLaunchGate')) {
   fail('startupSplashBoot must begin embedded gate at import time');
 } else pass('embedded gate starts at import time');
 
-if (!gateSrc.includes('beginEmbeddedLaunchGate')) {
-  fail('embeddedLaunchGate module missing');
-} else pass('embeddedLaunchGate module present');
+if (!gateSrc.includes('force_reload_missing')) {
+  fail('embedded gate must force reload when OTA fetched without reload');
+} else pass('embedded gate force reload fallback');
 
-if (!appSrc.includes('appBootReady')) {
-  fail('App must block UI until embedded launch gate completes');
-} else pass('App blocks UI until boot ready');
+if (!recoverySrc.includes('tryFreshInstallPlaybackOtaRecovery')) {
+  fail('freshInstallPlaybackRecovery module missing');
+} else pass('playback OTA recovery module present');
 
-if (!appSrc.includes('awaitEmbeddedLaunchGate')) {
-  fail('App must await embedded launch gate');
-} else pass('App awaits embedded launch gate');
+if (!playerSrc.includes('tryFreshInstallPlaybackOtaRecovery')) {
+  fail('ChannelPlayerScreen must recover stale first-launch playback');
+} else pass('ChannelPlayerScreen playback recovery wired');
 
-if (!splashSrc.includes('appBootReady')) {
-  fail('useStartupSplash must hide splash only after appBootReady');
-} else pass('splash hides after boot gate');
+if (!playerSrc.includes('isUnsafeFirstLaunchPlaybackUri')) {
+  fail('ChannelPlayerScreen must guard unsafe stream-direct URIs');
+} else pass('ChannelPlayerScreen unsafe URI guard');
 
-if (!updatesSrc.includes('Updates.reloadAsync()')) {
-  fail('expoUpdatesClient must reload on embedded launch when OTA is new');
-} else pass('embedded launch reloadAsync wired');
-
-if (!updatesSrc.includes('embedded_force_reload')) {
-  fail('embedded launch must force reload when update available');
-} else pass('embedded force reload fallback present');
+if (!rowSrc.includes('sanitizePlaybackUrl')) {
+  fail('playerChannelFromRow must sanitize playback URLs');
+} else pass('playerChannelFromRow sanitizes playback URLs');
 
 if (!mediaSrc.includes('repairStreamDirectApiHost')) {
-  fail('repairStreamDirectApiHost safety net missing');
+  fail('repairStreamDirectApiHost missing');
 } else pass('stream-direct API host repair present');
 
-if (!hlsSrc.includes('/stream-direct')) {
-  fail('stream-direct must be recognized as HLS playback URI');
-} else pass('stream-direct HLS playback detection present');
+if (!mediaSrc.match(/isStreamDirectUrl\(value\)\) return repairStreamDirectApiHost/)) {
+  fail('rewriteMediaUrlsInJson must repair stream-direct URLs');
+} else pass('rewriteMediaUrlsInJson repairs stream-direct');
+
+if (!backendSrc.includes('isStreamDirectUrl(directRaw)')) {
+  fail('backend enrich must not CDN-rewrite stream-direct');
+} else pass('backend stream-direct CDN rewrite blocked');
+
+if (appConfig.expo.updates?.checkAutomatically !== 'ON_LOAD') {
+  fail('app.config updates.checkAutomatically must be ON_LOAD');
+} else pass('native ON_LOAD update check configured');
 
 function repairStreamDirectApiHostMirror(input) {
   const s = String(input ?? '').trim();
   if (!s || !/\/stream-direct(?:\?|$)/i.test(s)) return s;
   try {
     const u = new URL(s);
-    const host = u.host.toLowerCase();
-    if (host === 'osmani-admin-api.onrender.com') return s;
-    if (host.includes('b-cdn.net')) {
+    if (u.host.includes('b-cdn.net')) {
       u.protocol = 'https:';
       u.host = 'osmani-admin-api.onrender.com';
       return u.toString();

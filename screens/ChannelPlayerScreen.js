@@ -63,6 +63,11 @@ import {
 } from '../lib/playerTeardown';
 import { playbackStreamIdentity } from '../lib/playbackStreamIdentity';
 import { fetchNativeHlsManifestTracksForPlayback } from '../lib/nativeHlsManifestTracks';
+import {
+  isUnsafeFirstLaunchPlaybackUri,
+  sanitizeChannelPlaybackFields,
+  tryFreshInstallPlaybackOtaRecovery,
+} from '../lib/freshInstallPlaybackRecovery';
 
 function baseUrlFromUrl(url) {
   try {
@@ -132,7 +137,7 @@ function logPlayerInterrupt(path, detail = {}) {
 
 export default function ChannelPlayerScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
-  const initialChannel = route?.params?.channel ?? null;
+  const initialChannel = sanitizeChannelPlaybackFields(route?.params?.channel ?? null);
   const [liveChannel, setLiveChannel] = useState(initialChannel);
   const [channelDisabledNotified, setChannelDisabledNotified] = useState(false);
   const {
@@ -258,7 +263,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       if (!channelId) return false;
       const found = findRawChannelById(rawChannels, channelId);
       if (!found) return false;
-      const next = buildPlayerChannelFromRow(found.raw, found.index, freeMode);
+      const next = sanitizeChannelPlaybackFields(buildPlayerChannelFromRow(found.raw, found.index, freeMode));
       const identityChanged = playbackStreamIdentity(channel) !== playbackStreamIdentity(next);
       logSegmentDiagnostics('manifest_refresh', {
         reason,
@@ -969,12 +974,19 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   );
 
   const handlePlaybackFailure = useCallback(
-    (reasonText) => {
+    async (reasonText) => {
       if (attemptPlaybackRecovery(reasonText)) return;
+      const reloaded = await tryFreshInstallPlaybackOtaRecovery(reasonText);
+      if (reloaded) return;
       applyPlaybackFailure(reasonText);
     },
     [attemptPlaybackRecovery, applyPlaybackFailure],
   );
+
+  useEffect(() => {
+    if (!uri || !isUnsafeFirstLaunchPlaybackUri(uri)) return;
+    void tryFreshInstallPlaybackOtaRecovery(`unsafe_playback_uri:${uri}`);
+  }, [uri]);
 
   const onError = (error) => {
     devLog('[player][debug] playback error:', {
