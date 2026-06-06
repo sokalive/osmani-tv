@@ -58,6 +58,10 @@ if (!playerSrc.includes('injectedJavaScriptBeforeContentLoaded={embedPageBootstr
   fail('embed bootstrap not wired into WebView');
 } else pass('embed bootstrap wired');
 
+if (!bridgeSrc.includes('__OSMANI_AUTHORIZED_PACKAGE__')) {
+  fail('embed bootstrap must inject authorized package when configured');
+} else pass('embed bootstrap supports authorizedPackageName');
+
 // Static routing sanity (inline — mirrors lib/streamDelivery.js)
 function looksLikeHlsUrl(url) {
   return /\.m3u8(?:$|[?#&])/i.test(String(url ?? ''));

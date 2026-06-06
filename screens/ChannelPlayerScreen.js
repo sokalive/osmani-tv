@@ -25,6 +25,13 @@ import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
+import { buildPlaybackRequestHeaders } from '../lib/authorizedPackageName';
+import { pickPlaybackRoute } from '../lib/playbackRoute';
+import {
+  buildChromeWebViewSource,
+  CHROME_WEBVIEW_PROPS,
+  resolveChromeUserAgent,
+} from '../lib/chromePlayerWebView';
 import {
   canFallbackToProxyPlayback,
   looksLikeHlsPlaybackUri,
@@ -61,26 +68,6 @@ import {
 } from '../lib/playerTeardown';
 import { playbackStreamIdentity } from '../lib/playbackStreamIdentity';
 import { fetchNativeHlsManifestTracksForPlayback } from '../lib/nativeHlsManifestTracks';
-
-/**
- * Pick a playback engine:
- *   HLS (.m3u8)     → 'native' by default (expo-av / ExoPlayer + stream-proxy manifest URL)
- *                    Admin may force 'hls-webview' when playerType is `webview`.
- *   .mp4/.ts/.mts  → 'native' (expo-av direct)
- *   anything else  → 'embed-webview' (player.php / iframe pages)
- */
-function pickPlaybackRoute(url, playerTypeNorm) {
-  const s = String(url ?? '');
-  if (!s.trim()) return 'embed-webview';
-  const lower = s.split(/[#?]/)[0].toLowerCase();
-  if (looksLikeHlsPlaybackUri(s)) {
-    if (playerTypeNorm === 'webview') return 'hls-webview';
-    return 'native';
-  }
-  if (/\.mp4$/i.test(lower)) return 'native';
-  if (/\.(?:m2ts|mts|ts)$/i.test(lower)) return 'native';
-  return 'embed-webview';
-}
 
 function baseUrlFromUrl(url) {
   try {
@@ -216,14 +203,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     recovering: false,
   });
   const uri = streams[currentUrlIndex];
-  const headers = useMemo(
-    () => ({
-      ...(channel?.referer && { Referer: channel.referer }),
-      ...(channel?.origin && { Origin: channel.origin }),
-      ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
-    }),
-    [channel?.referer, channel?.origin, channel?.userAgent],
-  );
+  const headers = useMemo(() => buildPlaybackRequestHeaders(channel), [channel]);
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
   const streamIdentity = useMemo(() => playbackStreamIdentity(channel), [channel]);
   const playbackRoute = useMemo(
@@ -233,6 +213,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const useNativePlayer = playbackRoute === 'native';
   const useHlsWebView = playbackRoute === 'hls-webview';
   const useEmbedWebView = playbackRoute === 'embed-webview';
+  const useChromeWebView = playbackRoute === 'chrome-webview';
+  const useEmbedLikeWebView = useEmbedWebView || useChromeWebView;
 
   const isHlsManifest = Boolean(uri && looksLikeHlsPlaybackUri(uri));
 
@@ -305,14 +287,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
    */
   const nativeVideoSource = useMemo(() => {
     if (!useNativePlayer || !uri) return null;
+    const headerEntries = Object.entries(headers).filter(([, v]) => v != null && String(v).trim() !== '');
+    const playbackHeaders = headerEntries.length ? Object.fromEntries(headerEntries) : undefined;
     if (looksLikeHlsPlaybackUri(uri)) {
       const u = hlsManifestUrl || uri;
       return {
         uri: u,
         overrideFileExtensionAndroid: 'm3u8',
+        ...(playbackHeaders ? { headers: playbackHeaders } : {}),
       };
     }
-    return { uri, headers };
+    return { uri, ...(playbackHeaders ? { headers: playbackHeaders } : {}) };
   }, [useNativePlayer, uri, hlsManifestUrl, headers]);
 
   const hlsWebViewSource = useMemo(() => {
@@ -329,13 +314,29 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   /** Plain WebView source for player.php / embed/iframe HTML pages. Headers as-is. */
   const embedWebViewSource = useMemo(() => {
     if (!useEmbedWebView) return null;
-    const hEntries = Object.entries(headers).filter(([, v]) => v != null && String(v).trim() !== '');
-    if (!hEntries.length) return { uri };
-    return { uri, headers: Object.fromEntries(hEntries) };
+    return buildChromeWebViewSource(uri, headers);
   }, [useEmbedWebView, uri, headers]);
 
+  /** Chromium WebView for admin playerType=chrome (Mpingo embed pages, full browser features). */
+  const chromeWebViewSource = useMemo(() => {
+    if (!useChromeWebView) return null;
+    return buildChromeWebViewSource(uri, headers);
+  }, [useChromeWebView, uri, headers]);
+
+  const chromeUserAgent = useMemo(
+    () => resolveChromeUserAgent(channel?.userAgent ?? channel?.user_agent),
+    [channel?.userAgent, channel?.user_agent],
+  );
+
   const embedBridgeJs = useMemo(() => buildEmbedBridgeJs(), []);
-  const embedPageBootstrapJs = useMemo(() => buildEmbedPageBootstrapJs(), []);
+  const embedPageBootstrapJs = useMemo(
+    () =>
+      buildEmbedPageBootstrapJs({
+        authorizedPackageName:
+          channel?.authorizedPackageName ?? channel?.authorized_package_name ?? '',
+      }),
+    [channel?.authorizedPackageName, channel?.authorized_package_name],
+  );
   const [isBuffering, setIsBuffering] = useState(true);
   const [showNativeBufferOverlay, setShowNativeBufferOverlay] = useState(true);
   const [playbackError, setPlaybackError] = useState('');
@@ -349,6 +350,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const videoRef = useRef(null);
   const hlsWebRef = useRef(null);
   const embedWebRef = useRef(null);
+  const chromeWebRef = useRef(null);
+  const activeEmbedWebRef = useChromeWebView ? chromeWebRef : embedWebRef;
   const hideTimer = useRef(null);
   const pickerKindRef = useRef(null);
   const playbackErrorRef = useRef('');
@@ -383,6 +386,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       videoRef,
       hlsWebRef,
       embedWebRef,
+      chromeWebRef,
       resetChrome: opts.resetChrome !== false,
     });
     statusBarHiddenRef.current = false;
@@ -798,6 +802,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         String(p.referer ?? '') !== String(next.referer ?? '') ||
         String(p.userAgent ?? '') !== String(next.userAgent ?? '') ||
         String(p.playerType ?? '') !== String(next.playerType ?? '') ||
+        String(p.authorizedPackageName ?? p.authorized_package_name ?? '') !==
+          String(next.authorizedPackageName ?? next.authorized_package_name ?? '') ||
         String(p.streamDeliveryMode ?? '') !== String(next.streamDeliveryMode ?? '') ||
         String(p.proxyFallbackUrl ?? '') !== String(next.proxyFallbackUrl ?? '');
       return changed ? next : prev;
@@ -1023,6 +1029,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           videoRef,
           hlsWebRef,
           embedWebRef,
+          chromeWebRef,
         });
       }
     };
@@ -1561,8 +1568,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const onEmbedLoadEnd = () => {
     setPlaybackError('');
-    if (useEmbedWebView) {
-      embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'request-tracks' }));
+    if (useEmbedLikeWebView) {
+      activeEmbedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'request-tracks' }));
       // Keep isBuffering true until embed_playback_started (provider video actually playing).
       markPlaybackStartedForHide();
       return;
@@ -1726,7 +1733,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (kind === 'embed_controls_detected') {
       setEmbedControls(payload || null);
       setEmbedHasControls(Boolean(payload));
-      embedWebRef.current?.injectJavaScript(buildEmbedSuppressNativeUiJs());
+      activeEmbedWebRef.current?.injectJavaScript(buildEmbedSuppressNativeUiJs());
       return;
     }
     if (kind === 'embed_playback_started') {
@@ -1774,8 +1781,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         : `(function(){try{var v=document.getElementById('v');if(v)v.play().catch(function(){});}catch(e){}})();true;`;
       hlsWebRef.current?.injectJavaScript(cmd);
       setIsPlaying((v) => !v);
-    } else {
-      embedWebRef.current?.injectJavaScript(`(function(){try{var v=document.querySelector('video');if(v){if(v.paused)v.play().catch(function(){});else v.pause();}}catch(e){}})();true;`);
+    } else if (useEmbedLikeWebView) {
+      activeEmbedWebRef.current?.injectJavaScript(`(function(){try{var v=document.querySelector('video');if(v){if(v.paused)v.play().catch(function(){});else v.pause();}}catch(e){}})();true;`);
       setIsPlaying((v) => !v);
     }
     revealControlsUser();
@@ -1801,7 +1808,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       const current = options.find((o) => o.selected) ?? options[0];
       return { available: true, options, currentLabel: current?.label ?? 'Auto' };
     }
-    if (useEmbedWebView && embedControls && embedControls.qualities?.length) {
+    if (useEmbedLikeWebView && embedControls && embedControls.qualities?.length) {
       const selectedId = typeof embedControls.currentQuality === 'number' ? embedControls.currentQuality : -1;
       const options = [
         { id: -1, label: 'Auto', selected: selectedId === -1 },
@@ -1830,7 +1837,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     return { available: false, options: [], currentLabel: useNativePlayer ? 'Auto' : '—' };
   }, [
     useHlsWebView,
-    useEmbedWebView,
+    useEmbedLikeWebView,
     useNativePlayer,
     hlsLevels,
     hlsCurrentLevel,
@@ -1851,7 +1858,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       const current = options.find((o) => o.selected) ?? options[0];
       return { available: true, options, currentLabel: current?.label ?? '—' };
     }
-    if (useEmbedWebView && embedControls && embedControls.audioTracks?.length) {
+    if (useEmbedLikeWebView && embedControls && embedControls.audioTracks?.length) {
       const selectedId = typeof embedControls.currentAudioTrack === 'number' ? embedControls.currentAudioTrack : -1;
       const options = embedControls.audioTracks.map((t) => ({
         id: t.id,
@@ -1877,7 +1884,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     return { available: false, options: [], currentLabel: '—' };
   }, [
     useHlsWebView,
-    useEmbedWebView,
+    useEmbedLikeWebView,
     useNativePlayer,
     hlsAudioTracks,
     hlsCurrentAudioTrack,
@@ -1942,8 +1949,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             setHlsAutoLevel(false);
             setHlsCurrentLevel(option.id);
           }
-        } else if (useEmbedWebView) {
-          embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'set-level', level: option.id }));
+        } else if (useEmbedLikeWebView) {
+          activeEmbedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'set-level', level: option.id }));
           setEmbedControls((prev) => (prev ? { ...prev, currentQuality: option.id } : prev));
         } else if (useNativePlayer) {
           setNativeSelectedVariantId(option.id);
@@ -1960,8 +1967,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         if (useHlsWebView) {
           hlsWebRef.current?.injectJavaScript(buildHlsCmdScript({ type: 'set-audio-track', id: option.id }));
           setHlsCurrentAudioTrack(option.id);
-        } else if (useEmbedWebView) {
-          embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'set-audio-track', id: option.id }));
+        } else if (useEmbedLikeWebView) {
+          activeEmbedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'set-audio-track', id: option.id }));
           setEmbedControls((prev) => (prev ? { ...prev, currentAudioTrack: option.id } : prev));
         } else if (useNativePlayer) {
           setNativeSelectedAudioId(option.id);
@@ -1993,7 +2000,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     [
       pickerKind,
       useHlsWebView,
-      useEmbedWebView,
+      useEmbedLikeWebView,
       useNativePlayer,
       bumpAutoHideTimer,
       applyNativeHlsPlaybackUri,
@@ -2049,9 +2056,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
               hlsWebRef.current?.injectJavaScript(
                 `(function(){try{var v=document.getElementById('v');if(v)v.style.objectFit=${JSON.stringify(fit)};}catch(e){}})();true;`,
               );
-            } else if (useEmbedWebView) {
+            } else if (useEmbedLikeWebView) {
               const fit = next === ResizeMode.COVER ? 'cover' : 'contain';
-              embedWebRef.current?.injectJavaScript(
+              activeEmbedWebRef.current?.injectJavaScript(
                 `(function(){try{var v=document.querySelector('video');if(v)v.style.objectFit=${JSON.stringify(fit)};}catch(e){}})();true;`,
               );
             }
@@ -2079,7 +2086,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       qualityModel.currentLabel,
       resizeMode,
       useHlsWebView,
-      useEmbedWebView,
+      useEmbedLikeWebView,
       useNativePlayer,
       onPlayPause,
       openLanguagePicker,
@@ -2163,7 +2170,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         Routing:
           - HLS (.m3u8)     → expo-av / ExoPlayer + stream-proxy (default); optional hls.js WebView if playerType=webview
           - .mp4 / .ts ... → expo-av native
-          - everything else (player.php, embed pages, iframe HTML) → plain WebView
+          - player.php / embed pages → embed-webview (default) or chrome-webview when playerType=chrome
       */}
       <View style={styles.playerStage}>
         {playbackSurfacesMounted ? (
@@ -2204,7 +2211,24 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             onError={onHlsWebError}
             pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
           />
-        ) : playbackSurfacesMounted ? (
+        ) : playbackSurfacesMounted && useChromeWebView ? (
+          <WebView
+            key={`chrome-${playerEpoch}`}
+            ref={chromeWebRef}
+            style={[styles.video, styles.embedWebView]}
+            source={chromeWebViewSource}
+            userAgent={chromeUserAgent}
+            injectedJavaScriptBeforeContentLoaded={embedPageBootstrapJs}
+            injectedJavaScript={embedBridgeJs}
+            onLoadStart={onEmbedLoadStart}
+            onLoadEnd={onEmbedLoadEnd}
+            onMessage={onEmbedMessage}
+            onError={onEmbedError}
+            onHttpError={onEmbedHttpError}
+            pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
+            {...CHROME_WEBVIEW_PROPS}
+          />
+        ) : playbackSurfacesMounted && useEmbedWebView ? (
           <WebView
             key={`embed-${playerEpoch}`}
             ref={embedWebRef}
