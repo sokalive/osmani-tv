@@ -37,6 +37,7 @@ import { devLog } from '../lib/devLog';
 import { STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
 import { buildEmbedBridgeJs, buildEmbedPageBootstrapJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
+import { isProviderEmbedPageUrl, resolveProviderEmbedPageUrl } from '../lib/embedPlaybackUrl';
 import { getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
 import {
   SecurityPlaybackBlock,
@@ -72,6 +73,7 @@ import { fetchNativeHlsManifestTracksForPlayback } from '../lib/nativeHlsManifes
 function pickPlaybackRoute(url, playerTypeNorm) {
   const s = String(url ?? '');
   if (!s.trim()) return 'embed-webview';
+  if (isProviderEmbedPageUrl(s)) return 'embed-webview';
   const lower = s.split(/[#?]/)[0].toLowerCase();
   if (looksLikeHlsPlaybackUri(s)) {
     if (playerTypeNorm === 'webview') return 'hls-webview';
@@ -326,13 +328,19 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     };
   }, [useHlsWebView, hlsManifestUrl, useDirectHlsSegments]);
 
-  /** Plain WebView source for player.php / embed/iframe HTML pages. Headers as-is. */
+  /** Plain WebView source for player.php / embed/iframe HTML pages. Always upstream origin. */
+  const embedTargetUri = useMemo(() => {
+    if (!useEmbedWebView || !uri) return '';
+    return resolveProviderEmbedPageUrl(uri) || uri;
+  }, [useEmbedWebView, uri]);
+
   const embedWebViewSource = useMemo(() => {
-    if (!useEmbedWebView) return null;
+    if (!embedTargetUri) return null;
+    const baseUrl = baseUrlFromUrl(embedTargetUri);
     const hEntries = Object.entries(headers).filter(([, v]) => v != null && String(v).trim() !== '');
-    if (!hEntries.length) return { uri };
-    return { uri, headers: Object.fromEntries(hEntries) };
-  }, [useEmbedWebView, uri, headers]);
+    if (!hEntries.length) return { uri: embedTargetUri, baseUrl };
+    return { uri: embedTargetUri, baseUrl, headers: Object.fromEntries(hEntries) };
+  }, [embedTargetUri, headers]);
 
   const embedBridgeJs = useMemo(() => buildEmbedBridgeJs(), []);
   const embedPageBootstrapJs = useMemo(() => buildEmbedPageBootstrapJs(), []);
@@ -595,6 +603,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       route: playbackRoute,
       api_playerType: normalizedPlayerType,
       url: uri,
+      embed_target_url: embedTargetUri || null,
       proxy_base: STREAM_PROXY_BASE,
       hls_manifest_url: hlsManifestUrl || null,
       stream_delivery_mode: channel?.streamDeliveryMode ?? 'proxy',
@@ -615,6 +624,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     useDirectHlsSegments,
     useNativePlayer,
     embedWebViewSource?.headers,
+    embedTargetUri,
   ]);
 
   // Keep local channel snapshot in sync when route params change.
@@ -1557,6 +1567,23 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const onEmbedLoadStart = () => {
     setIsBuffering(true);
+    if (useEmbedWebView) {
+      console.log('[player][embed] load start', {
+        requested_uri: uri,
+        embed_target_uri: embedTargetUri,
+        base_url: embedWebViewSource?.baseUrl ?? null,
+      });
+    }
+  };
+
+  const onEmbedNavigationStateChange = (navState) => {
+    if (!useEmbedWebView) return;
+    const loaded = navState?.url ?? '';
+    if (!loaded || loaded === 'about:blank') return;
+    console.log('[player][embed] navigation', {
+      loaded_url: loaded,
+      embed_target_uri: embedTargetUri,
+    });
   };
 
   const onEmbedLoadEnd = () => {
@@ -2220,6 +2247,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             injectedJavaScript={embedBridgeJs}
             onLoadStart={onEmbedLoadStart}
             onLoadEnd={onEmbedLoadEnd}
+            onNavigationStateChange={onEmbedNavigationStateChange}
             onMessage={onEmbedMessage}
             onError={onEmbedError}
             onHttpError={onEmbedHttpError}

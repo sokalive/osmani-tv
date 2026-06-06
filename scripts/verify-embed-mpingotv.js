@@ -34,9 +34,9 @@ if (!deliverySrc.includes('isProviderEmbedPageUrl')) {
   fail('isProviderEmbedPageUrl missing');
 } else pass('isProviderEmbedPageUrl defined');
 
-if (!deliverySrc.includes('playUrl: rawUrl')) {
-  fail('embed pages must use raw upstream URL');
-} else pass('embed pages use raw upstream URL');
+if (!deliverySrc.includes('resolveProviderEmbedPageUrl')) {
+  fail('embed pages must resolve upstream URL');
+} else pass('embed pages resolve upstream URL');
 
 if (playerSrc.includes('pickOsmaniPlaybackRoute')) {
   fail('Osmani-only forced route must not be present');
@@ -68,12 +68,44 @@ function isStreamProxyUrl(input) {
 }
 
 function isProviderEmbedPageUrl(url) {
+  const inner = unwrapForEmbed(url);
+  if (!inner || looksLikeHlsUrl(inner)) return false;
+  const pathPart = inner.split(/[#?]/)[0].toLowerCase();
+  if (/\.(?:mp4|ts|m2ts|mts)$/i.test(pathPart)) return false;
+  return /player\.php|\/player\/|\/embed(?:\/|$|\?)/i.test(inner);
+}
+
+function unwrapForEmbed(url) {
   const s = String(url ?? '').trim();
-  if (!s || looksLikeHlsUrl(s)) return false;
-  const path = s.split(/[#?]/)[0].toLowerCase();
-  if (/\.(?:mp4|ts|m2ts|mts)$/i.test(path)) return false;
-  if (isStreamProxyUrl(s) || /\/stream-direct(?:\?|$)/i.test(s)) return false;
-  return /player\.php|\/player\/|\/embed(?:\/|$|\?)/i.test(s);
+  if (!s) return '';
+  if (isStreamProxyUrl(s)) {
+    try {
+      return String(new URL(s).searchParams.get('url') ?? '').trim();
+    } catch {
+      return '';
+    }
+  }
+  if (/\/stream-direct(?:\?|$)/i.test(s)) {
+    try {
+      const token = new URL(s).searchParams.get('token');
+      if (!token) return '';
+      for (const part of token.split('.')) {
+        try {
+          let b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+          const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+          b64 += pad;
+          const payload = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+          const upstream = String(payload.u ?? payload.url ?? '').trim();
+          if (upstream) return upstream;
+        } catch {
+          /* try next segment */
+        }
+      }
+    } catch {
+      return '';
+    }
+  }
+  return s;
 }
 
 function resolveChannelPlaybackPlan(input) {
@@ -81,8 +113,11 @@ function resolveChannelPlaybackPlan(input) {
   const directUrl = String(input.directStreamUrl ?? '').trim();
   const proxyFallbackUrl = String(input.proxyFallbackUrl ?? '').trim();
   const playUrl = directUrl || proxyFallbackUrl;
-  if (isProviderEmbedPageUrl(rawUrl)) {
-    return { playUrl: rawUrl };
+  for (const candidate of [rawUrl, playUrl, directUrl, proxyFallbackUrl]) {
+    if (isProviderEmbedPageUrl(candidate)) {
+      const inner = unwrapForEmbed(candidate);
+      if (inner.startsWith('http')) return { playUrl: inner };
+    }
   }
   return { playUrl };
 }
@@ -116,6 +151,18 @@ if (azamPlan.playUrl !== azamRaw) {
 if (beinPlan.playUrl !== directToken) {
   fail(`Bein playUrl must stay stream-direct, got ${beinPlan.playUrl}`);
 } else pass('Bein hybrid playUrl stays stream-direct');
+
+const proxyWrappedAzam =
+  'https://osmanitv.b-cdn.net/stream-proxy?url=' +
+  encodeURIComponent('https://nur.mpingotv.com/v3/player.php?channel=1');
+const proxyPlan = resolveChannelPlaybackPlan({
+  rawUrl: proxyWrappedAzam,
+  directStreamUrl: directToken,
+  proxyFallbackUrl: proxyWrappedAzam,
+});
+if (proxyPlan.playUrl !== azamRaw) {
+  fail(`proxy-wrapped player.php must unwrap, got ${proxyPlan.playUrl}`);
+} else pass('proxy-wrapped player.php unwraps to upstream');
 
 if (!bridgeSrc.includes('function detectShaka()')) {
   fail('embed bridge must detect Shaka Player (MpingoTV DASH)');
