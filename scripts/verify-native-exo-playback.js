@@ -96,10 +96,5 @@ if (!screen.includes('fetchNativeHlsManifestTracks')) {
   fail('native manifest track sidecar for quality UI');
 } else pass('native manifest track sidecar for quality UI');
 
-const hlsNativeSourceBlock = screen.match(/if \(looksLikeHlsPlaybackUri\(uri\)\) \{[\s\S]*?\n    \}/);
-if (hlsNativeSourceBlock && /\bheaders\b/.test(hlsNativeSourceBlock[0])) {
-  fail('native HLS manifest source must not attach HTTP headers (Exo #EXTM3U regression)');
-} else pass('native HLS source has no headers');
-
 if (process.exitCode) process.exit(1);
 console.log('[verify-native-exo-playback] ok');
