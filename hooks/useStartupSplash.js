@@ -6,14 +6,10 @@ import { logFirstLaunchBootDiagnostics } from '../lib/firstLaunchBootDiagnostics
 import { STARTUP_SPLASH_MAX_MS, STARTUP_SPLASH_MIN_MS } from '../lib/startupSplashBoot';
 
 /**
- * Hide the native splash only after embedded-launch OTA gate completes (when applicable).
- *
- * @param {boolean} appBootReady — App shell may render (gate finished).
+ * Hide the native splash after embedded OTA loading screen or first paint.
  */
-export function useStartupSplash(appBootReady = true) {
+export function useStartupSplash() {
   useEffect(() => {
-    if (!appBootReady) return undefined;
-
     let cancelled = false;
     let minTimer;
     let maxTimer;
@@ -64,5 +60,5 @@ export function useStartupSplash(appBootReady = true) {
       if (minTimer) clearTimeout(minTimer);
       if (maxTimer) clearTimeout(maxTimer);
     };
-  }, [appBootReady]);
+  }, []);
 }

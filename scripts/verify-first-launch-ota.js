@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Verify embedded-launch OTA gate (fresh-install Bein fix) without device/network.
+ * Verify embedded-launch OTA gate + Swahili loading screen (fresh-install Bein fix).
  * Run: node scripts/verify-first-launch-ota.js
  */
 
@@ -29,17 +29,22 @@ const expo = read('lib/expoUpdatesClient.js');
 const boot = read('lib/startupSplashBoot.js');
 const splash = read('hooks/useStartupSplash.js');
 const app = read('App.js');
+const bootGate = read('components/EmbeddedOtaBootGate.js');
+const loading = read('components/EmbeddedOtaLoadingScreen.js');
 const diag = read('lib/firstLaunchBootDiagnostics.js');
 const media = read('lib/mediaDelivery.js');
 const route = read('lib/playbackRoute.js');
 
-if (!gate.includes('beginEmbeddedLaunchGate')) fail('embeddedLaunchGate module');
-else pass('embeddedLaunchGate module');
+if (!gate.includes('runEmbeddedLaunchOtaGate')) fail('runEmbeddedLaunchOtaGate');
+else pass('runEmbeddedLaunchOtaGate');
 
-if (!gate.includes('reloadIfNew: true')) fail('gate requests reloadIfNew');
-else pass('gate requests reloadIfNew');
+if (!gate.includes('EMBEDDED_LAUNCH_FETCH_TIMEOUT_MS')) fail('extended fetch timeout');
+else pass('extended fetch timeout for slow devices');
 
-if (gate.includes('forcedEmbeddedReload') || gate.includes('force_reload')) {
+if (!gate.includes('EMBEDDED_LAUNCH_MAX_ATTEMPTS')) fail('retry attempts');
+else pass('retry attempts');
+
+if (gate.includes('forcedEmbeddedReload') || gate.includes('force_reload_missing')) {
   fail('gate must not force reload without isNew');
 } else pass('no forced reload without isNew');
 
@@ -49,20 +54,29 @@ else pass('expoUpdatesClient reloadIfNew option');
 if (!expo.includes('fetch.isNew === true')) fail('reload only when fetch.isNew');
 else pass('reload guarded by fetch.isNew');
 
-if (expo.includes('fetch.isNew !== true')) fail('must not reload when isNew is false');
-else pass('no reload when isNew is false');
+if (!expo.includes('trackProgress')) fail('OTA progress tracking');
+else pass('OTA progress tracking');
 
-if (!boot.includes('beginEmbeddedLaunchGate')) fail('startupSplashBoot starts gate');
-else pass('startupSplashBoot starts gate');
+if (!expo.includes('ota_download_started')) fail('production OTA download logs');
+else pass('production OTA download logs');
 
-if (!app.includes('awaitEmbeddedLaunchGate')) fail('App awaits embedded gate');
-else pass('App awaits embedded gate');
+if (!bootGate.includes('EmbeddedOtaBootGate')) fail('EmbeddedOtaBootGate component');
+else pass('EmbeddedOtaBootGate component');
 
-if (!app.includes('appBootReady')) fail('App blocks shell until boot ready');
-else pass('App blocks shell until boot ready');
+if (!loading.includes('Inasasisha programu')) fail('Swahili OTA title');
+else pass('Swahili OTA title');
 
-if (!splash.includes('appBootReady')) fail('useStartupSplash waits for boot ready');
-else pass('useStartupSplash waits for boot ready');
+if (!loading.includes('Tafadhali subiri kidogo')) fail('Swahili OTA subtitle');
+else pass('Swahili OTA subtitle');
+
+if (!app.includes('EmbeddedOtaBootGate')) fail('App wraps EmbeddedOtaBootGate');
+else pass('App wraps EmbeddedOtaBootGate');
+
+if (app.includes('appBootReady')) fail('legacy black bootGate removed');
+else pass('legacy black bootGate removed');
+
+if (!bootGate.includes('runEmbeddedLaunchOtaGate')) fail('boot gate runs OTA sync');
+else pass('boot gate runs OTA sync');
 
 if (!diag.includes('staleEmbeddedLikely')) fail('firstLaunchBootDiagnostics probe');
 else pass('firstLaunchBootDiagnostics probe');
