@@ -73,6 +73,8 @@ import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
 import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
 import { useStartupSplash } from './hooks/useStartupSplash';
+import { awaitEmbeddedLaunchGate } from './lib/embeddedLaunchGate';
+import { logFirstLaunchBootDiagnostics } from './lib/firstLaunchBootDiagnostics';
 import {
   clearPendingManualGiftKey,
   readManualGiftAck,
@@ -1358,10 +1360,30 @@ function AppTabs() {
 
 export default function App() {
   const [navigationRevision, setNavigationRevision] = useState(0);
-  useStartupSplash();
+  const [appBootReady, setAppBootReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void awaitEmbeddedLaunchGate()
+      .catch((e) => {
+        console.log('[embedded-launch-gate]', 'app_boot_error', e?.message ?? e);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          logFirstLaunchBootDiagnostics('app_boot_ready');
+          setAppBootReady(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useStartupSplash(appBootReady);
   useGlobalSecureScreen();
 
   useEffect(() => {
+    if (!appBootReady) return undefined;
     void trackInstallOnce();
     void startPresence();
     startRealtimeSync();
@@ -1385,7 +1407,16 @@ export default function App() {
         /* ignore */
       }
     };
-  }, []);
+  }, [appBootReady]);
+
+  if (!appBootReady) {
+    return (
+      <SafeAreaProvider style={styles.appRoot}>
+        <StatusBar style="light" backgroundColor="#000000" />
+        <View style={styles.bootGate} />
+      </SafeAreaProvider>
+    );
+  }
 
   return (
     <SafeAreaProvider style={styles.appRoot}>
@@ -1515,6 +1546,10 @@ function SubscriptionLifecycleGates() {
 
 const styles = StyleSheet.create({
   appRoot: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  bootGate: {
     flex: 1,
     backgroundColor: '#000000',
   },
