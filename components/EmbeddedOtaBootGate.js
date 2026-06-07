@@ -1,24 +1,40 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Updates from 'expo-updates';
 import EmbeddedOtaLoadingScreen from './EmbeddedOtaLoadingScreen';
 import {
-  isEmbeddedLaunchRuntime,
-  runEmbeddedLaunchOtaGate,
+  awaitEmbeddedLaunchGate,
+  beginEmbeddedLaunchGate,
 } from '../lib/embeddedLaunchGate';
 import { subscribeEmbeddedOtaProgress } from '../lib/embeddedLaunchOtaProgress';
+import {
+  collectOtaBootGateSnapshot,
+  shouldRunOtaBootGate,
+} from '../lib/otaBootGatePolicy';
 
 /**
- * Blocks Home, catalog, navigation, and playback on embedded first launch
- * until OTA is downloaded and applied (automatic reload).
+ * Blocks Home, catalog, navigation, and playback until stale JS is replaced via OTA.
  *
  * @param {{ children: React.ReactNode }} props
  */
 export default function EmbeddedOtaBootGate({ children }) {
   const updates = Updates.useUpdates();
-  const [bootReady, setBootReady] = useState(() => !isEmbeddedLaunchRuntime());
+  const gateStartedRef = useRef(false);
+  const shouldBlock = shouldRunOtaBootGate();
+  const [bootReady, setBootReady] = useState(!shouldBlock);
   const [phase, setPhase] = useState('checking');
   const [downloadProgress, setDownloadProgress] = useState(null);
+
+  useEffect(() => {
+    const snap = collectOtaBootGateSnapshot();
+    console.log('[embedded-launch-gate]', 'gate_mounted', snap);
+    if (!shouldBlock) {
+      console.log('[embedded-launch-gate]', 'gate_released', {
+        reason: 'no_block_on_mount',
+        ...snap,
+      });
+    }
+  }, [shouldBlock]);
 
   useEffect(() => {
     const unsub = subscribeEmbeddedOtaProgress((snap) => {
@@ -43,26 +59,26 @@ export default function EmbeddedOtaBootGate({ children }) {
   ]);
 
   useEffect(() => {
-    if (bootReady) return undefined;
+    if (bootReady || gateStartedRef.current) return undefined;
+    gateStartedRef.current = true;
 
-    let cancelled = false;
-
+    console.log('[embedded-launch-gate]', 'gate_blocking_ui', collectOtaBootGateSnapshot());
     void SplashScreen.preventAutoHideAsync().catch(() => {});
 
-    void runEmbeddedLaunchOtaGate()
+    void beginEmbeddedLaunchGate()
       .catch((e) => {
         console.log('[embedded-launch-gate]', 'boot_gate_error', e?.message ?? e);
       })
       .finally(() => {
-        if (!cancelled) {
-          void SplashScreen.hideAsync().catch(() => {});
-          setBootReady(true);
-        }
+        void SplashScreen.hideAsync().catch(() => {});
+        console.log('[embedded-launch-gate]', 'gate_released', {
+          reason: 'gate_promise_settled',
+          ...collectOtaBootGateSnapshot(),
+        });
+        setBootReady(true);
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return undefined;
   }, [bootReady]);
 
   if (!bootReady) {
@@ -72,4 +88,4 @@ export default function EmbeddedOtaBootGate({ children }) {
   return children;
 }
 
-export { isEmbeddedLaunchRuntime };
+export { awaitEmbeddedLaunchGate, shouldRunOtaBootGate };

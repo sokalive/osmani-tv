@@ -25,6 +25,7 @@ function pass(msg) {
 }
 
 const gate = read('lib/embeddedLaunchGate.js');
+const policy = read('lib/otaBootGatePolicy.js');
 const expo = read('lib/expoUpdatesClient.js');
 const boot = read('lib/startupSplashBoot.js');
 const splash = read('hooks/useStartupSplash.js');
@@ -75,8 +76,32 @@ else pass('App wraps EmbeddedOtaBootGate');
 if (app.includes('appBootReady')) fail('legacy black bootGate removed');
 else pass('legacy black bootGate removed');
 
-if (!bootGate.includes('runEmbeddedLaunchOtaGate')) fail('boot gate runs OTA sync');
-else pass('boot gate runs OTA sync');
+if (!policy.includes('shouldRunOtaBootGate')) fail('otaBootGatePolicy');
+else pass('otaBootGatePolicy');
+
+if (!policy.includes('isStalePlaybackBundle')) fail('stale bundle detection');
+else pass('stale bundle detection');
+
+if (!gate.includes('shouldRunOtaBootGate')) fail('gate uses shouldRunOtaBootGate');
+else pass('gate uses shouldRunOtaBootGate');
+
+if (!expo.includes('shouldReloadAfterOtaFetch')) fail('reload uses stale session policy');
+else pass('reload uses stale session policy');
+
+if (!boot.includes('beginEmbeddedLaunchGate')) fail('startupSplashBoot prefetches gate');
+else pass('startupSplashBoot prefetches gate');
+
+if (!bootGate.includes('gate_mounted')) fail('gate_mounted diagnostic');
+else pass('gate_mounted diagnostic');
+
+if (!bootGate.includes('gate_blocking_ui')) fail('gate_blocking_ui diagnostic');
+else pass('gate_blocking_ui diagnostic');
+
+if (!bootGate.includes('shouldRunOtaBootGate')) fail('boot gate uses stale policy');
+else pass('boot gate uses stale policy');
+
+if (!bootGate.includes('beginEmbeddedLaunchGate')) fail('boot gate awaits shared gate promise');
+else pass('boot gate awaits shared gate promise');
 
 if (!diag.includes('staleEmbeddedLikely')) fail('firstLaunchBootDiagnostics probe');
 else pass('firstLaunchBootDiagnostics probe');
@@ -148,6 +173,7 @@ async function liveBeinProbe() {
 }
 
 async function main() {
+  require('./simulate-fresh-install-gate.js');
   await liveBeinProbe();
   if (process.exitCode) process.exit(1);
   console.log('\n[verify-first-launch-ota] ok');

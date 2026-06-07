@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import { syncExpoUpdateBundle } from '../lib/expoUpdatesClient';
-import { isEmbeddedLaunchRuntime } from '../lib/embeddedLaunchGate';
+import { shouldRunOtaBootGate } from '../lib/otaBootGatePolicy';
 import { logFirstLaunchBootDiagnostics } from '../lib/firstLaunchBootDiagnostics';
 import { STARTUP_SPLASH_MAX_MS, STARTUP_SPLASH_MIN_MS } from '../lib/startupSplashBoot';
 
@@ -35,7 +35,7 @@ export function useStartupSplash() {
 
       logFirstLaunchBootDiagnostics('splash_ready');
 
-      if (!isEmbeddedLaunchRuntime()) {
+      if (!shouldRunOtaBootGate()) {
         void syncExpoUpdateBundle('splash').catch(() => null);
       }
 
