@@ -126,7 +126,7 @@ module.exports = {
     name: 'Osmani TV',
     slug: 'osmani-tv',
     /** User-visible version (Android versionName / iOS CFBundleShortVersionString). */
-    version: '1.7.1',
+    version: '1.7.2',
     /**
      * EAS Update runtime — OTA bundles only apply when this matches the native build
      * (policy: appVersion → uses `version` above). Bump `version` + versionCode for native changes.
@@ -177,8 +177,8 @@ module.exports = {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#000000',
       },
-      /** Must exceed Play Console latest upload. Current release: 1.7.1 (18). */
-      versionCode: 18,
+      /** Must exceed Play Console latest upload. Current release: 1.7.2 (19). */
+      versionCode: 19,
       /** Cold-start window color before React (pairs with native splash theme). */
       backgroundColor: '#FFFFFF',
       edgeToEdgeEnabled: true,

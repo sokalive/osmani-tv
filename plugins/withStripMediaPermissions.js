@@ -1,10 +1,14 @@
 /**
- * Ensures photo/video/storage permissions are removed after manifest merge
- * (complements expo.android.blockedPermissions in app.config.js).
+ * Block gallery/storage permissions merged from dependencies (expo-screen-capture,
+ * expo-image, expo-file-system) using manifest merger tools:node="remove".
+ *
+ * Must use addBlockedPermissions — removePermissions() would delete Expo's own
+ * blockedPermissions entries and let library manifests re-add READ_MEDIA_* at Gradle merge.
  */
 const { withAndroidManifest, AndroidConfig } = require('@expo/config-plugins');
+const { ensureToolsAvailable } = require('@expo/config-plugins/build/android/Manifest');
 
-const STRIP_PERMISSIONS = [
+const BLOCKED_PERMISSIONS = [
   'android.permission.READ_MEDIA_IMAGES',
   'android.permission.READ_MEDIA_VIDEO',
   'android.permission.READ_MEDIA_AUDIO',
@@ -16,8 +20,8 @@ const STRIP_PERMISSIONS = [
 
 const withStripMediaPermissions = (config) =>
   withAndroidManifest(config, (cfg) => {
-    let manifest = cfg.modResults;
-    AndroidConfig.Permissions.removePermissions(manifest, STRIP_PERMISSIONS);
+    let manifest = ensureToolsAvailable(cfg.modResults);
+    AndroidConfig.Permissions.addBlockedPermissions(manifest, BLOCKED_PERMISSIONS);
     cfg.modResults = manifest;
     return cfg;
   });
