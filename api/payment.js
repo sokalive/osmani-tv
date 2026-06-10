@@ -1,4 +1,5 @@
 import { BASE_URL } from '../api';
+import { parseCheckoutProvidersResponse } from '../lib/checkoutPaymentProviders';
 import { resolveMediaAssetUrl } from '../lib/mediaDelivery';
 
 /**
@@ -180,10 +181,8 @@ export async function getPaymentProviders() {
 }
 
 /**
- * Active checkout gateway from admin (zenopay | sonicpesa).
+ * Active checkout gateway from admin (zenopay | sonicpesa | auraxpay).
  * GET /api/payments/checkout-providers
- *
- * @returns {Promise<{ payment_provider: 'zenopay'|'sonicpesa'; zenopay: boolean; sonicpesa: boolean }>}
  */
 export async function getCheckoutPaymentProviders() {
   const res = await fetch(`${P}/payments/checkout-providers`);
@@ -192,30 +191,14 @@ export async function getCheckoutPaymentProviders() {
     const msg = body?.error != null ? String(body.error) : `HTTP ${res.status}`;
     throw new Error(msg || 'Could not load checkout provider');
   }
-  const provider = String(body?.payment_provider ?? 'zenopay').toLowerCase();
-  return {
-    payment_provider: provider === 'sonicpesa' ? 'sonicpesa' : 'zenopay',
-    zenopay: body?.zenopay !== false,
-    sonicpesa: Boolean(body?.sonicpesa),
-  };
+  return parseCheckoutProvidersResponse(body);
 }
 
-/**
- * SonicPesa STK — POST /api/payments/sonicpesa/create-order
- * @param {{ phone: string; plan_id: string; amount: number; device_id: string; device_fingerprint?: string }} payload
- * @returns {Promise<{ order_id: string; expiresInSeconds?: number }>}
- */
-export async function createSonicpesaOrder(payload) {
-  const url = `${P}/payments/sonicpesa/create-order`;
+async function postCreateOrder(url, payload, errorLabel) {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      phone: payload.phone,
-      plan_id: payload.plan_id,
-      amount: payload.amount,
-      device_id: payload.device_id,
-    }),
+    body: JSON.stringify(payload),
   });
   const body = await readJson(res);
   if (!res.ok) {
@@ -225,7 +208,7 @@ export async function createSonicpesaOrder(payload) {
         : body?.message != null
           ? String(body.message)
           : `HTTP ${res.status}`;
-    throw new Error(msg || 'SonicPesa payment could not be started');
+    throw new Error(msg || `${errorLabel} could not be started`);
   }
   const orderId = pickOrderId(body);
   if (!orderId) throw new Error('Missing order_id from server');
@@ -234,6 +217,51 @@ export async function createSonicpesaOrder(payload) {
     order_id: orderId,
     expiresInSeconds: Number.isFinite(expiresInSeconds) ? expiresInSeconds : undefined,
   };
+}
+
+/**
+ * SonicPesa STK — POST /api/payments/sonicpesa/create-order
+ * @param {{ phone: string; plan_id: string; amount: number; device_id: string; device_fingerprint?: string }} payload
+ * @returns {Promise<{ order_id: string; expiresInSeconds?: number }>}
+ */
+export async function createSonicpesaOrder(payload) {
+  return postCreateOrder(
+    `${P}/payments/sonicpesa/create-order`,
+    {
+      phone: payload.phone,
+      plan_id: payload.plan_id,
+      amount: payload.amount,
+      device_id: payload.device_id,
+    },
+    'SonicPesa payment',
+  );
+}
+
+/**
+ * Aurax Pay STK — POST /api/payments/auraxpay/create-order
+ * @param {{ phone: string; plan_id: string; amount: number; device_id: string; device_fingerprint?: string }} payload
+ * @returns {Promise<{ order_id: string; expiresInSeconds?: number }>}
+ */
+export async function createAuraxpayOrder(payload) {
+  return postCreateOrder(
+    `${P}/payments/auraxpay/create-order`,
+    {
+      phone: payload.phone,
+      plan_id: payload.plan_id,
+      amount: payload.amount,
+      device_id: payload.device_id,
+    },
+    'Aurax Pay payment',
+  );
+}
+
+/**
+ * @param {'zenopay'|'sonicpesa'|'auraxpay'} provider
+ */
+export function resolveCheckoutStartPayment(provider) {
+  if (provider === 'sonicpesa') return createSonicpesaOrder;
+  if (provider === 'auraxpay') return createAuraxpayOrder;
+  return createPayment;
 }
 
 /**

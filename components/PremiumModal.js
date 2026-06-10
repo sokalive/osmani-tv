@@ -22,14 +22,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import EventSource from 'react-native-sse';
 import {
-  createPayment,
-  createSonicpesaOrder,
   fetchSubscription,
   getCheckoutPaymentProviders,
   getPaymentProviders,
   getPaymentStatus,
   getPlans,
+  resolveCheckoutStartPayment,
 } from '../api/payment';
+import { listEnabledCheckoutGateways } from '../lib/checkoutPaymentProviders';
 import { BASE_URL } from '../api';
 import { verifySubscription } from '../api/subscription';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
@@ -167,6 +167,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [providers, setProviders] = useState(FALLBACK_NETWORKS);
   const [logoErrors, setLogoErrors] = useState({});
   const [checkoutProvider, setCheckoutProvider] = useState('zenopay');
+  const [checkoutGateways, setCheckoutGateways] = useState([]);
+  const [checkoutLogoErrors, setCheckoutLogoErrors] = useState({});
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -291,7 +293,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
-  /** Load active checkout gateway (zenopay | sonicpesa) when modal opens. */
+  /** Load active checkout gateway (zenopay | sonicpesa | auraxpay) when modal opens. */
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
@@ -299,9 +301,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       try {
         const cfg = await getCheckoutPaymentProviders();
         if (cancelled) return;
-        setCheckoutProvider(cfg.payment_provider === 'sonicpesa' ? 'sonicpesa' : 'zenopay');
+        setCheckoutProvider(cfg.payment_provider);
+        setCheckoutGateways(listEnabledCheckoutGateways(cfg));
+        setCheckoutLogoErrors({});
       } catch {
-        if (!cancelled) setCheckoutProvider('zenopay');
+        if (!cancelled) {
+          setCheckoutProvider('zenopay');
+          setCheckoutGateways([]);
+        }
       }
     })();
     return () => {
@@ -521,6 +528,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       ? `TSh ${formatPriceTz(selectedPlan.price)}`
       : 'TSh —';
 
+  const payButtonLabel = (() => {
+    if (checkoutProvider === 'auraxpay') return 'LIPIA KUPITIA AURAX PAY';
+    if (checkoutProvider === 'sonicpesa') return 'LIPIA KUPITIA SONICPESA';
+    return 'LIPIA SASA';
+  })();
+
   const ringSpin = ringRotate.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
@@ -547,8 +560,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         device_fingerprint: deviceFingerprint,
       };
       void cacheSecurityPhone(payPayload.phone);
-      const startPayment =
-        checkoutProvider === 'sonicpesa' ? createSonicpesaOrder : createPayment;
+      const startPayment = resolveCheckoutStartPayment(checkoutProvider);
       const { order_id: oid, expiresInSeconds } = await startPayment(payPayload);
       doneRef.current = false;
       setWaitingDeviceId(deviceId);
@@ -724,6 +736,69 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                               onChangeText={setPhoneNumber}
                             />
                           </View>
+                          {checkoutGateways.length > 0 ? (
+                            <>
+                              <Text style={[styles.networksLabel, styles.step2GapClear]}>
+                                Njia ya malipo
+                              </Text>
+                              <View style={[styles.checkoutGatewaysGrid, styles.step2GapClear]}>
+                                {checkoutGateways.map((gateway) => {
+                                  const selected = gateway.id === checkoutProvider;
+                                  const failed = !!checkoutLogoErrors[gateway.id];
+                                  const showLogo = !!gateway.logoUrl && !failed;
+                                  return (
+                                    <View
+                                      key={gateway.id}
+                                      style={[
+                                        styles.checkoutGatewayCard,
+                                        selected && styles.checkoutGatewayCardActive,
+                                      ]}
+                                    >
+                                      <View
+                                        style={[
+                                          styles.checkoutGatewayLogoWrap,
+                                          !showLogo && { backgroundColor: gateway.accent },
+                                        ]}
+                                      >
+                                        {showLogo ? (
+                                          <Image
+                                            source={{ uri: gateway.logoUrl }}
+                                            style={styles.checkoutGatewayLogo}
+                                            resizeMode="contain"
+                                            onError={() =>
+                                              setCheckoutLogoErrors((prev) =>
+                                                prev[gateway.id]
+                                                  ? prev
+                                                  : { ...prev, [gateway.id]: true },
+                                              )
+                                            }
+                                          />
+                                        ) : (
+                                          <Text style={styles.checkoutGatewayInitial}>
+                                            {gateway.initial}
+                                          </Text>
+                                        )}
+                                      </View>
+                                      <Text
+                                        style={[
+                                          styles.checkoutGatewayName,
+                                          selected && styles.checkoutGatewayNameActive,
+                                        ]}
+                                        numberOfLines={2}
+                                      >
+                                        {gateway.name}
+                                      </Text>
+                                      {selected ? (
+                                        <View style={styles.checkoutGatewayBadge}>
+                                          <Text style={styles.checkoutGatewayBadgeText}>ACTIVE</Text>
+                                        </View>
+                                      ) : null}
+                                    </View>
+                                  );
+                                })}
+                              </View>
+                            </>
+                          ) : null}
                           <Text style={[styles.networksLabel, styles.step2GapClear]}>Mitandao inayokubaliwa</Text>
                           <View style={[styles.networksGrid, styles.step2GapClear]}>
                             {providers.map((n) => {
@@ -782,7 +857,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                               {submitting ? (
                                 <ActivityIndicator color="#111827" />
                               ) : (
-                                <Text style={styles.ctaText}>LIPIA SASA</Text>
+                                <Text style={styles.ctaText}>{payButtonLabel}</Text>
                               )}
                             </LinearGradient>
                           </Pressable>
@@ -1329,6 +1404,79 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     fontWeight: '700',
+  },
+  checkoutGatewaysGrid: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 8,
+  },
+  checkoutGatewayCard: {
+    width: '31%',
+    minWidth: 96,
+    flexGrow: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: '#161A22',
+    alignItems: 'center',
+  },
+  checkoutGatewayCardActive: {
+    borderColor: ACCENT,
+    backgroundColor: 'rgba(250,204,21,0.08)',
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  checkoutGatewayLogoWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
+  },
+  checkoutGatewayLogo: {
+    width: '100%',
+    height: '100%',
+  },
+  checkoutGatewayInitial: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  checkoutGatewayName: {
+    color: '#D1D5DB',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+    minHeight: 28,
+  },
+  checkoutGatewayNameActive: {
+    color: '#FFFFFF',
+  },
+  checkoutGatewayBadge: {
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: ACCENT,
+  },
+  checkoutGatewayBadgeText: {
+    color: '#111827',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.6,
   },
   networksRow: {
     flexDirection: 'row',
