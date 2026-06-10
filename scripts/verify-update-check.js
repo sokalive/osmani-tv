@@ -110,9 +110,33 @@ async function fetchUpdateCheck(installed, pkg) {
   return { url, status: res.status, body };
 }
 
+async function verifyPublishedTargetRange() {
+  const targets = [16, 17, 18];
+  const onLatest = 19;
+  console.log('\n[live API] published target range (latest_version_code=19)');
+  for (const installed of [...targets, onLatest]) {
+    const { status, body } = await fetchUpdateCheck(installed, 'com.burudanitv.app');
+    if (!body) {
+      assert(`live API body for v${installed}`, false);
+      continue;
+    }
+    const out = parseUpdateCheckResponse(body, { installedVersionCode: installed });
+    const latest = out?.latestVersionCode ?? 0;
+    assert(`v${installed} latest parsed as 19`, latest === 19);
+    if (installed < 19) {
+      assert(`v${installed} outdated → update UI`, out?.decision !== 'NONE');
+      console.log(`  v${installed} HTTP ${status} → decision=${out?.decision} latest=${latest}`);
+    } else {
+      assert(`v${installed} on latest → NONE`, out?.decision === 'NONE');
+      console.log(`  v${installed} HTTP ${status} → decision=${out?.decision} latest=${latest}`);
+    }
+  }
+}
+
 async function main() {
   console.log('[verify-update-check] strict latest_version_code gate\n');
   unitTests();
+  await verifyPublishedTargetRange();
 
   const installed = Number(arg('installed', '14'));
   console.log('\n[live API] installed:', installed, 'base:', BASE);

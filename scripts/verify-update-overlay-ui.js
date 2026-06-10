@@ -34,12 +34,15 @@ if (!/body:\s*\{[^}]*opacity:\s*1/.test(src)) {
 } else pass('body text has full opacity');
 
 if (src.includes('OPEN PLAY STORE')) {
-  fail('Play Store button label must be DOWNLOAD, not OPEN PLAY STORE');
+  fail('Play Store button label must not be OPEN PLAY STORE');
 } else pass('OPEN PLAY STORE label removed');
 
-if (!src.includes("return 'DOWNLOAD'")) {
-  fail('primary label must return DOWNLOAD for Play Store path');
-} else pass('Play Store path uses DOWNLOAD label');
+const playStoreLabelMatches = src.match(
+  /if \(isPlayStore \|\| \(!action\.canDownload && action\.canOpenStore\)\) return '([^']+)'/,
+);
+if (!playStoreLabelMatches || playStoreLabelMatches[1] !== 'UPDATE NOW') {
+  fail('Play Store path primary label must be UPDATE NOW');
+} else pass('Play Store path uses UPDATE NOW label');
 
 if (src.includes('ACCENT_GRADIENT') || src.includes('LinearGradient')) {
   fail('yellow gradient CTA must be removed');

@@ -159,7 +159,7 @@ export default function UpdateOverlay() {
     if (phase === 'downloaded') return 'OPEN INSTALLER';
     if (phase === 'needs_permission') return 'OPEN INSTALLER';
     if (phase === 'failed') return 'RETRY';
-    if (isPlayStore || (!action.canDownload && action.canOpenStore)) return 'DOWNLOAD';
+    if (isPlayStore || (!action.canDownload && action.canOpenStore)) return 'UPDATE NOW';
     if (!action.canDownload) return 'NO APK AVAILABLE';
     return isForce ? 'DOWNLOAD NOW' : 'UPDATE NOW';
   })();
