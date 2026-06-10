@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import {
   cancelDownload,
   dismissSoft,
@@ -25,9 +24,11 @@ import {
   subscribe,
 } from '../lib/updateClient';
 
-const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
 const SHEET_BG = '#0F1115';
 const TEXT_MUTED = '#9CA3AF';
+const BODY_TEXT = '#FFFFFF';
+const CTA_RED = '#DC2626';
+const CTA_TEXT = '#FFFFFF';
 
 const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MAX_SHEET_H = Math.min(480, Math.round(WINDOW_HEIGHT * 0.82));
@@ -158,7 +159,7 @@ export default function UpdateOverlay() {
     if (phase === 'downloaded') return 'OPEN INSTALLER';
     if (phase === 'needs_permission') return 'OPEN INSTALLER';
     if (phase === 'failed') return 'RETRY';
-    if (isPlayStore || (!action.canDownload && action.canOpenStore)) return 'OPEN PLAY STORE';
+    if (isPlayStore || (!action.canDownload && action.canOpenStore)) return 'DOWNLOAD';
     if (!action.canDownload) return 'NO APK AVAILABLE';
     return isForce ? 'DOWNLOAD NOW' : 'UPDATE NOW';
   })();
@@ -252,15 +253,10 @@ export default function UpdateOverlay() {
                 onPress={onPrimary}
                 disabled={primaryDisabled}
               >
-                <LinearGradient
-                  colors={ACCENT_GRADIENT}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.ctaGradient}
-                >
-                  {busy ? <ActivityIndicator color="#111827" style={styles.ctaSpinner} /> : null}
+                <View style={styles.ctaGradient}>
+                  {busy ? <ActivityIndicator color={CTA_TEXT} style={styles.ctaSpinner} /> : null}
                   <Text style={styles.ctaText}>{primaryLabel}</Text>
-                </LinearGradient>
+                </View>
               </Pressable>
 
               {showCancel ? (
@@ -325,7 +321,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   body: {
-    color: TEXT_MUTED,
+    color: BODY_TEXT,
+    opacity: 1,
     fontSize: 15,
     lineHeight: 22,
     textAlign: 'center',
@@ -395,9 +392,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 12,
     elevation: 14,
-    shadowColor: '#FACC15',
+    shadowColor: CTA_RED,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.55,
+    shadowOpacity: 0.45,
     shadowRadius: 18,
   },
   ctaDisabled: {
@@ -411,12 +408,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexDirection: 'row',
     borderRadius: 18,
+    backgroundColor: CTA_RED,
   },
   ctaSpinner: {
     marginRight: 10,
   },
   ctaText: {
-    color: '#111827',
+    color: CTA_TEXT,
+    opacity: 1,
     fontSize: 17,
     fontWeight: '800',
     textAlign: 'center',
