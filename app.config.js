@@ -126,7 +126,7 @@ module.exports = {
     name: 'Osmani TV',
     slug: 'osmani-tv',
     /** User-visible version (Android versionName / iOS CFBundleShortVersionString). */
-    version: '1.7.2',
+    version: process.env.OTA_RUNTIME_TARGET?.trim() || '1.7.2',
     /**
      * EAS Update runtime — OTA bundles only apply when this matches the native build
      * (policy: appVersion → uses `version` above). Bump `version` + versionCode for native changes.
