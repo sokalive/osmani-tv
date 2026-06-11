@@ -83,7 +83,9 @@ assert(!paymentSrc.includes("provider === 'sonicpesa' ? 'sonicpesa' : 'zenopay'"
 
 const modalSrc = fs.readFileSync(path.join(root, 'components', 'PremiumModal.js'), 'utf8');
 assert(modalSrc.includes('resolveCheckoutStartPayment'), 'PremiumModal uses resolver');
-assert(modalSrc.includes('LIPIA KUPITIA AURAX PAY'), 'Aurax pay button label');
+assert(modalSrc.includes('Lipia — {selectedAmountDisplay}'), 'step-2 pay button shows amount only');
+assert(!modalSrc.includes('LIPIA KUPITIA'), 'no provider name on pay button');
+assert(!modalSrc.includes('payButtonLabel'), 'no provider-specific pay button label');
 assert(!modalSrc.includes('Njia ya malipo'), 'no visible checkout gateway cards');
 assert(!modalSrc.includes('checkoutGateways'), 'no checkout gateway card grid');
 assert(!modalSrc.includes('createSonicpesaOrder'), 'PremiumModal no direct sonic import');

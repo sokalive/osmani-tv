@@ -520,12 +520,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       ? `TSh ${formatPriceTz(selectedPlan.price)}`
       : 'TSh —';
 
-  const payButtonLabel = (() => {
-    if (checkoutProvider === 'auraxpay') return 'LIPIA KUPITIA AURAX PAY';
-    if (checkoutProvider === 'sonicpesa') return 'LIPIA KUPITIA SONICPESA';
-    return 'LIPIA SASA';
-  })();
-
   const ringSpin = ringRotate.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
@@ -786,7 +780,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                               {submitting ? (
                                 <ActivityIndicator color="#111827" />
                               ) : (
-                                <Text style={styles.ctaText}>{payButtonLabel}</Text>
+                                <Text style={styles.ctaText}>Lipia — {selectedAmountDisplay}</Text>
                               )}
                             </LinearGradient>
                           </Pressable>
