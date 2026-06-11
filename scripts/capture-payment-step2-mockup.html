@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=390, initial-scale=1" />
+  <title>Payment step 2 mockup</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0b0f1a; color: #fff; }
+    .phone { width: 390px; min-height: 844px; margin: 0 auto; padding: 24px 20px; background: #111827; }
+    h2 { font-size: 13px; color: #9ca3af; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .title { font-size: 20px; font-weight: 700; margin: 8px 0 4px; }
+    .sub { color: #9ca3af; font-size: 13px; margin-bottom: 16px; }
+    .input { background: #161a22; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; padding: 14px 16px; color: #fff; margin-bottom: 16px; }
+    .label { color: #9ca3af; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; margin: 12px 0 10px; }
+    .grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .card { width: 31%; min-width: 96px; background: #161a22; border: 1.5px solid rgba(255,255,255,.08); border-radius: 14px; padding: 10px 8px; text-align: center; }
+    .card.active { border-color: #facc15; background: rgba(250,204,21,.08); }
+    .logo { width: 52px; height: 52px; border-radius: 12px; margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 22px; }
+    .net { width: 72px; text-align: center; }
+    .net-box { width: 72px; height: 72px; border-radius: 14px; margin-bottom: 6px; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+    .cta { margin-top: auto; background: linear-gradient(135deg, #facc15, #eab308); color: #111827; font-weight: 800; text-align: center; padding: 16px; border-radius: 16px; font-size: 17px; }
+    .badge { display: inline-block; margin-top: 6px; background: #facc15; color: #111827; font-size: 9px; font-weight: 800; padding: 2px 8px; border-radius: 999px; }
+    .banner { background: #1e293b; color: #facc15; text-align: center; padding: 8px; font-size: 12px; font-weight: 700; margin-bottom: 8px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <div class="phone" id="screen"></div>
+  <script>
+    const mode = new URLSearchParams(location.search).get('mode') || 'after';
+    const el = document.getElementById('screen');
+    const networks = [
+      ['M-Pesa', '#00A651'], ['Tigo', '#0033A0'], ['Airtel', '#ED1C24'], ['HaloPesa', '#7C3AED']
+    ];
+    const gateways = [
+      ['Z', 'ZenoPay', '#2563EB', true],
+      ['S', 'SonicPesa', '#7C3AED', false],
+      ['A', 'Aurax Pay', '#0891B2', false],
+    ];
+    el.innerHTML = `
+      <div class="banner">${mode === 'before' ? 'BEFORE (commit 90b411a)' : 'AFTER (gateway cards removed)'}</div>
+      <div class="title">Weka Namba ya Simu</div>
+      <div class="sub">Tigo, M-Pesa, Airtel, HaloPesa</div>
+      <div class="input">0712345678</div>
+      ${mode === 'before' ? `
+        <div class="label">Njia ya malipo</div>
+        <div class="grid">
+          ${gateways.map(([i,n,c,a]) => `
+            <div class="card ${a ? 'active' : ''}">
+              <div class="logo" style="background:${c}">${i}</div>
+              <div style="font-size:11px;font-weight:700">${n}</div>
+              ${a ? '<div class="badge">ACTIVE</div>' : ''}
+            </div>`).join('')}
+        </div>` : ''}
+      <div class="label">Mitandao inayokubaliwa</div>
+      <div class="grid">
+        ${networks.map(([n,c]) => `
+          <div class="net">
+            <div class="net-box" style="background:${c}">${n[0]}</div>
+            <div style="font-size:11px">${n}</div>
+          </div>`).join('')}
+      </div>
+      <div style="height:40px"></div>
+      <div class="cta">LIPIA SASA</div>
+    `;
+  </script>
+</body>
+</html>
