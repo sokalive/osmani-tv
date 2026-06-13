@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AppState } from 'react-native';
 import Constants from 'expo-constants';
 import { reportSecurityDevice } from '../api/security';
+import { isDeviceIntelligenceSmartMonitorEnabled } from '../lib/deviceIntelligenceAccess';
 import { SECURITY_BLOCK_MESSAGE } from '../lib/security/constants';
 import { resolveEnforcement } from '../lib/security/riskEngine';
 import { runRuntimeSecurityScan } from '../lib/security/runtimeScan';
@@ -28,6 +29,7 @@ export function SecurityProvider({ children }) {
   const [details, setDetails] = useState({});
   const [serverEnforcement, setServerEnforcement] = useState(null);
   const [serverPlaybackAllowed, setServerPlaybackAllowed] = useState(null);
+  const [serverSmartMonitorEnabled, setServerSmartMonitorEnabled] = useState(false);
   const scanRunning = useRef(false);
 
   const mode = useMemo(() => readSecurityMode(), []);
@@ -45,6 +47,12 @@ export function SecurityProvider({ children }) {
     if (report.blocked === true && report.playbackAllowed !== true) {
       setServerPlaybackAllowed(false);
       setServerEnforcement((prev) => prev || 'block');
+      setServerSmartMonitorEnabled(false);
+    }
+    if (report.smartMonitorEnabled === true && report.blocked !== true) {
+      setServerSmartMonitorEnabled(true);
+    } else if (report.smartMonitorEnabled === false || report.blocked === true) {
+      setServerSmartMonitorEnabled(false);
     }
   }, []);
 
@@ -93,8 +101,10 @@ export function SecurityProvider({ children }) {
         mode,
         serverEnforcement,
         serverPlaybackAllowed,
+        smartMonitorEnabled:
+          serverSmartMonitorEnabled || isDeviceIntelligenceSmartMonitorEnabled(),
       }),
-    [signals, tier, mode, serverEnforcement, serverPlaybackAllowed],
+    [signals, tier, mode, serverEnforcement, serverPlaybackAllowed, serverSmartMonitorEnabled],
   );
 
   const value = useMemo(

@@ -69,7 +69,7 @@ function readBoolish(value) {
 
 /**
  * @param {unknown} parsed
- * @returns {{ enforcement: string | null; playbackAllowed: boolean | null; blocked: boolean }}
+ * @returns {{ enforcement: string | null; playbackAllowed: boolean | null; blocked: boolean; smartMonitorEnabled: boolean }}
  */
 export function parseSecurityReportResponse(parsed) {
   const root = parsed && typeof parsed === 'object' ? parsed : {};
@@ -89,20 +89,42 @@ export function parseSecurityReportResponse(parsed) {
     readBoolish(root.playbackAllowed) ??
     readBoolish(root.playback_allowed);
 
+  const securityBlocked =
+    readBoolish(data.security_blocked) === true ||
+    readBoolish(data.securityBlocked) === true ||
+    readBoolish(root.security_blocked) === true ||
+    readBoolish(root.securityBlocked) === true;
+
   const blockedFlag =
     readBoolish(data.blocked) === true ||
     readBoolish(root.blocked) === true ||
     String(data.status ?? root.status ?? '').trim().toLowerCase() === 'blocked';
 
-  if (blockedFlag && playbackAllowed !== false) playbackAllowed = false;
+  const smartMonitorEnabled =
+    readBoolish(data.smart_monitor_enabled) === true ||
+    readBoolish(data.smartMonitorEnabled) === true ||
+    readBoolish(root.smart_monitor_enabled) === true ||
+    readBoolish(root.smartMonitorEnabled) === true ||
+    String(enforcement ?? '').trim().toLowerCase() === 'monitor';
+
+  if (securityBlocked || blockedFlag) {
+    playbackAllowed = false;
+  }
   if (String(enforcement ?? '').trim().toLowerCase() === 'block' && playbackAllowed !== false) {
     playbackAllowed = false;
   }
 
+  const blocked =
+    securityBlocked ||
+    blockedFlag ||
+    playbackAllowed === false ||
+    String(enforcement ?? '').trim().toLowerCase() === 'block';
+
   return {
     enforcement,
     playbackAllowed,
-    blocked: blockedFlag || playbackAllowed === false || String(enforcement ?? '').toLowerCase() === 'block',
+    blocked,
+    smartMonitorEnabled,
   };
 }
 
@@ -114,7 +136,7 @@ export function parseSecurityReportResponse(parsed) {
  *   details?: Record<string, unknown>;
  *   detected_at?: string;
  * }} args
- * @returns {Promise<{ ok: boolean; enforcement?: string | null; playbackAllowed?: boolean | null; blocked?: boolean }>}
+ * @returns {Promise<{ ok: boolean; enforcement?: string | null; playbackAllowed?: boolean | null; blocked?: boolean; smartMonitorEnabled?: boolean }>}
  */
 export async function reportSecurityDevice(args) {
   if (await shouldSkipReport(args?.signals)) {

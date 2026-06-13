@@ -23,6 +23,13 @@ function assertContains(rel, needle, label) {
 assertContains('api/usersIntelligence.js', 'registerDeviceIntelligence', 'register API');
 assertContains('api/usersIntelligence.js', '/api/users-intelligence/register', 'production register path');
 assertContains('api/usersIntelligence.js', 'registry?.blocked', 'registry blocked parse');
+assertContains('api/usersIntelligence.js', 'parseDeviceIntelligenceAccess', 'access snapshot parser');
+assertContains('api/usersIntelligence.js', 'smart_monitor_enabled', 'smart monitor flag parse');
+assertContains('api/usersIntelligence.js', 'explicitUnblock', 'explicit unblock detection');
+assertContains('context/DeviceIntelligenceContext.jsx', 'showUnblockModal: result.explicitUnblock', 'unblock modal only on admin unblock');
+assertContains('lib/deviceIntelligenceAccess.js', 'isDeviceIntelligenceSmartMonitorEnabled', 'smart monitor imperative hook');
+assertContains('lib/adminSseRefreshEvents.js', 'smart_monitor_enabled', 'smart monitor SSE event');
+assertContains('lib/security/riskEngine.js', 'smartMonitorEnabled', 'smart monitor security enforcement');
 assertContains('lib/deviceIntelligencePayload.js', 'device_id', 'device_id in payload');
 assertContains('context/DeviceIntelligenceContext.jsx', '15 * 1000', '15s access poll');
 assertContains('lib/adminSseRefreshEvents.js', 'device_blocked', 'SSE block event');

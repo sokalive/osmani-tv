@@ -29,11 +29,7 @@ function readBoolish(value) {
   return null;
 }
 
-/**
- * @param {unknown} parsed
- * @returns {'blocked' | 'active' | null}
- */
-export function parseDeviceIntelligenceStatus(parsed) {
+function readRecord(parsed) {
   const root = parsed && typeof parsed === 'object' ? parsed : {};
   const data =
     root.data && typeof root.data === 'object' && !Array.isArray(root.data) ? root.data : root;
@@ -49,6 +45,36 @@ export function parseDeviceIntelligenceStatus(parsed) {
       : registry && typeof registry === 'object'
         ? registry
         : data;
+  return { root, data, registry, device };
+}
+
+function readSmartMonitorEnabled(record) {
+  const { root, data, registry, device } = record;
+  return (
+    readBoolish(root.smart_monitor_enabled) === true ||
+    readBoolish(root.smartMonitorEnabled) === true ||
+    readBoolish(data.smart_monitor_enabled) === true ||
+    readBoolish(data.smartMonitorEnabled) === true ||
+    readBoolish(registry?.smart_monitor_enabled) === true ||
+    readBoolish(registry?.smartMonitorEnabled) === true ||
+    readBoolish(device?.smart_monitor_enabled) === true ||
+    readBoolish(device?.smartMonitorEnabled) === true
+  );
+}
+
+/**
+ * Users Intelligence access snapshot (register / SSE refresh).
+ *
+ * @param {unknown} parsed
+ * @returns {{
+ *   status: 'blocked' | 'active' | null;
+ *   smartMonitorEnabled: boolean;
+ *   explicitUnblock: boolean;
+ * }}
+ */
+export function parseDeviceIntelligenceAccess(parsed) {
+  const record = readRecord(parsed);
+  const { root, data, registry, device } = record;
 
   const blockedFlag =
     readBoolish(root.blocked) === true ||
@@ -79,6 +105,11 @@ export function parseDeviceIntelligenceStatus(parsed) {
     .trim()
     .toLowerCase();
 
+  const smartMonitorEnabled =
+    readSmartMonitorEnabled(record) ||
+    statusRaw === 'smart_monitor' ||
+    statusRaw === 'monitor';
+
   if (
     blockedFlag ||
     disallowed ||
@@ -86,20 +117,37 @@ export function parseDeviceIntelligenceStatus(parsed) {
     statusRaw === 'banned' ||
     statusRaw === 'suspended'
   ) {
-    return 'blocked';
+    return { status: 'blocked', smartMonitorEnabled: false, explicitUnblock: false };
   }
+
+  if (smartMonitorEnabled) {
+    return { status: 'active', smartMonitorEnabled: true, explicitUnblock: false };
+  }
+
+  if (statusRaw === 'unblocked') {
+    return { status: 'active', smartMonitorEnabled: false, explicitUnblock: true };
+  }
+
   if (
     statusRaw === 'active' ||
     statusRaw === 'ok' ||
     statusRaw === 'allowed' ||
-    statusRaw === 'unblocked' ||
     readBoolish(root.allowed) === true ||
     readBoolish(registry?.allowed) === true ||
     readBoolish(device?.allowed) === true
   ) {
-    return 'active';
+    return { status: 'active', smartMonitorEnabled: false, explicitUnblock: false };
   }
-  return null;
+
+  return { status: null, smartMonitorEnabled: false, explicitUnblock: false };
+}
+
+/**
+ * @param {unknown} parsed
+ * @returns {'blocked' | 'active' | null}
+ */
+export function parseDeviceIntelligenceStatus(parsed) {
+  return parseDeviceIntelligenceAccess(parsed).status;
 }
 
 /**
@@ -182,7 +230,7 @@ async function writeDeviceIntelligenceLastStatus(status) {
 
 /**
  * Register or refresh device with Users Intelligence backend.
- * @returns {Promise<{ ok: boolean; status: 'blocked' | 'active' | null; blocked: boolean; firstSeen: string | null; raw?: unknown }>}
+ * @returns {Promise<{ ok: boolean; status: 'blocked' | 'active' | null; blocked: boolean; smartMonitorEnabled: boolean; explicitUnblock: boolean; firstSeen: string | null; raw?: unknown }>}
  */
 export async function registerDeviceIntelligence() {
   const storedFirstSeen = await readStoredFirstSeen();
@@ -224,11 +272,20 @@ export async function registerDeviceIntelligence() {
       const firstSeen = serverFirstSeen || storedFirstSeen || body.first_seen || body.last_seen;
       await persistFirstSeen(firstSeen);
 
-      const status = parseDeviceIntelligenceStatus(parsed);
+      const access = parseDeviceIntelligenceAccess(parsed);
+      const { status, smartMonitorEnabled, explicitUnblock } = access;
       const blocked = status === 'blocked';
       if (status) await writeDeviceIntelligenceLastStatus(status);
 
-      return { ok: true, status, blocked, firstSeen, raw: parsed };
+      return {
+        ok: true,
+        status,
+        blocked,
+        smartMonitorEnabled,
+        explicitUnblock,
+        firstSeen,
+        raw: parsed,
+      };
     } catch (err) {
       lastError = err;
     }
@@ -237,5 +294,5 @@ export async function registerDeviceIntelligence() {
   if (DEBUG) {
     console.log('[device-intel] register failed:', String(lastError ?? 'unknown'));
   }
-  return { ok: false, status: null, blocked: false, firstSeen: storedFirstSeen };
+  return { ok: false, status: null, blocked: false, smartMonitorEnabled: false, explicitUnblock: false, firstSeen: storedFirstSeen };
 }

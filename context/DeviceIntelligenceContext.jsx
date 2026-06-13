@@ -33,6 +33,7 @@ export function DeviceIntelligenceProvider({ children }) {
   const pollTimerRef = useRef(null);
   const runningRef = useRef(false);
   const blockedRef = useRef(false);
+  const smartMonitorRef = useRef(false);
   /** User pressed "Nimeelewa" — browse app; modal only on new block or restricted action. */
   const blockedNoticeAckRef = useRef(false);
 
@@ -50,7 +51,7 @@ export function DeviceIntelligenceProvider({ children }) {
     setUnblockModalVisible(false);
   }, []);
 
-  const applyBlockedState = useCallback((nextBlocked, { showModal = false } = {}) => {
+  const applyBlockedState = useCallback((nextBlocked, { showModal = false, showUnblockModal = false } = {}) => {
     const wasBlocked = blockedRef.current;
     blockedRef.current = nextBlocked;
     setBlocked(nextBlocked);
@@ -65,11 +66,11 @@ export function DeviceIntelligenceProvider({ children }) {
     }
     blockedNoticeAckRef.current = false;
     setBlockedModalVisible(false);
-    if (wasBlocked) setUnblockModalVisible(true);
+    if (wasBlocked && showUnblockModal) setUnblockModalVisible(true);
   }, []);
 
   useEffect(() => {
-    setDeviceIntelligenceAccessState({ blocked, showBlockedModal });
+    setDeviceIntelligenceAccessState({ blocked, smartMonitorEnabled: smartMonitorRef.current, showBlockedModal });
   }, [blocked, showBlockedModal]);
 
   const refresh = useCallback(async () => {
@@ -78,13 +79,19 @@ export function DeviceIntelligenceProvider({ children }) {
     try {
       const prev = await readDeviceIntelligenceLastStatus();
       const result = await registerDeviceIntelligence();
+      smartMonitorRef.current = result.smartMonitorEnabled === true;
+      setDeviceIntelligenceAccessState({
+        blocked: result.status === 'blocked' || result.blocked === true,
+        smartMonitorEnabled: smartMonitorRef.current,
+        showBlockedModal,
+      });
       if (result.status === 'blocked' || result.blocked === true) {
         const newlyBlocked = prev !== 'blocked' && !blockedRef.current;
         applyBlockedState(true, { showModal: newlyBlocked || !blockedNoticeAckRef.current });
         return;
       }
       if (result.status === 'active') {
-        applyBlockedState(false);
+        applyBlockedState(false, { showUnblockModal: result.explicitUnblock === true });
         return;
       }
       if (!result.ok && prev === 'blocked') {
@@ -94,7 +101,7 @@ export function DeviceIntelligenceProvider({ children }) {
       runningRef.current = false;
       setReady(true);
     }
-  }, [applyBlockedState]);
+  }, [applyBlockedState, showBlockedModal]);
 
   useEffect(() => {
     void refresh();
