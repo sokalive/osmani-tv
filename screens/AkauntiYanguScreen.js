@@ -31,7 +31,8 @@ import {
   writeOfferCodeCooldownEndMs,
 } from '../lib/offerCodeCooldown';
 import { getDeviceLabel } from '../lib/deviceLabel';
-import { computeSubscriptionProgress } from '../lib/subscriptionMath';
+import { computeSubscriptionProgress, getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
+import { formatSubscriptionRemainingCountdown } from '../lib/formatSubscriptionRemaining';
 import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
 
 /** Matches App.js theme — do not diverge */
@@ -126,14 +127,6 @@ function formatOfferCooldownMmSs(totalSeconds) {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-function isPremiumChannel(raw, freeMode) {
-  if (freeMode) return false;
-  return (
-    raw?.accessType === 'premium' ||
-    raw?.accessPremium === true ||
-    raw?.access_premium === true
-  );
-}
 
 export default function AkauntiYanguScreen() {
   const navigation = useNavigation();
@@ -159,8 +152,6 @@ export default function AkauntiYanguScreen() {
     isSubscribed,
     subscriptionExpiresAt,
     subscriptionDetails,
-    rawChannels,
-    freeMode,
     refreshSubscription,
   } = useOsmaniApp();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
@@ -178,25 +169,16 @@ export default function AkauntiYanguScreen() {
   // `gateForPlayback` / `subscription_revoked` SSE handlers in context.
   const [tickNowMs, setTickNowMs] = useState(() => Date.now());
   useEffect(() => {
-    if (!subscriptionDetails) return undefined;
+    if (!isSubscribed) return undefined;
     const id = setInterval(() => setTickNowMs(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [subscriptionDetails]);
+  }, [isSubscribed]);
 
   const deviceLabel = useMemo(() => getDeviceLabel(), []);
   const deviceShort =
     deviceIdFull.length >= 8 ? deviceIdFull.slice(0, 8).toUpperCase() : deviceIdFull || '—';
 
   // ---- Card-level derived values (data binding only) -----------------
-  const totalChannels = Array.isArray(rawChannels) ? rawChannels.length : 0;
-  const unlockedChannels = useMemo(() => {
-    if (!Array.isArray(rawChannels)) return 0;
-    if (freeMode || isSubscribed) return rawChannels.length;
-    let n = 0;
-    for (const ch of rawChannels) if (!isPremiumChannel(ch, false)) n += 1;
-    return n;
-  }, [rawChannels, freeMode, isSubscribed]);
-
   const progress = useMemo(
     () =>
       computeSubscriptionProgress({
@@ -216,10 +198,20 @@ export default function AkauntiYanguScreen() {
     return resolveSubscriptionPaymentLabel(subscriptionDetails) ?? '—';
   }, [isSubscribed, subscriptionDetails]);
 
-  // Card 2: Hali ya Ufikiaji  ->  "Channel Zilizofunguka" + "X / Y"
-  const accessValue = totalChannels > 0
-    ? `${unlockedChannels} / ${totalChannels}`
-    : (isSubscribed ? 'Hai' : 'Hakuna');
+  // Card 2: Muda Uliobaki wa Kifurushi — live countdown to expiry (server-anchored).
+  const remainingCountdownValue = useMemo(() => {
+    if (!isSubscribed) return '—';
+    const expiresAt = subscriptionDetails?.expiresAt ?? subscriptionExpiresAt ?? null;
+    if (!expiresAt) return '—';
+    const remainingMs = getServerAnchoredRemainingMs({
+      expiresAt,
+      serverTime: subscriptionDetails?.serverTime ?? null,
+      serverTimeFetchedAt: subscriptionDetails?.serverTimeFetchedAt ?? null,
+      nowMsOverride: tickNowMs,
+    });
+    if (remainingMs == null) return '—';
+    return formatSubscriptionRemainingCountdown(remainingMs);
+  }, [isSubscribed, subscriptionDetails, subscriptionExpiresAt, tickNowMs]);
 
   // Card 3: Muda wa Kifurushi — package length in days from verify/plan (numeric only).
   const durationValue = useMemo(() => {
@@ -397,8 +389,8 @@ export default function AkauntiYanguScreen() {
             />
             <StatCard
               icon="tv-outline"
-              value={accessValue}
-              label="Channel Zilizofunguka"
+              value={remainingCountdownValue}
+              label="Muda Uliobaki wa Kifurushi"
             />
           </View>
           <View style={styles.statsRow}>
