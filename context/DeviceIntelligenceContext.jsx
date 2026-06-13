@@ -19,6 +19,7 @@ import {
   setDeviceIntelligenceAccessState,
 } from '../lib/deviceIntelligenceAccess';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
+import { runDeviceAccessVerification } from '../lib/runDeviceAccessVerification';
 
 /** Active-session access check interval while app is foregrounded. */
 const POLL_MS = 15 * 1000;
@@ -83,19 +84,35 @@ export function DeviceIntelligenceProvider({ children }) {
       setDeviceIntelligenceAccessState({
         blocked: result.status === 'blocked' || result.blocked === true,
         smartMonitorEnabled: smartMonitorRef.current,
+        lastIntelResult: result,
         showBlockedModal,
       });
       if (result.status === 'blocked' || result.blocked === true) {
         const newlyBlocked = prev !== 'blocked' && !blockedRef.current;
         applyBlockedState(true, { showModal: newlyBlocked || !blockedNoticeAckRef.current });
+        runDeviceAccessVerification({
+          intelResult: result,
+          cachedIntelBlocked: prev === 'blocked',
+          tag: 'intel-blocked',
+        });
         return;
       }
       if (result.status === 'active') {
         applyBlockedState(false, { showUnblockModal: result.explicitUnblock === true });
+        runDeviceAccessVerification({
+          intelResult: result,
+          cachedIntelBlocked: prev === 'blocked',
+          tag: 'intel-refresh',
+        });
         return;
       }
-      if (!result.ok && prev === 'blocked') {
-        applyBlockedState(true, { showModal: !blockedNoticeAckRef.current });
+      if (!result.ok) {
+        runDeviceAccessVerification({
+          intelResult: result,
+          cachedIntelBlocked: prev === 'blocked',
+          tag: 'intel-network-fail',
+        });
+        return;
       }
     } finally {
       runningRef.current = false;

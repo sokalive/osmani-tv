@@ -91,9 +91,11 @@ function hasThreatSignals(signals) {
   return (signals ?? []).some((s) => THREAT_SET.has(String(s?.risk_type ?? '').trim()));
 }
 
-function resolveEnforcement({ signals = [], serverEnforcement = null, serverPlaybackAllowed = null }) {
+function resolveEnforcement({ signals = [], serverEnforcement = null, serverPlaybackAllowed = null, smartMonitorEnabled = false }) {
   if (serverPlaybackAllowed === false) return { blockPlayback: true };
   if (String(serverEnforcement ?? '').trim().toLowerCase() === 'block') return { blockPlayback: true };
+  if (serverPlaybackAllowed === true) return { blockPlayback: false };
+  if (smartMonitorEnabled === true) return { blockPlayback: false };
   if (hasThreatSignals(signals)) return { blockPlayback: true };
   return { blockPlayback: false };
 }
@@ -153,8 +155,12 @@ function assertTrue(cond, label) {
 const threat = [{ risk_type: 'frida_detected', risk_score: 10 }];
 assertTrue(hasThreatSignals(threat), 'hasThreatSignals detects frida');
 assertTrue(
+  resolveEnforcement({ signals: threat, mode: 'enforce', serverPlaybackAllowed: true }).blockPlayback === false,
+  'resolveEnforcement trusts server playbackAllowed=true over local threats',
+);
+assertTrue(
   resolveEnforcement({ signals: threat, mode: 'enforce' }).blockPlayback === true,
-  'resolveEnforcement blocks on frida',
+  'resolveEnforcement blocks local threats when server unset',
 );
 assertTrue(
   resolveEnforcement({ signals: [], serverPlaybackAllowed: false }).blockPlayback === true,

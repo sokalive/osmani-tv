@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_URL } from '../api';
 import { buildDeviceIntelligenceRegistrationBody } from '../lib/deviceIntelligencePayload';
+import { getLastDeviceAccessReportFields } from '../lib/deviceAccessReportFields';
 
 const FIRST_SEEN_KEY = 'osmani:device_intel_first_seen';
 const LAST_STATUS_KEY = 'osmani:device_intel_last_status';
@@ -58,7 +59,9 @@ function readSmartMonitorEnabled(record) {
     readBoolish(registry?.smart_monitor_enabled) === true ||
     readBoolish(registry?.smartMonitorEnabled) === true ||
     readBoolish(device?.smart_monitor_enabled) === true ||
-    readBoolish(device?.smartMonitorEnabled) === true
+    readBoolish(device?.smartMonitorEnabled) === true ||
+    readBoolish(registry?.smartMonitor) === true ||
+    readBoolish(root.smartMonitor) === true
   );
 }
 
@@ -248,6 +251,13 @@ export async function registerDeviceIntelligence() {
     await wait(RETRY_DELAYS_MS[i]);
     try {
       if (DEBUG) console.log('[device-intel] POST', REGISTER_URL, JSON.stringify(body));
+      const accessFields = getLastDeviceAccessReportFields();
+      if (accessFields) {
+        body.device_access_state = accessFields.deviceAccessState;
+        body.device_access_reason = accessFields.deviceAccessReason;
+        body.access_verification_result = accessFields.accessVerificationResult;
+        body.device_access_message = accessFields.userMessage;
+      }
       const res = await fetch(REGISTER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },

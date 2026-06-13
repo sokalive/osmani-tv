@@ -29,7 +29,10 @@ assertContains('api/usersIntelligence.js', 'explicitUnblock', 'explicit unblock 
 assertContains('context/DeviceIntelligenceContext.jsx', 'showUnblockModal: result.explicitUnblock', 'unblock modal only on admin unblock');
 assertContains('lib/deviceIntelligenceAccess.js', 'isDeviceIntelligenceSmartMonitorEnabled', 'smart monitor imperative hook');
 assertContains('lib/adminSseRefreshEvents.js', 'smart_monitor_enabled', 'smart monitor SSE event');
-assertContains('lib/security/riskEngine.js', 'smartMonitorEnabled', 'smart monitor security enforcement');
+assertContains('lib/security/riskEngine.js', 'serverPlaybackAllowed === true) return ALLOWED', 'server authoritative playback');
+assertContains('lib/runDeviceAccessVerification.js', 'accessVerificationResult', 'access verification runner');
+assertContains('lib/deviceAccessStatus.js', 'Kifaa Kimefunguliwa', 'Swahili open state');
+assertContains('api/security.js', 'device_access_state', 'security report access fields');
 assertContains('lib/deviceIntelligencePayload.js', 'device_id', 'device_id in payload');
 assertContains('context/DeviceIntelligenceContext.jsx', '15 * 1000', '15s access poll');
 assertContains('lib/adminSseRefreshEvents.js', 'device_blocked', 'SSE block event');

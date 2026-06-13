@@ -3,6 +3,7 @@ import { nativeApplicationVersion, nativeBuildVersion } from 'expo-application';
 import { Platform } from 'react-native';
 import { BASE_URL } from '../api';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
+import { getLastDeviceAccessReportFields } from '../lib/deviceAccessReportFields';
 import { hasThreatSignals } from '../lib/security/constants';
 import { getSecurityPhoneForReport } from '../lib/security/securityPhone';
 
@@ -105,7 +106,13 @@ export function parseSecurityReportResponse(parsed) {
     readBoolish(data.smartMonitorEnabled) === true ||
     readBoolish(root.smart_monitor_enabled) === true ||
     readBoolish(root.smartMonitorEnabled) === true ||
+    readBoolish(data.smartMonitor) === true ||
+    readBoolish(root.smartMonitor) === true ||
     String(enforcement ?? '').trim().toLowerCase() === 'monitor';
+
+  const strictEnforcement =
+    readBoolish(data.strict_enforcement) === true ||
+    readBoolish(root.strict_enforcement) === true;
 
   if (securityBlocked || blockedFlag) {
     playbackAllowed = false;
@@ -120,11 +127,31 @@ export function parseSecurityReportResponse(parsed) {
     playbackAllowed === false ||
     String(enforcement ?? '').trim().toLowerCase() === 'block';
 
+  const inferredSmartMonitor =
+    !blocked &&
+    playbackAllowed === true &&
+    securityBlocked !== true &&
+    (smartMonitorEnabled || strictEnforcement === true);
+
+  const playbackGateReason =
+    typeof data.playbackGateReason === 'string'
+      ? data.playbackGateReason
+      : typeof data.playback_gate_reason === 'string'
+        ? data.playback_gate_reason
+        : typeof root.playbackGateReason === 'string'
+          ? root.playbackGateReason
+          : typeof root.playback_gate_reason === 'string'
+            ? root.playback_gate_reason
+            : null;
+
   return {
     enforcement,
     playbackAllowed,
     blocked,
-    smartMonitorEnabled,
+    smartMonitorEnabled: inferredSmartMonitor,
+    strictEnforcement,
+    securityBlocked,
+    playbackGateReason,
   };
 }
 
@@ -177,6 +204,14 @@ export async function reportSecurityDevice(args) {
     build_number,
   };
   if (phone) body.phone = phone;
+
+  const accessFields = getLastDeviceAccessReportFields();
+  if (accessFields) {
+    body.device_access_state = accessFields.deviceAccessState;
+    body.device_access_reason = accessFields.deviceAccessReason;
+    body.access_verification_result = accessFields.accessVerificationResult;
+    body.device_access_message = accessFields.userMessage;
+  }
 
   let lastError = null;
 

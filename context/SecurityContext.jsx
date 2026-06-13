@@ -2,6 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AppState } from 'react-native';
 import Constants from 'expo-constants';
 import { reportSecurityDevice } from '../api/security';
+import { setSecurityAccessSnapshot } from '../lib/deviceAccessSnapshot';
+import { runDeviceAccessVerification } from '../lib/runDeviceAccessVerification';
 import { isDeviceIntelligenceSmartMonitorEnabled } from '../lib/deviceIntelligenceAccess';
 import { SECURITY_BLOCK_MESSAGE } from '../lib/security/constants';
 import { resolveEnforcement } from '../lib/security/riskEngine';
@@ -66,7 +68,6 @@ export function SecurityProvider({ children }) {
       setTier(scan.tier);
       setSignals(scan.signals);
       setDetails(scan.details);
-      setLoading(false);
 
       const report = await reportSecurityDevice({
         signals: scan.signals,
@@ -75,6 +76,25 @@ export function SecurityProvider({ children }) {
         detected_at,
       });
       applyServerReport(report);
+      setLoading(false);
+
+      setSecurityAccessSnapshot({
+        serverPlaybackAllowed: report.playbackAllowed ?? null,
+        serverSecurityBlocked: report.securityBlocked ?? null,
+        smartMonitorEnabled: report.smartMonitorEnabled === true,
+        blockPlayback: resolveEnforcement({
+          signals: scan.signals,
+          mode,
+          serverEnforcement: report.enforcement ?? null,
+          serverPlaybackAllowed: report.playbackAllowed ?? null,
+          smartMonitorEnabled:
+            report.smartMonitorEnabled === true || isDeviceIntelligenceSmartMonitorEnabled(),
+        }).blockPlayback,
+        signals: scan.signals,
+        serverEnforcement: report.enforcement ?? null,
+      });
+
+      runDeviceAccessVerification({ tag: 'security-refresh' });
     } catch (err) {
       if (__DEV__) {
         console.log('[security] scan failed:', String(err));
@@ -83,7 +103,7 @@ export function SecurityProvider({ children }) {
     } finally {
       scanRunning.current = false;
     }
-  }, [applyServerReport]);
+  }, [applyServerReport, mode]);
 
   useEffect(() => {
     void refresh();
