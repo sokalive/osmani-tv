@@ -1,10 +1,17 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import Constants from 'expo-constants';
 import { reportSecurityDevice } from '../api/security';
 import { setSecurityAccessSnapshot } from '../lib/deviceAccessSnapshot';
 import { runDeviceAccessVerification } from '../lib/runDeviceAccessVerification';
-import { isDeviceIntelligenceSmartMonitorEnabled } from '../lib/deviceIntelligenceAccess';
+import {
+  getDeviceIntelligenceAccessVersion,
+  isDeviceIntelligenceSmartMonitorEnabled,
+  registerSecurityAccessRefresh,
+  subscribeDeviceIntelligenceAccess,
+  getLastDeviceIntelligenceResult,
+} from '../lib/deviceIntelligenceAccess';
+import { parseServerIntelAccess } from '../lib/serverIntelAccess';
 import { SECURITY_BLOCK_MESSAGE } from '../lib/security/constants';
 import { resolveEnforcement } from '../lib/security/riskEngine';
 import { runRuntimeSecurityScan } from '../lib/security/runtimeScan';
@@ -31,8 +38,14 @@ export function SecurityProvider({ children }) {
   const [details, setDetails] = useState({});
   const [serverEnforcement, setServerEnforcement] = useState(null);
   const [serverPlaybackAllowed, setServerPlaybackAllowed] = useState(null);
+  const [serverSecurityBlocked, setServerSecurityBlocked] = useState(null);
   const [serverSmartMonitorEnabled, setServerSmartMonitorEnabled] = useState(false);
   const scanRunning = useRef(false);
+  const intelAccessVersion = useSyncExternalStore(
+    subscribeDeviceIntelligenceAccess,
+    getDeviceIntelligenceAccessVersion,
+    () => 0,
+  );
 
   const mode = useMemo(() => readSecurityMode(), []);
 
@@ -45,6 +58,13 @@ export function SecurityProvider({ children }) {
       setServerPlaybackAllowed(false);
     } else if (report.playbackAllowed === true) {
       setServerPlaybackAllowed(true);
+    }
+    if (report.securityBlocked === true) {
+      setServerSecurityBlocked(true);
+      setServerPlaybackAllowed(false);
+      setServerSmartMonitorEnabled(false);
+    } else if (report.securityBlocked === false) {
+      setServerSecurityBlocked(false);
     }
     if (report.blocked === true && report.playbackAllowed !== true) {
       setServerPlaybackAllowed(false);
@@ -78,18 +98,27 @@ export function SecurityProvider({ children }) {
       applyServerReport(report);
       setLoading(false);
 
+      const intel = parseServerIntelAccess(getLastDeviceIntelligenceResult()?.raw);
+      const smartMonitor =
+        report.smartMonitorEnabled === true ||
+        isDeviceIntelligenceSmartMonitorEnabled() ||
+        intel.smartMonitorEnabled === true;
+
+      const blockPlayback = resolveEnforcement({
+        signals: scan.signals,
+        mode,
+        serverEnforcement: report.enforcement ?? null,
+        serverPlaybackAllowed: report.playbackAllowed ?? null,
+        serverSecurityBlocked: report.securityBlocked ?? null,
+        smartMonitorEnabled: smartMonitor,
+        intelAccessOpen: intel.serverIntelOpen,
+      }).blockPlayback;
+
       setSecurityAccessSnapshot({
         serverPlaybackAllowed: report.playbackAllowed ?? null,
         serverSecurityBlocked: report.securityBlocked ?? null,
-        smartMonitorEnabled: report.smartMonitorEnabled === true,
-        blockPlayback: resolveEnforcement({
-          signals: scan.signals,
-          mode,
-          serverEnforcement: report.enforcement ?? null,
-          serverPlaybackAllowed: report.playbackAllowed ?? null,
-          smartMonitorEnabled:
-            report.smartMonitorEnabled === true || isDeviceIntelligenceSmartMonitorEnabled(),
-        }).blockPlayback,
+        smartMonitorEnabled: smartMonitor,
+        blockPlayback,
         signals: scan.signals,
         serverEnforcement: report.enforcement ?? null,
       });
@@ -106,6 +135,11 @@ export function SecurityProvider({ children }) {
   }, [applyServerReport, mode]);
 
   useEffect(() => {
+    registerSecurityAccessRefresh(refresh);
+    return () => registerSecurityAccessRefresh(null);
+  }, [refresh]);
+
+  useEffect(() => {
     void refresh();
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') void refresh();
@@ -113,19 +147,29 @@ export function SecurityProvider({ children }) {
     return () => sub.remove();
   }, [refresh]);
 
-  const enforcement = useMemo(
-    () =>
-      resolveEnforcement({
-        signals,
-        tier,
-        mode,
-        serverEnforcement,
-        serverPlaybackAllowed,
-        smartMonitorEnabled:
-          serverSmartMonitorEnabled || isDeviceIntelligenceSmartMonitorEnabled(),
-      }),
-    [signals, tier, mode, serverEnforcement, serverPlaybackAllowed, serverSmartMonitorEnabled],
-  );
+  const enforcement = useMemo(() => {
+    const intel = parseServerIntelAccess(getLastDeviceIntelligenceResult()?.raw);
+    return resolveEnforcement({
+      signals,
+      tier,
+      mode,
+      serverEnforcement,
+      serverPlaybackAllowed,
+      serverSecurityBlocked,
+      smartMonitorEnabled:
+        serverSmartMonitorEnabled || isDeviceIntelligenceSmartMonitorEnabled() || intel.smartMonitorEnabled,
+      intelAccessOpen: intel.serverIntelOpen,
+    });
+  }, [
+    signals,
+    tier,
+    mode,
+    serverEnforcement,
+    serverPlaybackAllowed,
+    serverSecurityBlocked,
+    serverSmartMonitorEnabled,
+    intelAccessVersion,
+  ]);
 
   const value = useMemo(
     () => ({
@@ -137,6 +181,7 @@ export function SecurityProvider({ children }) {
       mode,
       serverEnforcement,
       serverPlaybackAllowed,
+      serverSecurityBlocked,
       ...enforcement,
       refresh,
     }),
@@ -149,6 +194,7 @@ export function SecurityProvider({ children }) {
       mode,
       serverEnforcement,
       serverPlaybackAllowed,
+      serverSecurityBlocked,
       enforcement,
       refresh,
     ],
@@ -176,9 +222,6 @@ export function useSecurity() {
   return ctx;
 }
 
-/**
- * @returns {{ allowed: boolean; message: string; tier: string; score: number }}
- */
 export function usePlaybackSecurityGate() {
   const { canPlay, blockPlayback, tier, score } = useSecurity();
 

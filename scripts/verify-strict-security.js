@@ -91,11 +91,15 @@ function hasThreatSignals(signals) {
   return (signals ?? []).some((s) => THREAT_SET.has(String(s?.risk_type ?? '').trim()));
 }
 
-function resolveEnforcement({ signals = [], serverEnforcement = null, serverPlaybackAllowed = null, smartMonitorEnabled = false }) {
+function resolveEnforcement({ signals = [], serverEnforcement = null, serverPlaybackAllowed = null, smartMonitorEnabled = false, intelAccessOpen = false, serverSecurityBlocked = null }) {
   if (serverPlaybackAllowed === false) return { blockPlayback: true };
+  if (serverSecurityBlocked === true) return { blockPlayback: true };
   if (String(serverEnforcement ?? '').trim().toLowerCase() === 'block') return { blockPlayback: true };
   if (serverPlaybackAllowed === true) return { blockPlayback: false };
   if (smartMonitorEnabled === true) return { blockPlayback: false };
+  if (intelAccessOpen === true && serverPlaybackAllowed !== false && serverSecurityBlocked !== true) {
+    return { blockPlayback: false };
+  }
   if (hasThreatSignals(signals)) return { blockPlayback: true };
   return { blockPlayback: false };
 }

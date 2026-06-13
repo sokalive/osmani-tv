@@ -257,6 +257,7 @@ export async function registerDeviceIntelligence() {
         body.device_access_reason = accessFields.deviceAccessReason;
         body.access_verification_result = accessFields.accessVerificationResult;
         body.device_access_message = accessFields.userMessage;
+        body.playback_allowed = accessFields.playbackAllowed === true;
       }
       const res = await fetch(REGISTER_URL, {
         method: 'POST',
@@ -286,6 +287,7 @@ export async function registerDeviceIntelligence() {
       const { status, smartMonitorEnabled, explicitUnblock } = access;
       const blocked = status === 'blocked';
       if (status) await writeDeviceIntelligenceLastStatus(status);
+      else if (!blocked) await writeDeviceIntelligenceLastStatus('active');
 
       return {
         ok: true,

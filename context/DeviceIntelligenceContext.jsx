@@ -15,9 +15,11 @@ import {
 import { DEVICE_INTELLIGENCE_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import {
   assertDeviceIntelligenceAllowed,
+  requestSecurityAccessRefresh,
   runDeviceIntelligenceNavigateHome,
   setDeviceIntelligenceAccessState,
 } from '../lib/deviceIntelligenceAccess';
+import { parseServerIntelAccess } from '../lib/serverIntelAccess';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { runDeviceAccessVerification } from '../lib/runDeviceAccessVerification';
 
@@ -80,38 +82,36 @@ export function DeviceIntelligenceProvider({ children }) {
     try {
       const prev = await readDeviceIntelligenceLastStatus();
       const result = await registerDeviceIntelligence();
-      smartMonitorRef.current = result.smartMonitorEnabled === true;
+      const serverIntel = parseServerIntelAccess(result.raw);
+      smartMonitorRef.current =
+        result.smartMonitorEnabled === true || serverIntel.smartMonitorEnabled === true;
+      const serverBlocked = result.blocked === true || serverIntel.serverIntelBlocked === true;
+
       setDeviceIntelligenceAccessState({
-        blocked: result.status === 'blocked' || result.blocked === true,
+        blocked: serverBlocked,
         smartMonitorEnabled: smartMonitorRef.current,
         lastIntelResult: result,
         showBlockedModal,
       });
-      if (result.status === 'blocked' || result.blocked === true) {
+
+      if (serverBlocked) {
         const newlyBlocked = prev !== 'blocked' && !blockedRef.current;
         applyBlockedState(true, { showModal: newlyBlocked || !blockedNoticeAckRef.current });
-        runDeviceAccessVerification({
-          intelResult: result,
-          cachedIntelBlocked: prev === 'blocked',
-          tag: 'intel-blocked',
-        });
+        runDeviceAccessVerification({ intelResult: result, tag: 'intel-blocked' });
         return;
       }
-      if (result.status === 'active') {
-        applyBlockedState(false, { showUnblockModal: result.explicitUnblock === true });
-        runDeviceAccessVerification({
-          intelResult: result,
-          cachedIntelBlocked: prev === 'blocked',
-          tag: 'intel-refresh',
+
+      if (serverIntel.serverIntelOpen || result.status === 'active' || result.blocked === false) {
+        applyBlockedState(false, {
+          showUnblockModal: result.explicitUnblock === true || serverIntel.explicitUnblock === true,
         });
+        runDeviceAccessVerification({ intelResult: result, tag: 'intel-refresh' });
+        requestSecurityAccessRefresh();
         return;
       }
+
       if (!result.ok) {
-        runDeviceAccessVerification({
-          intelResult: result,
-          cachedIntelBlocked: prev === 'blocked',
-          tag: 'intel-network-fail',
-        });
+        runDeviceAccessVerification({ intelResult: result, tag: 'intel-network-fail' });
         return;
       }
     } finally {

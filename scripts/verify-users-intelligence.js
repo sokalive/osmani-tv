@@ -30,7 +30,11 @@ assertContains('context/DeviceIntelligenceContext.jsx', 'showUnblockModal: resul
 assertContains('lib/deviceIntelligenceAccess.js', 'isDeviceIntelligenceSmartMonitorEnabled', 'smart monitor imperative hook');
 assertContains('lib/adminSseRefreshEvents.js', 'smart_monitor_enabled', 'smart monitor SSE event');
 assertContains('lib/security/riskEngine.js', 'serverPlaybackAllowed === true) return ALLOWED', 'server authoritative playback');
-assertContains('lib/runDeviceAccessVerification.js', 'accessVerificationResult', 'access verification runner');
+assertContains('context/SecurityContext.jsx', 'useSyncExternalStore', 'security reacts to intel access updates');
+assertContains('lib/serverIntelAccess.js', 'parseServerIntelAccess', 'server intel parser');
+assertContains('lib/deviceIntelligenceAccess.js', 'subscribeDeviceIntelligenceAccess', 'intel pub/sub');
+assertContains('api/security.js', 'setLastSecurityReportSnapshot', 'security report cache');
+assertContains('lib/runDeviceAccessVerification.js', 'parseServerIntelAccess', 'server-based verification');
 assertContains('lib/deviceAccessStatus.js', 'Kifaa Kimefunguliwa', 'Swahili open state');
 assertContains('api/security.js', 'device_access_state', 'security report access fields');
 assertContains('lib/deviceIntelligencePayload.js', 'device_id', 'device_id in payload');

@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { BASE_URL } from '../api';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { getLastDeviceAccessReportFields } from '../lib/deviceAccessReportFields';
+import { getLastSecurityReportSnapshot, setLastSecurityReportSnapshot } from '../lib/lastSecurityReportSnapshot';
 import { hasThreatSignals } from '../lib/security/constants';
 import { getSecurityPhoneForReport } from '../lib/security/securityPhone';
 
@@ -168,7 +169,19 @@ export function parseSecurityReportResponse(parsed) {
 export async function reportSecurityDevice(args) {
   if (await shouldSkipReport(args?.signals)) {
     if (SECURITY_DEBUG) console.log('[security] report deduped (clean scan)');
-    return { ok: true, enforcement: null, playbackAllowed: null, blocked: false };
+    const cached = getLastSecurityReportSnapshot();
+    if (cached.at > 0) {
+      return {
+        ok: true,
+        deduped: true,
+        enforcement: cached.enforcement,
+        playbackAllowed: cached.serverPlaybackAllowed,
+        securityBlocked: cached.serverSecurityBlocked,
+        blocked: cached.serverSecurityBlocked === true || cached.serverPlaybackAllowed === false,
+        smartMonitorEnabled: cached.smartMonitorEnabled === true,
+      };
+    }
+    return { ok: true, deduped: true, enforcement: null, playbackAllowed: null, blocked: false };
   }
 
   const { deviceId, deviceFingerprint } = await getDeviceIdentity();
@@ -211,6 +224,7 @@ export async function reportSecurityDevice(args) {
     body.device_access_reason = accessFields.deviceAccessReason;
     body.access_verification_result = accessFields.accessVerificationResult;
     body.device_access_message = accessFields.userMessage;
+    body.playback_allowed = accessFields.playbackAllowed === true;
   }
 
   let lastError = null;
@@ -244,6 +258,13 @@ export async function reportSecurityDevice(args) {
         if (res.ok) {
           await markReported(args?.signals);
           const out = parseSecurityReportResponse(parsed);
+          setLastSecurityReportSnapshot({
+            serverPlaybackAllowed: out.playbackAllowed ?? null,
+            serverSecurityBlocked: out.securityBlocked ?? null,
+            smartMonitorEnabled: out.smartMonitorEnabled === true,
+            enforcement: out.enforcement ?? null,
+            playbackGateReason: out.playbackGateReason ?? null,
+          });
           return { ok: true, ...out };
         }
         lastError = new Error(`HTTP ${res.status}`);
