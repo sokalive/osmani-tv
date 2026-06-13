@@ -37,12 +37,16 @@ const HOUR = 60 * 60 * 1000;
 const MIN = 60 * 1000;
 
 assertEq('expired', formatSubscriptionRemainingCountdown(0), 'Kifurushi Kimeisha');
-assertEq('7 days', formatSubscriptionRemainingCountdown(7 * DAY), '7 siku zimebaki');
-assertEq('6 days', formatSubscriptionRemainingCountdown(6 * DAY + 12 * HOUR), '6 siku zimebaki');
-assertEq('1 day', formatSubscriptionRemainingCountdown(DAY + 1000), '1 siku imebaki');
-assertEq('23 hours', formatSubscriptionRemainingCountdown(23 * HOUR + 30 * MIN), 'Masaa 23 yamebaki');
-assertEq('59 minutes', formatSubscriptionRemainingCountdown(59 * MIN + 1000), 'Dakika 59 zimebaki');
-assertEq('59 seconds', formatSubscriptionRemainingCountdown(59 * 1000), 'Sekunde 59 zimebaki');
+assertEq('20 days', formatSubscriptionRemainingCountdown(20 * DAY), 'Siku 20 Zimebaki');
+assertEq('5 days', formatSubscriptionRemainingCountdown(5 * DAY), 'Siku 5 Zimebaki');
+assertEq('1 day', formatSubscriptionRemainingCountdown(DAY + 1000), 'Siku 1 Imebaki');
+assertEq('23 hours', formatSubscriptionRemainingCountdown(23 * HOUR + 30 * MIN), 'Masaa 23 Yamebaki');
+assertEq('2 hours', formatSubscriptionRemainingCountdown(2 * HOUR + 1000), 'Masaa 2 Yamebaki');
+assertEq('1 hour', formatSubscriptionRemainingCountdown(HOUR + 1000), 'Saa 1 Imebaki');
+assertEq('45 minutes', formatSubscriptionRemainingCountdown(45 * MIN + 1000), 'Dakika 45 Zimebaki');
+assertEq('1 minute', formatSubscriptionRemainingCountdown(MIN + 1000), 'Dakika 1 Imebaki');
+assertEq('30 seconds', formatSubscriptionRemainingCountdown(30 * 1000), 'Sekunde 30 Zimebaki');
+assertEq('1 second', formatSubscriptionRemainingCountdown(1000), 'Sekunde 1 Imebaki');
 
 const serverNow = Date.parse('2026-06-01T12:00:00.000Z');
 const fetchedAt = serverNow - 5000;
@@ -56,7 +60,7 @@ const remaining = getServerAnchoredRemainingMs({
 assertEq(
   'server anchored 2d+',
   formatSubscriptionRemainingCountdown(remaining),
-  '2 siku zimebaki',
+  'Siku 2 Zimebaki',
 );
 
 const screen = fs.readFileSync(path.join(root, 'screens', 'AkauntiYanguScreen.js'), 'utf8');
