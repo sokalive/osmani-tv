@@ -69,6 +69,8 @@ import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBa
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
+import { logChannelCardTap } from './lib/channelCardTapDiagnostics';
+import { channelIsFreeAccess } from './lib/trialWatchAccess';
 import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
 import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
@@ -285,6 +287,9 @@ function ChannelCatalogScreen({
     trialWatchSettings,
     awaitPremiumAccessSnapshot,
     premiumPlaybackReady,
+    getPremiumAccessSnapshot,
+    subscriptionSyncLoaded,
+    trialWatchSettingsLoaded,
   } = useOsmaniApp();
   const security = useSecurity();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
@@ -722,8 +727,34 @@ function ChannelCatalogScreen({
 
   const navigateToChannel = useCallback(
     async (playerChannel, { isPremium = false } = {}) => {
-      if (!playerChannel) return;
-      const snapshot = await awaitPremiumAccessSnapshot();
+      const channelKey = String(
+        playerChannel?.id ?? playerChannel?.channel_id ?? playerChannel?.name ?? '',
+      ).trim();
+      const startedAt = Date.now();
+      logChannelCardTap('navigation_start', {
+        channelKey,
+        isPremium,
+        premiumPlaybackReady,
+        subscriptionSyncLoaded,
+        trialWatchSettingsLoaded,
+      });
+      if (!playerChannel) {
+        logChannelCardTap('navigation_blocked', { channelKey, reason: 'missing_channel' });
+        return;
+      }
+      const isFree = freeMode || channelIsFreeAccess(playerChannel, { freeMode });
+      const snapshot =
+        premiumPlaybackReady || isFree
+          ? getPremiumAccessSnapshot()
+          : await awaitPremiumAccessSnapshot();
+      logChannelCardTap(
+        premiumPlaybackReady || isFree ? 'snapshot_sync' : 'snapshot_ready',
+        {
+          channelKey,
+          isFree,
+          waitedMs: Date.now() - startedAt,
+        },
+      );
       await openPremiumChannelFromSnapshot(snapshot, {
         playerChannel,
         cardIsPremium: isPremium,
@@ -733,6 +764,10 @@ function ChannelCatalogScreen({
         security,
         Alert,
       });
+      logChannelCardTap('navigation_finished', {
+        channelKey,
+        totalMs: Date.now() - startedAt,
+      });
     },
     [
       awaitPremiumAccessSnapshot,
@@ -740,6 +775,11 @@ function ChannelCatalogScreen({
       navigation,
       security,
       openPremiumModal,
+      freeMode,
+      premiumPlaybackReady,
+      getPremiumAccessSnapshot,
+      subscriptionSyncLoaded,
+      trialWatchSettingsLoaded,
     ],
   );
 
@@ -749,18 +789,35 @@ function ChannelCatalogScreen({
 
   const handleCardPress = useCallback(
     async (item) => {
-      if (guardDeviceIntelligence().ok === false) return;
+      const channelKey = String(item?.id ?? item?.title ?? '').trim();
+      logChannelCardTap('tap_received', {
+        channelKey,
+        isPremium: item?.isPremium,
+        loading,
+        premiumPlaybackReady,
+        subscriptionSyncLoaded,
+        trialWatchSettingsLoaded,
+        maintenanceMode,
+        emergencyMode,
+        isOffline,
+      });
+      if (guardDeviceIntelligence().ok === false) {
+        logChannelCardTap('tap_cancelled', { channelKey, reason: 'device_intelligence' });
+        return;
+      }
       if (isOffline) {
+        logChannelCardTap('tap_cancelled', { channelKey, reason: 'offline' });
         setOfflineModalVisible(true);
         return;
       }
-      if (maintenanceMode) return;
-      if (emergencyMode) {
-        requestEmergencyModal();
+      if (maintenanceMode) {
+        logChannelCardTap('tap_cancelled', { channelKey, reason: 'maintenance' });
         return;
       }
-      if (item.isPremium && !freeMode && !premiumPlaybackReady) {
-        await awaitPremiumAccessSnapshot();
+      if (emergencyMode) {
+        logChannelCardTap('tap_cancelled', { channelKey, reason: 'emergency' });
+        requestEmergencyModal();
+        return;
       }
       await navigateToChannel(item.playerChannel, { isPremium: item.isPremium });
     },
@@ -769,9 +826,10 @@ function ChannelCatalogScreen({
       emergencyMode,
       navigateToChannel,
       requestEmergencyModal,
-      freeMode,
       premiumPlaybackReady,
-      awaitPremiumAccessSnapshot,
+      subscriptionSyncLoaded,
+      trialWatchSettingsLoaded,
+      loading,
       isOffline,
       guardDeviceIntelligence,
     ],
@@ -788,10 +846,11 @@ function ChannelCatalogScreen({
     }
   }, [isOffline, refresh]);
 
-  const renderCard = ({ item }) => {
-    return (
+  const renderCard = useCallback(
+    ({ item }) => (
       <Pressable
         style={styles.card}
+        delayPressIn={0}
         onPress={() => {
           void handleCardPress(item);
         }}
@@ -846,13 +905,15 @@ function ChannelCatalogScreen({
           </View>
         </View>
       </Pressable>
-    );
-  };
+    ),
+    [handleCardPress],
+  );
 
   const renderHighlightCard = useCallback(
     (item) => (
       <Pressable
         style={styles.highlightCard}
+        delayPressIn={0}
         onPress={() => {
           void handleCardPress(item);
         }}
