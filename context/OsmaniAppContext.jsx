@@ -433,6 +433,16 @@ export function OsmaniAppProvider({ children }) {
       const nextChannels = sortChannelsByAdminOrder(Array.isArray(list) ? list : []);
       setRawChannels(nextChannels);
       await writeChannelsCache(nextChannels);
+      devLog('[CATALOG_SYNC]', 'channels', {
+        total: nextChannels.length,
+        premium: nextChannels.filter(
+          (c) =>
+            c?.accessType === 'premium' ||
+            c?.accessPremium === true ||
+            c?.access_premium === true,
+        ).length,
+        forceNetwork,
+      });
       const nextBanners = Array.isArray(bannersResult) ? bannersResult : null;
       setRawBanners((prev) => (nextBanners != null ? nextBanners : prev));
       setIsOffline(false);
@@ -482,11 +492,13 @@ export function OsmaniAppProvider({ children }) {
       adminSoftSyncTimerRef.current = setTimeout(() => {
         adminSoftSyncTimerRef.current = null;
         devLog('[ADMIN_SYNC]', 'soft_refresh', reason);
+        invalidateCatalogCache();
         void refreshTrialWatchSettings(reason);
         void refresh({
           showGlobalLoading: false,
           preserveDataOnError: true,
           skipSettingsFromHttp: true,
+          forceNetwork: true,
         });
         void reverifySubscription(reason);
       }, 320);
@@ -502,7 +514,7 @@ export function OsmaniAppProvider({ children }) {
   );
 
   useEffect(() => {
-    void refresh({ showGlobalLoading: false, preserveDataOnError: true });
+    void refresh({ showGlobalLoading: false, preserveDataOnError: true, forceNetwork: true });
   }, [refresh]);
 
   // Cold-start: recover (in case of reinstall) and verify — background, never blocks splash.
@@ -760,7 +772,12 @@ export function OsmaniAppProvider({ children }) {
       }
       inFlight = true;
       try {
-        await refresh({ showGlobalLoading: false, preserveDataOnError: true });
+        invalidateCatalogCache();
+        await refresh({
+          showGlobalLoading: false,
+          preserveDataOnError: true,
+          forceNetwork: true,
+        });
         await reverifySubscription('foreground-tick');
         failCount = 0;
       } catch {
@@ -775,6 +792,12 @@ export function OsmaniAppProvider({ children }) {
       appState = next;
       if (next === 'active') {
         schedule(1000);
+        invalidateCatalogCache();
+        void refresh({
+          showGlobalLoading: false,
+          preserveDataOnError: true,
+          forceNetwork: true,
+        });
         void reverifySubscription('app-resume');
       }
     });

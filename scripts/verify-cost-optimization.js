@@ -22,6 +22,12 @@ assert(ctx.includes('LIVE_SYNC_BASE_MS = 30000'), 'catalog sync should be 30s');
 assert(ctx.includes('invalidateCatalogCache'), 'context should invalidate cache on force refresh');
 assert(ctx.includes("AppState.currentState !== 'active'"), 'settings poll should skip background');
 
+const catalog = read('lib/catalogCache.js');
+assert(catalog.includes('CHANNELS_TTL_MS'), 'catalog cache TTL defined');
+const ttl = Number(String((catalog.match(/CHANNELS_TTL_MS\s*=\s*([\d_]+)/) || [])[1] || '').replace(/_/g, ''));
+const sync = Number(String((ctx.match(/LIVE_SYNC_BASE_MS\s*=\s*([\d_]+)/) || [])[1] || '').replace(/_/g, ''));
+assert(Number.isFinite(ttl) && ttl < sync, 'channel TTL must be below foreground sync interval');
+
 const api = read('api.js');
 assert(api.includes('getCachedChannels'), 'channels should use in-memory cache');
 assert(api.includes('getCachedBanners'), 'banners should use in-memory cache');
