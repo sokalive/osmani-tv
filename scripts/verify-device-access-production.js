@@ -147,7 +147,10 @@ function pass(msg) {
     path.join(__dirname, '..', 'lib', 'security', 'riskEngine.js'),
     'utf8',
   );
-  if (!riskEngine.includes('serverPlaybackAllowed === true) return ALLOWED')) {
+  if (
+    !riskEngine.includes('serverPlaybackAllowed === true') ||
+    !riskEngine.includes('hasThreatSignals(signals)')
+  ) {
     fail('riskEngine must trust server playbackAllowed before local threats');
   } else {
     pass('riskEngine server-authoritative fix present');

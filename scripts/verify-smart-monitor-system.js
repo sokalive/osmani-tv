@@ -94,8 +94,14 @@ const playbackAllowed = resolveEffectivePlaybackAllowed({
 assertTrue('playback allowed for smart monitor device', playbackAllowed === true);
 
 const riskEngine = fs.readFileSync(path.join(root, 'lib/security/riskEngine.js'), 'utf8');
+const securityCtx = fs.readFileSync(path.join(root, 'context/SecurityContext.jsx'), 'utf8');
 assertTrue('intelAccessOpen gate', riskEngine.includes('intelAccessOpen === true'));
-assertTrue('useSyncExternalStore in security', fs.readFileSync(path.join(root, 'context/SecurityContext.jsx'), 'utf8').includes('useSyncExternalStore'));
+assertTrue('enforcement diagnostics', riskEngine.includes('enforcementReason'));
+const applyIdx = securityCtx.indexOf('applyServerReport(report)');
+const signalsIdx = securityCtx.indexOf('setSignals(scan.signals)');
+assertTrue('scan signals applied after server report', applyIdx > 0 && signalsIdx > applyIdx);
+assertTrue('persisted security policy', fs.readFileSync(path.join(root, 'lib/lastSecurityReportSnapshot.js'), 'utf8').includes('loadPersistedSecurityReportSnapshot'));
+assertTrue('useSyncExternalStore in security', securityCtx.includes('useSyncExternalStore'));
 
 if (!process.exitCode) {
   console.log('\n[verify-smart-monitor-system] ok');

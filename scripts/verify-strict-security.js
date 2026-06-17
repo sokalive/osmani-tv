@@ -49,7 +49,8 @@ assertContains('lib/security/riskEngine.js', 'hasThreatSignals', 'zero-tolerance
 assertContains('lib/security/riskEngine.js', 'blockPlayback: true', 'block state defined');
 assertNotContains('lib/security/riskEngine.js', 'limitedPlayback: true', 'no limited playback in riskEngine');
 
-assertContains('context/SecurityContext.jsx', 'setLoading(false)', 'loading cleared before report');
+assertContains('context/SecurityContext.jsx', 'loadPersistedSecurityReportSnapshot', 'persisted Smart Monitor policy');
+assertContains('lib/security/riskEngine.js', 'enforcementReason', 'enforcement diagnostics');
 assertContains('context/SecurityContext.jsx', 'serverPlaybackAllowed', 'server playbackAllowed state');
 assertContains('context/SecurityContext.jsx', 'SECURITY_BLOCK_MESSAGE', 'Swahili message in gate');
 assertNotContains('context/SecurityContext.jsx', 'if (security.loading) return { ok: true }', 'no loading bypass in assert');

@@ -11,9 +11,11 @@ import {
   subscribeDeviceIntelligenceAccess,
   getLastDeviceIntelligenceResult,
 } from '../lib/deviceIntelligenceAccess';
+import { loadPersistedSecurityReportSnapshot } from '../lib/lastSecurityReportSnapshot';
 import { parseServerIntelAccess } from '../lib/serverIntelAccess';
 import { SECURITY_BLOCK_MESSAGE } from '../lib/security/constants';
 import { resolveEnforcement } from '../lib/security/riskEngine';
+import { logSecurityEnforcement } from '../lib/securityEnforcementLog';
 import { runRuntimeSecurityScan } from '../lib/security/runtimeScan';
 
 const SecurityContext = createContext(null);
@@ -78,16 +80,24 @@ export function SecurityProvider({ children }) {
     }
   }, []);
 
+  const applyHydratedPolicy = useCallback((cached) => {
+    if (!cached || !(cached.at > 0)) return;
+    if (cached.serverPlaybackAllowed === true) setServerPlaybackAllowed(true);
+    else if (cached.serverPlaybackAllowed === false) setServerPlaybackAllowed(false);
+    if (cached.serverSecurityBlocked === true) setServerSecurityBlocked(true);
+    else if (cached.serverSecurityBlocked === false) setServerSecurityBlocked(false);
+    if (cached.smartMonitorEnabled === true) setServerSmartMonitorEnabled(true);
+    if (typeof cached.enforcement === 'string' && cached.enforcement.trim()) {
+      setServerEnforcement(cached.enforcement.trim().toLowerCase());
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     if (scanRunning.current) return;
     scanRunning.current = true;
     const detected_at = new Date().toISOString();
     try {
       const scan = await runRuntimeSecurityScan();
-      setScore(scan.score);
-      setTier(scan.tier);
-      setSignals(scan.signals);
-      setDetails(scan.details);
 
       const report = await reportSecurityDevice({
         signals: scan.signals,
@@ -96,6 +106,11 @@ export function SecurityProvider({ children }) {
         detected_at,
       });
       applyServerReport(report);
+
+      setScore(scan.score);
+      setTier(scan.tier);
+      setSignals(scan.signals);
+      setDetails(scan.details);
       setLoading(false);
 
       const intel = parseServerIntelAccess(getLastDeviceIntelligenceResult()?.raw);
@@ -112,15 +127,24 @@ export function SecurityProvider({ children }) {
         serverSecurityBlocked: report.securityBlocked ?? null,
         smartMonitorEnabled: smartMonitor,
         intelAccessOpen: intel.serverIntelOpen,
-      }).blockPlayback;
+      });
+
+      logSecurityEnforcement({
+        allowed: !blockPlayback.blockPlayback,
+        enforcementReason: blockPlayback.enforcementReason,
+        enforcementTrigger: blockPlayback.enforcementTrigger,
+        tag: 'security-refresh',
+      });
 
       setSecurityAccessSnapshot({
         serverPlaybackAllowed: report.playbackAllowed ?? null,
         serverSecurityBlocked: report.securityBlocked ?? null,
         smartMonitorEnabled: smartMonitor,
-        blockPlayback,
+        blockPlayback: blockPlayback.blockPlayback,
         signals: scan.signals,
         serverEnforcement: report.enforcement ?? null,
+        enforcementReason: blockPlayback.enforcementReason,
+        enforcementTrigger: blockPlayback.enforcementTrigger,
       });
 
       runDeviceAccessVerification({ tag: 'security-refresh' });
@@ -138,6 +162,13 @@ export function SecurityProvider({ children }) {
     registerSecurityAccessRefresh(refresh);
     return () => registerSecurityAccessRefresh(null);
   }, [refresh]);
+
+  useEffect(() => {
+    void (async () => {
+      const cached = await loadPersistedSecurityReportSnapshot();
+      applyHydratedPolicy(cached);
+    })();
+  }, [applyHydratedPolicy]);
 
   useEffect(() => {
     void refresh();
@@ -249,7 +280,24 @@ export function usePlaybackSecurityGate() {
 export function assertPlaybackAllowed(security) {
   if (!security) return { ok: true };
   if (security.blockPlayback || security.canPlay === false) {
+    logSecurityEnforcement({
+      allowed: false,
+      enforcementReason: security.enforcementReason ?? 'local_threat',
+      enforcementTrigger: security.enforcementTrigger ?? null,
+      tag: 'playback-gate',
+    });
     return { ok: false, message: SECURITY_BLOCK_MESSAGE };
+  }
+  if (
+    security.enforcementReason &&
+    security.enforcementReason !== 'default_allowed'
+  ) {
+    logSecurityEnforcement({
+      allowed: true,
+      enforcementReason: security.enforcementReason,
+      enforcementTrigger: security.enforcementTrigger ?? null,
+      tag: 'playback-gate',
+    });
   }
   return { ok: true };
 }
