@@ -23,6 +23,7 @@ import {
 } from '../lib/bannersCache';
 import { readChannelsCache, writeChannelsCache } from '../lib/channelsCache';
 import { isNetworkTransportError } from '../lib/catalogApiFetch';
+import { shouldMarkCatalogOffline } from '../lib/catalogConnectivity';
 import { getApiBaseUrl } from '../lib/apiBaseUrl';
 import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
@@ -30,7 +31,7 @@ import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { withTimeout } from '../lib/asyncTimeout';
 
-const STARTUP_FETCH_TIMEOUT_MS = 12_000;
+const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
 
 const defaultSettings = {
@@ -447,18 +448,30 @@ export function OsmaniAppProvider({ children }) {
         logBannerRuntimeDiagnostics(nextBanners);
       }
     } catch (e) {
-      if (isLikelyOfflineError(e)) {
+      let catalogCount = rawChannelsRef.current.length;
+      if (catalogCount === 0 && preserveDataOnError) {
+        const cached = await readChannelsCache();
+        if (cached?.channels?.length) {
+          setRawChannels(sortChannelsByAdminOrder(cached.channels));
+          catalogCount = cached.channels.length;
+          devLog('[CATALOG_SYNC]', 'offline_cache_fallback', { count: catalogCount });
+        }
+      }
+      const markOffline = shouldMarkCatalogOffline(e, catalogCount);
+      if (markOffline) {
         setIsOffline(true);
         setError(null);
-        if (preserveDataOnError && rawChannelsRef.current.length === 0) {
-          const cached = await readChannelsCache();
-          if (cached?.channels?.length) {
-            setRawChannels(sortChannelsByAdminOrder(cached.channels));
-            devLog('[CATALOG_SYNC]', 'offline_cache_fallback', { count: cached.channels.length });
-          }
-        }
+        devLog('[CATALOG_SYNC]', 'catalog_offline', { reason: e?.message ?? e, catalogCount });
+      } else if (isLikelyOfflineError(e)) {
+        setIsOffline(false);
+        setError(null);
+        devLog('[CATALOG_SYNC]', 'refresh_failed_catalog_usable', {
+          reason: e?.message ?? e,
+          catalogCount,
+        });
       } else {
         setError(e?.message ?? 'Failed to load');
+        if (catalogCount > 0) setIsOffline(false);
       }
       if (!preserveDataOnError) {
         setRawChannels([]);

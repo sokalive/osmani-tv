@@ -55,6 +55,7 @@ import {
   useRegisterBlockingSheet,
 } from './context/ModalSheetCoordinatorContext';
 import { optimizeDisplayImageUrl, resolveMediaAssetUrl } from './lib/mediaDelivery';
+import { isCatalogInteractionBlocked } from './lib/catalogConnectivity';
 import { acknowledgeManualGift } from './api/subscription';
 import { trackInstallOnce } from './api/analytics';
 import { startPresence, stopPresence } from './lib/presenceTracker';
@@ -691,6 +692,12 @@ function ChannelCatalogScreen({
   /** Spinner only while the first channel catalog fetch is pending (not during background refresh). */
   const channelsPendingInitialLoad = loading && rawChannels.length === 0;
 
+  /** Offline UX only when there is no usable catalog — not on background refresh failures. */
+  const catalogBlocked = useMemo(
+    () => isCatalogInteractionBlocked(isOffline, displayChannels.length),
+    [isOffline, displayChannels.length],
+  );
+
   const bannerSlides = useMemo(() => {
     if (!Array.isArray(rawBanners)) return [];
     return rawBanners
@@ -797,7 +804,7 @@ function ChannelCatalogScreen({
         logChannelCardTap('tap_cancelled', { channelKey, reason: 'device_intelligence' });
         return;
       }
-      if (isOffline) {
+      if (catalogBlocked) {
         logChannelCardTap('tap_cancelled', { channelKey, reason: 'offline' });
         setOfflineModalVisible(true);
         return;
@@ -822,13 +829,13 @@ function ChannelCatalogScreen({
       subscriptionSyncLoaded,
       trialWatchSettingsLoaded,
       loading,
-      isOffline,
+      catalogBlocked,
       guardDeviceIntelligence,
     ],
   );
 
   useEffect(() => {
-    if (isOffline) {
+    if (catalogBlocked) {
       wasOfflineRef.current = true;
       return;
     }
@@ -836,7 +843,7 @@ function ChannelCatalogScreen({
       wasOfflineRef.current = false;
       void refresh({ showGlobalLoading: false, preserveDataOnError: true });
     }
-  }, [isOffline, refresh]);
+  }, [catalogBlocked, refresh]);
 
   const renderCard = useCallback(
     ({ item }) => (
@@ -1038,7 +1045,7 @@ function ChannelCatalogScreen({
             <Text style={styles.channelsStatusText}>Inapakia chaneli…</Text>
           </View>
         ) : null}
-        {isOffline ? (
+        {catalogBlocked ? (
           <View style={styles.offlineBanner}>
             <Ionicons name="cloud-offline-outline" size={16} color="#FBBF24" />
             <Text style={styles.offlineBannerText}>
@@ -1046,7 +1053,7 @@ function ChannelCatalogScreen({
             </Text>
           </View>
         ) : null}
-        {error && !channelsPendingInitialLoad && !isOffline ? (
+        {error && !channelsPendingInitialLoad && !catalogBlocked ? (
           <Text style={styles.channelsErrorText}>{error}</Text>
         ) : null}
 
@@ -1095,7 +1102,7 @@ function ChannelCatalogScreen({
             <Text style={styles.sectionTitle}>
               {catalogGridSectionTitle(navigatorTabKey, selectedFilter)}
             </Text>
-            {!isOffline || displayChannels.length > 0 ? (
+            {!catalogBlocked ? (
               <View style={styles.countBadge}>
                 <Text style={styles.countBadgeText}>{displayChannels.length}</Text>
               </View>
@@ -1139,11 +1146,11 @@ function ChannelCatalogScreen({
         </View>
       );
     }
-    if (isOffline) {
+    if (catalogBlocked) {
       return <Text style={styles.channelsEmptyText}>Unganisha intaneti kuendelea kupata taarifa mpya.</Text>;
     }
     return <Text style={styles.channelsEmptyText}>Hakuna chaneli bado.</Text>;
-  }, [channelsPendingInitialLoad, maintenanceMode, isOffline]);
+  }, [channelsPendingInitialLoad, maintenanceMode, catalogBlocked]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }} edges={['top']}>
@@ -1206,7 +1213,7 @@ function ChannelCatalogScreen({
         primaryLabel="Jaribu Tena"
         secondaryLabel="Funga"
         onSawa={() => {
-          if (isOffline) {
+          if (catalogBlocked) {
             setOfflineModalVisible(false);
             return;
           }

@@ -59,11 +59,21 @@ export async function getPopupSettings() {
 }
 
 export async function getServerHealth() {
-  const body = await fetchAdminApiJson('/api/server-health', { tag: 'server-health' });
-  if (!body || typeof body !== 'object') {
-    throw new Error('Could not load server health (invalid response)');
+  try {
+    const body = await fetchAdminApiJson('/api/server-health', { tag: 'server-health' });
+    if (!body || typeof body !== 'object') {
+      throw new Error('Could not load server health (invalid response)');
+    }
+    return body;
+  } catch (e) {
+    const status = String(e?.message ?? '');
+    if (!/HTTP (403|404)/.test(status)) throw e;
+    const ping = await fetchAdminApiJson('/api/health', { tag: 'api-health' }).catch(() => null);
+    if (ping && typeof ping === 'object') {
+      return { channels: [], degraded: true, health: ping };
+    }
+    throw e;
   }
-  return body;
 }
 
 export { DEFAULT_API_URL };
