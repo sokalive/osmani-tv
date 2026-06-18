@@ -140,10 +140,17 @@ if (offenders.length) {
     pass('catalog API fetch helper present');
   }
 
-  if (!read('lib/catalogApiFetch.js').includes('https-fallback')) {
-    fail('catalog fetch must support HTTPS fallback for Android cleartext');
+  const catalogFetch = read('lib/catalogApiFetch.js');
+  if (catalogFetch.includes('https-fallback') || catalogFetch.includes('HTTPS_TRANSPORT_FALLBACK')) {
+    fail('catalog fetch must not use Render HTTPS fallback');
   } else {
-    pass('catalog HTTPS transport fallback for Android');
+    pass('catalog fetch is Contabo-only (no Render fallback)');
+  }
+
+  if (!read('lib/mediaDelivery.js').includes('isAdminUploadPath')) {
+    fail('mediaDelivery must rewrite Contabo /uploads to CDN');
+  } else {
+    pass('Contabo upload thumbnails rewrite to CDN');
   }
 
   if (!process.exitCode) {
