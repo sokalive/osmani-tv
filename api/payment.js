@@ -1,17 +1,16 @@
-import { BASE_URL } from '../api';
 import { parseCheckoutProvidersResponse } from '../lib/checkoutPaymentProviders';
 import { resolveMediaAssetUrl } from '../lib/mediaDelivery';
+import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
+import { fetchAdminApiJson, fetchAdminApiResponse } from '../lib/catalogApiFetch';
 
 /**
  * Payment + subscription HTTP API (ZenoPay STK push).
- * Expected routes on the same host as `BASE_URL`:
- *   GET  /api/plans
- *   POST /api/payments/create-payment   body: { phone, plan_id, amount, device_id, device_fingerprint }
- *   GET  /api/payment-status/:orderId   → { status: SUCCESS|FAILED|PENDING, reason? }
- *   GET  /api/subscription-status?device_id=...             → { isActive|active, expiresAt|expires_at }
- * Change `P` if your server uses `/plans` instead of `/api/plans`, etc.
+ * Uses {@link fetchAdminApiResponse} with Contabo primary + Render HTTPS transport fallback.
  */
-const P = `${BASE_URL}/api`;
+
+function apiPrefix() {
+  return `${resolveApiBaseUrl().replace(/\/+$/, '')}/api`;
+}
 
 async function readJson(res) {
   try {
@@ -73,6 +72,16 @@ function pickSubscription(body) {
     const st = String(body.status ?? obj.status ?? data?.status ?? '').toLowerCase();
     if (['active', 'paid', 'success', 'live', 'ok'].includes(st)) active = true;
   }
+  if (!active) {
+    const rem = Number(
+      body.remaining_seconds ??
+        body.remainingSeconds ??
+        data?.remaining_seconds ??
+        data?.remainingSeconds ??
+        0,
+    );
+    if (Number.isFinite(rem) && rem > 0) active = true;
+  }
   const expiresAt =
     body.expires_at ??
     body.expiresAt ??
@@ -99,12 +108,7 @@ function isExpiryValid(expiresAt) {
  * @returns {Promise<unknown[]>}
  */
 export async function getPlans() {
-  const res = await fetch(`${P}/plans`);
-  const body = await readJson(res);
-  if (!res.ok) {
-    const msg = body?.error != null ? String(body.error) : `HTTP ${res.status}`;
-    throw new Error(msg || 'Could not load plans');
-  }
+  const body = await fetchAdminApiJson('/api/plans', { tag: 'payment-plans' });
   if (Array.isArray(body)) return body;
   if (body && Array.isArray(body.plans)) return body.plans;
   if (body && Array.isArray(body.data)) return body.data;
@@ -157,20 +161,10 @@ function normalizeProviderRow(raw) {
 }
 
 /**
- * Live payment providers (admin-managed). Falls back to caller's local
- * defaults when the endpoint is unreachable or returns nothing.
- *
- * GET /api/payment-providers → []|{ providers: [] }|{ data: [] }
- *
  * @returns {Promise<{ id: string; name: string; logoUrl: string|null; active: boolean }[]>}
  */
 export async function getPaymentProviders() {
-  const res = await fetch(`${P}/payment-providers`);
-  const body = await readJson(res);
-  if (!res.ok) {
-    const msg = body?.error != null ? String(body.error) : `HTTP ${res.status}`;
-    throw new Error(msg || 'Could not load providers');
-  }
+  const body = await fetchAdminApiJson('/api/payment-providers', { tag: 'payment-providers' });
   let raw = [];
   if (Array.isArray(body)) raw = body;
   else if (body && Array.isArray(body.providers)) raw = body.providers;
@@ -181,26 +175,21 @@ export async function getPaymentProviders() {
 }
 
 /**
- * Active checkout gateway from admin (zenopay | sonicpesa | auraxpay).
  * GET /api/payments/checkout-providers
  */
 export async function getCheckoutPaymentProviders() {
-  const res = await fetch(`${P}/payments/checkout-providers`);
-  const body = await readJson(res);
-  if (!res.ok) {
-    const msg = body?.error != null ? String(body.error) : `HTTP ${res.status}`;
-    throw new Error(msg || 'Could not load checkout provider');
-  }
+  const body = await fetchAdminApiJson('/api/payments/checkout-providers', {
+    tag: 'payment-checkout-providers',
+  });
   return parseCheckoutProvidersResponse(body);
 }
 
-async function postCreateOrder(url, payload, errorLabel) {
-  const res = await fetch(url, {
+async function postCreateOrder(pathSuffix, payload, errorLabel) {
+  const { res, parsed: body } = await fetchAdminApiResponse(pathSuffix, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: payload,
+    tag: 'payment-create-order',
   });
-  const body = await readJson(res);
   if (!res.ok) {
     const msg =
       body?.error != null
@@ -219,14 +208,9 @@ async function postCreateOrder(url, payload, errorLabel) {
   };
 }
 
-/**
- * SonicPesa STK — POST /api/payments/sonicpesa/create-order
- * @param {{ phone: string; plan_id: string; amount: number; device_id: string; device_fingerprint?: string }} payload
- * @returns {Promise<{ order_id: string; expiresInSeconds?: number }>}
- */
 export async function createSonicpesaOrder(payload) {
   return postCreateOrder(
-    `${P}/payments/sonicpesa/create-order`,
+    '/api/payments/sonicpesa/create-order',
     {
       phone: payload.phone,
       plan_id: payload.plan_id,
@@ -237,14 +221,9 @@ export async function createSonicpesaOrder(payload) {
   );
 }
 
-/**
- * Aurax Pay STK — POST /api/payments/auraxpay/create-order
- * @param {{ phone: string; plan_id: string; amount: number; device_id: string; device_fingerprint?: string }} payload
- * @returns {Promise<{ order_id: string; expiresInSeconds?: number }>}
- */
 export async function createAuraxpayOrder(payload) {
   return postCreateOrder(
-    `${P}/payments/auraxpay/create-order`,
+    '/api/payments/auraxpay/create-order',
     {
       phone: payload.phone,
       plan_id: payload.plan_id,
@@ -266,73 +245,19 @@ export function resolveCheckoutStartPayment(provider) {
 
 /**
  * @param {{ phone: string; plan_id: string; amount: number; device_id: string; device_fingerprint: string }} payload
- * @returns {Promise<{ order_id: string; expiresInSeconds?: number }>}
  */
 export async function createPayment(payload) {
-  const url = `${P}/payments/create-payment`;
-  const requestBody = JSON.stringify(payload);
-
-  if (__DEV__) {
-    console.log('[createPayment] BASE_URL (from api.js):', BASE_URL);
-    console.log('[createPayment] Full URL:', url);
-    console.log('[createPayment] Request body:', requestBody);
-  }
-
-  let res;
-  let responseText = '';
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: requestBody,
-    });
-    responseText = await res.text();
-  } catch (error) {
-    if (__DEV__) console.log('[createPayment] FETCH ERROR:', String(error));
-    throw error;
-  }
-
-  if (__DEV__) {
-    console.log('[createPayment] Response status:', res.status, res.statusText);
-    console.log('[createPayment] Response text:', responseText);
-  }
-
-  let body = null;
-  if (responseText) {
-    try {
-      body = JSON.parse(responseText);
-    } catch {
-      body = null;
-    }
-  }
-
-  if (!res.ok) {
-    const msg =
-      body?.error != null
-        ? String(body.error)
-        : body?.message != null
-          ? String(body.message)
-          : `HTTP ${res.status}`;
-    throw new Error(msg || 'Payment could not be started');
-  }
-  const orderId = pickOrderId(body);
-  if (!orderId) throw new Error('Missing order_id from server');
-  const expiresInSeconds = Number(body.expires_in_seconds ?? body.expiresIn ?? body.timeout_seconds);
-  return {
-    order_id: orderId,
-    expiresInSeconds: Number.isFinite(expiresInSeconds) ? expiresInSeconds : undefined,
-  };
+  return postCreateOrder('/api/payments/create-payment', payload, 'Payment');
 }
 
 /**
- * Poll after create-payment. Backend: GET /api/payment-status/:orderId
  * @param {string} orderId
- * @returns {Promise<{ status: 'SUCCESS' | 'FAILED' | 'PENDING'; reason: string }>}
  */
 export async function getPaymentStatus(orderId) {
   const q = encodeURIComponent(orderId);
-  const res = await fetch(`${P}/payment-status/${q}`);
-  const body = await readJson(res);
+  const { res, parsed: body } = await fetchAdminApiResponse(`/api/payment-status/${q}`, {
+    tag: 'payment-status',
+  });
   if (!res.ok) {
     if (res.status === 404) {
       return {
@@ -352,7 +277,6 @@ export async function getPaymentStatus(orderId) {
 
 /**
  * @param {string} orderId
- * @returns {Promise<{ status: string; reason: string }>}
  */
 export async function getTransactionStatus(orderId) {
   const r = await getPaymentStatus(orderId);
@@ -365,9 +289,10 @@ export async function getTransactionStatus(orderId) {
  * @param {string} deviceId
  */
 export async function fetchSubscription(deviceId) {
-  const url = `${P}/subscription-status?device_id=${encodeURIComponent(deviceId)}`;
-  const res = await fetch(url);
-  const body = await readJson(res);
+  const { res, parsed: body } = await fetchAdminApiResponse(
+    `/api/subscription-status?device_id=${encodeURIComponent(deviceId)}`,
+    { tag: 'subscription-status' },
+  );
   if (!res.ok) {
     if (res.status === 404) return { active: false, expiresAt: null };
     const msg = body?.error != null ? String(body.error) : `HTTP ${res.status}`;
@@ -377,7 +302,6 @@ export async function fetchSubscription(deviceId) {
 }
 
 /**
- * Verify subscription is active (e.g. before playback).
  * @param {string} deviceId
  */
 export async function verifySubscriptionActive(deviceId) {
@@ -389,3 +313,9 @@ export async function verifySubscriptionActive(deviceId) {
   return isExpiryValid(sub.expiresAt);
 }
 
+/** @deprecated use resolveApiBaseUrl — runtime snapshot for SSE URL builders */
+export function getPaymentApiBaseUrl() {
+  return resolveApiBaseUrl();
+}
+
+export { apiPrefix };

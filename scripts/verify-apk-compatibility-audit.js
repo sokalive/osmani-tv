@@ -181,6 +181,24 @@ function auditStatic() {
     fail('recover must seed cache before verify');
   } else pass('recover seeds cache before verify');
 
+  if (!ctx.includes('recover_restored') && !ctx.includes('status_endpoint_restored')) {
+    fail('context must recover subscription when verify returns inactive');
+  } else pass('context recover chain on inactive verify');
+
+  const payment = read('api/payment.js');
+  if (!payment.includes('fetchAdminApiJson')) fail('payment must use fetchAdminApiJson');
+  else pass('payment uses transport-aware fetch');
+
+  const catalogFetch = read('lib/catalogApiFetch.js');
+  if (!catalogFetch.includes('LEGACY_HTTPS_API_FALLBACK')) {
+    fail('catalog fetch must define legacy HTTPS fallback');
+  } else pass('legacy HTTPS API fallback present');
+
+  const apiBase = read('lib/apiBaseUrl.js');
+  if (apiBase.includes('LEGACY_API_HOSTS') && apiBase.match(/resolveApiBaseUrl[\s\S]{0,400}LEGACY_API_HOSTS/)) {
+    fail('resolveApiBaseUrl must not force-remap Render hosts to Contabo');
+  } else pass('resolveApiBaseUrl honors embedded EXPO_PUBLIC_API_URL');
+
   const app = read('App.js');
   if (!app.includes('isCatalogInteractionBlocked')) fail('offline modal must use catalogBlocked');
   else pass('offline modal catalog-grounded');

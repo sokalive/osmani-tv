@@ -29,7 +29,7 @@ import {
   getPlans,
   resolveCheckoutStartPayment,
 } from '../api/payment';
-import { BASE_URL } from '../api';
+import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { verifySubscription } from '../api/subscription';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
@@ -54,7 +54,9 @@ const NETWORK_COLORS = {
 const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
 
-const POLL_MS = 3000;
+const POLL_MS = 1500;
+const PAYMENT_ACTIVATION_RETRY_MS = 750;
+const PAYMENT_ACTIVATION_MAX_ATTEMPTS = 10;
 
 /**
  * Local fallback used only when GET /api/payment-providers fails or
@@ -346,13 +348,23 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     let verified = null;
     let fetchExpires = null;
     try {
-      verified = await refreshSubscription();
-      try {
-        const { deviceId } = await getDeviceIdentity();
-        const sub = await fetchSubscription(deviceId);
-        fetchExpires = sub?.expiresAt ?? null;
-      } catch {
-        // optional enrichment only
+      const { deviceId } = await getDeviceIdentity();
+      for (let attempt = 0; attempt < PAYMENT_ACTIVATION_MAX_ATTEMPTS; attempt += 1) {
+        if (doneRef.current) return;
+        verified = await refreshSubscription();
+        try {
+          const sub = await fetchSubscription(deviceId);
+          fetchExpires = sub?.expiresAt ?? fetchExpires;
+          if (sub?.active === true && !isSubscriptionActive(verified)) {
+            verified = { ...verified, active: true, isActive: true, expiresAt: sub.expiresAt ?? null };
+          }
+        } catch {
+          // optional enrichment only
+        }
+        if (verified && isSubscriptionActive(verified)) break;
+        if (attempt < PAYMENT_ACTIVATION_MAX_ATTEMPTS - 1) {
+          await new Promise((resolve) => setTimeout(resolve, PAYMENT_ACTIVATION_RETRY_MS));
+        }
       }
       if (verified && isSubscriptionActive(verified)) {
         doneRef.current = true;
@@ -469,7 +481,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   useEffect(() => {
     if (!visible || step !== 3 || !waitingDeviceId || doneRef.current) return undefined;
     closeSse();
-    const url = `${BASE_URL}/api/subscription-stream?device_id=${encodeURIComponent(waitingDeviceId)}`;
+    const url = `${resolveApiBaseUrl()}/api/subscription-stream?device_id=${encodeURIComponent(waitingDeviceId)}`;
     const stream = new EventSource(url, { pollingInterval: 0 });
     sseRef.current = stream;
 

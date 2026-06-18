@@ -17,6 +17,7 @@ import {
   verifySubscription,
   writeSubscriptionCache,
 } from '../api/subscription';
+import { fetchSubscription } from '../api/payment';
 import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import {
   dropLegacyBannersCache,
@@ -177,6 +178,28 @@ export function OsmaniAppProvider({ children }) {
         let expiresAt = r.expiresAt ?? null;
         let effectiveResult = r;
 
+        if (!active && !isSubscriptionTransportFailure(r)) {
+          const recovered = await recoverSubscription(deviceId, deviceFingerprint);
+          if (recovered.active === true) {
+            active = true;
+            expiresAt = recovered.expiresAt ?? null;
+            effectiveResult = recovered;
+            console.log('[SUBSCRIPTION_VERIFY]', reason, 'recover_restored', {
+              expiresAt,
+            });
+          } else if (!isSubscriptionTransportFailure(recovered)) {
+            const statusPeek = await fetchSubscription(deviceId).catch(() => null);
+            if (statusPeek?.active === true) {
+              active = true;
+              expiresAt = statusPeek.expiresAt ?? null;
+              effectiveResult = { ...r, ...statusPeek, active: true, expiresAt };
+              console.log('[SUBSCRIPTION_VERIFY]', reason, 'status_endpoint_restored', {
+                expiresAt,
+              });
+            }
+          }
+        }
+
         if (!active && isSubscriptionTransportFailure(r)) {
           const cached = await readSubscriptionCache();
           const sameDevice = !cached.deviceId || cached.deviceId === deviceId;
@@ -200,23 +223,24 @@ export function OsmaniAppProvider({ children }) {
         const serverTimeFetchedAt = Date.now();
         setIsSubscribed(active);
         setSubscriptionExpiresAt(active ? expiresAt : null);
-        if (Array.isArray(r.plans) && r.plans.length > 0) {
-          setAvailablePlans(r.plans);
+        if (Array.isArray(effectiveResult.plans) && effectiveResult.plans.length > 0) {
+          setAvailablePlans(effectiveResult.plans);
         }
+        const detailSource = effectiveResult;
         const detailsPayload = active
           ? {
-              amount: r.amount ?? null,
-              currency: r.currency ?? null,
-              planName: r.planName ?? null,
-              planId: r.planId ?? null,
-              planDurationDays: r.planDurationDays ?? r.plan_duration_days ?? null,
-              plan_duration_days: r.plan_duration_days ?? r.planDurationDays ?? null,
-              startedAt: r.startedAt ?? null,
+              amount: detailSource.amount ?? null,
+              currency: detailSource.currency ?? null,
+              planName: detailSource.planName ?? null,
+              planId: detailSource.planId ?? null,
+              planDurationDays: detailSource.planDurationDays ?? detailSource.plan_duration_days ?? null,
+              plan_duration_days: detailSource.plan_duration_days ?? detailSource.planDurationDays ?? null,
+              startedAt: detailSource.startedAt ?? null,
               expiresAt,
-              serverTime: r.serverTime ?? null,
+              serverTime: detailSource.serverTime ?? null,
               serverTimeFetchedAt,
-              plans: Array.isArray(r.plans) ? r.plans : [],
-              manualGiftAckKey: r.manualGiftAckKey ?? null,
+              plans: Array.isArray(detailSource.plans) ? detailSource.plans : [],
+              manualGiftAckKey: detailSource.manualGiftAckKey ?? null,
               transportPreserved: effectiveResult.transportPreserved === true,
             }
           : null;
@@ -238,16 +262,19 @@ export function OsmaniAppProvider({ children }) {
         if (active) {
           setRevokedReason(null);
           await writeSubscriptionCache({ active: true, expiresAt, deviceId, fingerprint: deviceFingerprint });
-        } else if (!isSubscriptionTransportFailure(r)) {
+        } else if (
+          !isSubscriptionTransportFailure(r) &&
+          !isSubscriptionTransportFailure(effectiveResult)
+        ) {
           await clearSubscriptionCache(`verify:${reason}`);
         }
         console.log('[SUBSCRIPTION_VERIFY]', reason, {
           active,
           expiresAt,
-          amount: r.amount ?? null,
-          planName: r.planName ?? null,
-          startedAt: r.startedAt ?? null,
-          serverTime: r.serverTime ?? null,
+          amount: detailSource.amount ?? null,
+          planName: detailSource.planName ?? null,
+          startedAt: detailSource.startedAt ?? null,
+          serverTime: detailSource.serverTime ?? null,
           transportPreserved: effectiveResult.transportPreserved === true,
         });
         return effectiveResult;

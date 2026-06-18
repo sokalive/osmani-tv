@@ -57,11 +57,17 @@ if (!eas.includes(`"EXPO_PUBLIC_API_URL": "${CONTABO}"`)) {
   fail('eas.json production must set EXPO_PUBLIC_API_URL to Contabo');
 } else pass('eas.json sets EXPO_PUBLIC_API_URL');
 
+const RENDER_ALLOWLIST = new Set([
+  'lib/apiBaseUrl.js',
+  'lib/catalogApiFetch.js',
+]);
+
 const offenders = [];
 for (const dir of PRODUCTION_DIRS) {
   const files = dir.endsWith('.js') ? [dir] : walkFiles(dir);
   for (const rel of files) {
     if (rel === 'lib/apiBaseUrl.js' || rel === 'lib/mediaDelivery.js') continue;
+    if (RENDER_ALLOWLIST.has(rel)) continue;
     const text = read(rel);
     if (text.includes(RENDER)) offenders.push(rel);
   }
@@ -69,7 +75,7 @@ for (const dir of PRODUCTION_DIRS) {
 if (offenders.length) {
   fail(`production paths still reference Render: ${offenders.join(', ')}`);
 } else {
-  pass('no Render host in production app paths (except legacy rewrite lists)');
+  pass('no Render host in production app paths (except legacy HTTPS fallback helpers)');
 }
 
 (async () => {
@@ -141,10 +147,17 @@ if (offenders.length) {
   }
 
   const catalogFetch = read('lib/catalogApiFetch.js');
-  if (catalogFetch.includes('https-fallback') || catalogFetch.includes('HTTPS_TRANSPORT_FALLBACK')) {
-    fail('catalog fetch must not use Render HTTPS fallback');
+  if (!catalogFetch.includes('legacy-https-fallback') || !catalogFetch.includes('LEGACY_HTTPS_API_FALLBACK')) {
+    fail('catalog fetch must offer Render HTTPS transport fallback when Contabo HTTP primary');
   } else {
-    pass('catalog fetch is Contabo-only (no Render fallback)');
+    pass('catalog fetch has Render HTTPS transport fallback for Contabo HTTP primary');
+  }
+
+  const payment = read('api/payment.js');
+  if (!payment.includes('fetchAdminApiJson') || !payment.includes('fetchAdminApiResponse')) {
+    fail('payment API must use shared admin fetch with transport fallback');
+  } else {
+    pass('payment API uses shared admin fetch helper');
   }
 
   if (!read('lib/mediaDelivery.js').includes('isAdminUploadPath')) {
