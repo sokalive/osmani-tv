@@ -177,13 +177,26 @@ function auditStatic() {
     fail('context must preserve subscription cache on transport errors');
   } else pass('subscription cache preserved on transport errors');
 
-  if (!ctx.includes('writeSubscriptionCache') || !ctx.match(/recoverSubscription[\s\S]{0,400}writeSubscriptionCache/)) {
-    fail('recover must seed cache before verify');
-  } else pass('recover seeds cache before verify');
+  if (!ctx.includes('resolveActiveSubscription')) {
+    fail('context must resolve subscriptions via resolveActiveSubscription');
+  } else pass('context uses resolveActiveSubscription');
 
-  if (!ctx.includes('recover_restored') && !ctx.includes('status_endpoint_restored')) {
-    fail('context must recover subscription when verify returns inactive');
-  } else pass('context recover chain on inactive verify');
+  if (!sub.includes('resolveActiveSubscription')) {
+    fail('subscription must export resolveActiveSubscription for APK migration');
+  } else pass('resolveActiveSubscription migration resolver');
+
+  const deviceIdSrc = read('lib/deviceIdentity.js');
+  if (!deviceIdSrc.includes('LEGACY_ANDROID_PACKAGE')) {
+    fail('deviceIdentity must define LEGACY_ANDROID_PACKAGE');
+  } else pass('legacy package constant for migration bridge');
+
+  if (!deviceIdSrc.includes('legacyDeviceFingerprint')) {
+    fail('deviceIdentity must compute legacyDeviceFingerprint');
+  } else pass('legacy fingerprint computed for com.osmantv.app');
+
+  if (!sub.includes('legacy_device_fingerprint')) {
+    fail('subscription recover/verify must send legacy_device_fingerprint');
+  } else pass('migration payload includes legacy_device_fingerprint');
 
   const payment = read('api/payment.js');
   if (!payment.includes('fetchAdminApiJson')) fail('payment must use fetchAdminApiJson');

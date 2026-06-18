@@ -20,6 +20,7 @@ const path = require('path');
 const RENDER = 'https://osmani-admin-api.onrender.com';
 const CONTABO = 'http://144.91.117.90:10001';
 const PACKAGE = 'com.burudanitv.app';
+const LEGACY_PACKAGE = 'com.osmantv.app';
 const RUNTIME = '1.7.2';
 const OTA_COMMIT = '4975fd7';
 
@@ -98,9 +99,12 @@ function pickPlanName(body) {
   );
 }
 
-function fingerprintFor(deviceId) {
-  if (process.env.DEVICE_FINGERPRINT) return process.env.DEVICE_FINGERPRINT;
-  return crypto.createHash('sha256').update(`${deviceId}|${PACKAGE}|verify-prod`).digest('hex');
+function fingerprintFor(deviceId, bundle = PACKAGE, installId = 'migration-probe-install') {
+  if (process.env.DEVICE_FINGERPRINT && bundle === PACKAGE) return process.env.DEVICE_FINGERPRINT;
+  return crypto
+    .createHash('sha256')
+    .update(`${deviceId}|${bundle}|${installId}`)
+    .digest('hex');
 }
 
 async function fetchJson(base, pathSuffix, opts = {}) {
@@ -124,6 +128,33 @@ async function fetchJson(base, pathSuffix, opts = {}) {
     parsed = null;
   }
   return { url, status: res.status, ok: res.ok, ms: Date.now() - started, parsed, text };
+}
+
+async function postMigrationRecover(base, deviceId, fp, label) {
+  const body = {
+    device_id: deviceId,
+    device_fingerprint: fp,
+    fingerprint: fp,
+    android_id: deviceId,
+    package_name: PACKAGE,
+    legacy_package: LEGACY_PACKAGE,
+    legacy_device_fingerprint: fingerprintFor(deviceId, LEGACY_PACKAGE),
+  };
+  const started = Date.now();
+  const res = await fetch(`${base}/api/subscription/recover`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
+  });
+  const text = await res.text();
+  let parsed = null;
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    parsed = null;
+  }
+  return { label, status: res.status, ms: Date.now() - started, parsed };
 }
 
 async function simulateClientRecoveryChain(base, deviceId, fp, label) {
@@ -296,8 +327,42 @@ async function checkOtaManifest() {
     const render = await simulateClientRecoveryChain(RENDER, deviceId, fp, 'LEGACY_RENDER');
     const contabo = await simulateClientRecoveryChain(CONTABO, deviceId, fp, 'VPS_CONTABO');
 
-    const row = { deviceId, fingerprint: fp.slice(0, 16) + '…', render, contabo };
+    const migContabo = await postMigrationRecover(
+      CONTABO,
+      deviceId,
+      fingerprintFor(deviceId, PACKAGE),
+      'VPS_MIGRATION',
+    );
+    const migRender = await postMigrationRecover(
+      RENDER,
+      deviceId,
+      fingerprintFor(deviceId, PACKAGE),
+      'LEGACY_MIGRATION',
+    );
+
+    const row = {
+      deviceId,
+      fingerprint: fp.slice(0, 16) + '…',
+      legacyFingerprint: fingerprintFor(deviceId, LEGACY_PACKAGE).slice(0, 16) + '…',
+      render,
+      contabo,
+      migrationRecover: { contabo: migContabo, render: migRender },
+    };
     report.subscriptions.push(row);
+
+    if (migContabo.status === 200) pass(`VPS migration recover payload Contabo HTTP ${migContabo.status}`);
+    else fail(`VPS migration recover Contabo HTTP ${migContabo.status}`);
+
+    if (migRender.status === 200) pass(`VPS migration recover payload Render HTTP ${migRender.status}`);
+    else fail(`VPS migration recover Render HTTP ${migRender.status}`);
+
+    const legacyFp = fingerprintFor(deviceId, LEGACY_PACKAGE);
+    const vpsFp = fingerprintFor(deviceId, PACKAGE);
+    if (legacyFp !== vpsFp) {
+      pass(`package migration changes fingerprint (osmantv vs burudani)`);
+    } else {
+      console.log('INFO: legacy and current fingerprint identical for probe install id');
+    }
 
     console.log(`\n--- device_id=${deviceId} ---`);
     console.log(JSON.stringify(row, null, 2));

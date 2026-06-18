@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { fetchAdminApiResponse, isNetworkTransportError } from '../lib/catalogApiFetch';
-import { cacheSecurityPhone, pickPhoneFromApiBody } from '../lib/security/securityPhone';
+import { LEGACY_ANDROID_PACKAGE } from '../lib/deviceIdentity';
+import { cacheSecurityPhone, getSecurityPhoneForReport, pickPhoneFromApiBody } from '../lib/security/securityPhone';
 
 /**
  * Device-bound subscription HTTP client.
@@ -714,6 +715,42 @@ function expandDeviceKeys(payload) {
   return out;
 }
 
+/**
+ * Migration bridge for Render APK (com.osmantv.app) → VPS APK (com.burudanitv.app).
+ * @param {string} deviceId
+ * @param {string} deviceFingerprint
+ * @param {object} [identityContext]
+ */
+function buildMigrationIdentityPayload(deviceId, deviceFingerprint, identityContext = {}) {
+  const payload = {
+    device_id: deviceId,
+    device_fingerprint: deviceFingerprint,
+    android_id: identityContext.androidId ?? deviceId,
+    install_instance_id: identityContext.installInstanceId ?? null,
+    package_name: identityContext.packageName ?? null,
+    legacy_package: identityContext.legacyPackageName ?? LEGACY_ANDROID_PACKAGE,
+  };
+  if (identityContext.legacyDeviceFingerprint) {
+    payload.legacy_device_fingerprint = identityContext.legacyDeviceFingerprint;
+  }
+  if (identityContext.migration_bridge === true) {
+    payload.migration_bridge = true;
+  }
+  if (identityContext.phone) payload.phone = identityContext.phone;
+  return expandDeviceKeys(payload);
+}
+
+async function buildIdentityContext(identityContext = {}) {
+  if (identityContext.phone) return identityContext;
+  try {
+    const phone = await getSecurityPhoneForReport();
+    if (phone) return { ...identityContext, phone };
+  } catch {
+    /* ignore */
+  }
+  return identityContext;
+}
+
 async function postJson(path, payload, tag = 'subscription-post') {
   const pathSuffix = path.startsWith('/api/') ? path : `/api${path.startsWith('/') ? path : `/${path}`}`;
   const { res, parsed: body } = await fetchAdminApiResponse(pathSuffix, {
@@ -728,15 +765,23 @@ async function postJson(path, payload, tag = 'subscription-post') {
  * Hard subscription verification. Always hits the backend.
  * @param {string} deviceId
  * @param {string} deviceFingerprint
+ * @param {object} [identityContext]
  */
-export async function verifySubscription(deviceId, deviceFingerprint) {
+export async function verifySubscription(deviceId, deviceFingerprint, identityContext = {}) {
   const url = '/api/subscription/verify';
-  console.log('[SUBSCRIPTION_VERIFY]', 'request', { url, deviceId: String(deviceId).slice(0, 8) });
+  const ctx = await buildIdentityContext(identityContext);
+  console.log('[SUBSCRIPTION_VERIFY]', 'request', {
+    url,
+    deviceId: String(deviceId).slice(0, 8),
+    packageName: ctx.packageName ?? null,
+    legacyPackage: ctx.legacyPackageName ?? LEGACY_ANDROID_PACKAGE,
+  });
   try {
-    const { res, body } = await postJson(url, {
-      device_id: deviceId,
-      device_fingerprint: deviceFingerprint,
-    });
+    const { res, body } = await postJson(
+      url,
+      buildMigrationIdentityPayload(deviceId, deviceFingerprint, ctx),
+      'subscription-verify',
+    );
     if (!res.ok) {
       console.log('[SUBSCRIPTION_VERIFY]', 'failed', res.status, body);
       return { active: false, expiresAt: null, error: `HTTP ${res.status}`, raw: body };
@@ -779,31 +824,107 @@ async function fetchSubscriptionStatus(deviceId) {
   return normalizeVerifyResponse(body);
 }
 
-/**
- * Recover may return `{ ok: true, recovered_from }` without subscription fields.
- * Re-query verify + subscription-status for authoritative active state.
- */
-async function refreshSubscriptionAfterRecover(deviceId, deviceFingerprint) {
-  const verified = await verifySubscription(deviceId, deviceFingerprint).catch(() => null);
+async function refreshSubscriptionAfterRecover(deviceId, deviceFingerprint, identityContext = {}) {
+  const ctx = await buildIdentityContext(identityContext);
+  const verified = await verifySubscription(deviceId, deviceFingerprint, ctx).catch(() => null);
   if (verified?.active === true) return verified;
+  if (
+    ctx.legacyDeviceFingerprint &&
+    ctx.legacyDeviceFingerprint !== deviceFingerprint
+  ) {
+    const legacyVerified = await verifySubscription(
+      deviceId,
+      ctx.legacyDeviceFingerprint,
+      { ...ctx, packageName: ctx.legacyPackageName ?? LEGACY_ANDROID_PACKAGE },
+    ).catch(() => null);
+    if (legacyVerified?.active === true) return legacyVerified;
+  }
   const status = await fetchSubscriptionStatus(deviceId);
   if (status?.active === true) return status;
   return null;
 }
 
 /**
+ * Full resolve chain for package migration / reinstall — recover before giving up.
+ * @param {import('../lib/deviceIdentity').getDeviceIdentity extends (...args: any) => Promise<infer R> ? R : never>} identity
+ */
+export async function resolveActiveSubscription(identity) {
+  const {
+    deviceId,
+    deviceFingerprint,
+    installInstanceId,
+    packageName,
+    androidId,
+    legacyDeviceFingerprint,
+    legacyPackageName,
+  } = identity;
+
+  const ctx = await buildIdentityContext({
+    installInstanceId,
+    packageName,
+    androidId,
+    legacyDeviceFingerprint,
+    legacyPackageName,
+  });
+
+  const statusFirst = await fetchSubscriptionStatus(deviceId);
+  if (statusFirst?.active === true) {
+    console.log('[SUBSCRIPTION_RESOLVE]', 'status_prefetch', { deviceId: deviceId.slice(0, 8) });
+    return { ...statusFirst, resolveSource: 'status_prefetch' };
+  }
+
+  let r = await verifySubscription(deviceId, deviceFingerprint, ctx);
+  if (r.active === true) return { ...r, resolveSource: 'verify' };
+  if (isSubscriptionTransportFailure(r)) return r;
+
+  const recovered = await recoverSubscription(deviceId, deviceFingerprint, ctx);
+  if (recovered.active === true) return { ...recovered, resolveSource: 'recover' };
+
+  if (legacyDeviceFingerprint && legacyDeviceFingerprint !== deviceFingerprint) {
+    const legacyCtx = {
+      ...ctx,
+      packageName: legacyPackageName ?? LEGACY_ANDROID_PACKAGE,
+      migration_bridge: true,
+    };
+    const legacyRecover = await recoverSubscription(
+      deviceId,
+      legacyDeviceFingerprint,
+      legacyCtx,
+    );
+    if (legacyRecover.active === true) {
+      return { ...legacyRecover, resolveSource: 'legacy_recover' };
+    }
+    const legacyVerify = await verifySubscription(deviceId, legacyDeviceFingerprint, legacyCtx);
+    if (legacyVerify.active === true) return { ...legacyVerify, resolveSource: 'legacy_verify' };
+  }
+
+  const status = await fetchSubscriptionStatus(deviceId);
+  if (status?.active === true) return { ...status, resolveSource: 'status' };
+
+  return { ...r, resolveSource: 'inactive' };
+}
+
+/**
  * Reinstall recovery — ask the backend if any active subscription is
  * bound to this device. Backend matches by deviceId / fingerprint and
  * returns the live active flag.
+ * @param {object} [identityContext]
  */
-export async function recoverSubscription(deviceId, deviceFingerprint) {
+export async function recoverSubscription(deviceId, deviceFingerprint, identityContext = {}) {
   const url = '/api/subscription/recover';
-  console.log('[SUBSCRIPTION_RECOVER]', 'request', { url });
+  const ctx = await buildIdentityContext(identityContext);
+  console.log('[SUBSCRIPTION_RECOVER]', 'request', {
+    url,
+    deviceId: String(deviceId).slice(0, 8),
+    packageName: ctx.packageName ?? null,
+    legacyPackage: ctx.legacyPackageName ?? LEGACY_ANDROID_PACKAGE,
+  });
   try {
-    const { res, body } = await postJson(url, {
-      device_id: deviceId,
-      device_fingerprint: deviceFingerprint,
-    });
+    const { res, body } = await postJson(
+      url,
+      buildMigrationIdentityPayload(deviceId, deviceFingerprint, ctx),
+      'subscription-recover',
+    );
     if (!res.ok) {
       console.log('[SUBSCRIPTION_RECOVER]', 'failed', res.status);
       return { active: false, expiresAt: null, error: `HTTP ${res.status}` };
@@ -815,7 +936,7 @@ export async function recoverSubscription(deviceId, deviceFingerprint) {
       body?.ok === 'true' ||
       (body?.recovered_from != null && String(body.recovered_from).trim() !== '');
     if (recoverAck && out.active !== true) {
-      const refreshed = await refreshSubscriptionAfterRecover(deviceId, deviceFingerprint);
+      const refreshed = await refreshSubscriptionAfterRecover(deviceId, deviceFingerprint, ctx);
       if (refreshed?.active === true) {
         out = { ...out, ...refreshed, active: true, recoverRefreshed: true };
         console.log('[SUBSCRIPTION_RECOVER]', 'refreshed_after_ok', {

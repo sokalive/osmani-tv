@@ -14,10 +14,9 @@ import {
   isSubscriptionTransportFailure,
   readSubscriptionCache,
   recoverSubscription,
-  verifySubscription,
+  resolveActiveSubscription,
   writeSubscriptionCache,
 } from '../api/subscription';
-import { fetchSubscription } from '../api/payment';
 import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import {
   dropLegacyBannersCache,
@@ -171,38 +170,20 @@ export function OsmaniAppProvider({ children }) {
       verifyInFlightRef.current = true;
       const verifyKey = ++lastVerifyKeyRef.current;
       try {
-        const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-        const r = await verifySubscription(deviceId, deviceFingerprint);
+        const identity = await getDeviceIdentity();
+        const { deviceId, deviceFingerprint } = identity;
+        const r = await resolveActiveSubscription(identity);
         if (verifyKey !== lastVerifyKeyRef.current) return r;
         let active = r.active === true;
         let expiresAt = r.expiresAt ?? null;
         let effectiveResult = r;
 
-        if (!active && !isSubscriptionTransportFailure(r)) {
-          const recovered = await recoverSubscription(deviceId, deviceFingerprint);
-          if (recovered.active === true) {
-            active = true;
-            expiresAt = recovered.expiresAt ?? null;
-            effectiveResult = recovered;
-            console.log('[SUBSCRIPTION_VERIFY]', reason, 'recover_restored', {
-              expiresAt,
-            });
-          } else if (!isSubscriptionTransportFailure(recovered)) {
-            const statusPeek = await fetchSubscription(deviceId).catch(() => null);
-            if (statusPeek?.active === true) {
-              active = true;
-              expiresAt = statusPeek.expiresAt ?? null;
-              effectiveResult = { ...r, ...statusPeek, active: true, expiresAt };
-              console.log('[SUBSCRIPTION_VERIFY]', reason, 'status_endpoint_restored', {
-                expiresAt,
-              });
-            }
-          }
-        }
-
         if (!active && isSubscriptionTransportFailure(r)) {
           const cached = await readSubscriptionCache();
-          const sameDevice = !cached.deviceId || cached.deviceId === deviceId;
+          const sameDevice =
+            !cached.deviceId ||
+            cached.deviceId === deviceId ||
+            (identity.androidId && cached.deviceId === identity.androidId);
           if (cached.active && sameDevice) {
             active = true;
             expiresAt = cached.expiresAt ?? null;
@@ -263,14 +244,17 @@ export function OsmaniAppProvider({ children }) {
           setRevokedReason(null);
           await writeSubscriptionCache({ active: true, expiresAt, deviceId, fingerprint: deviceFingerprint });
         } else if (
+          !active &&
           !isSubscriptionTransportFailure(r) &&
-          !isSubscriptionTransportFailure(effectiveResult)
+          !isSubscriptionTransportFailure(effectiveResult) &&
+          r.resolveSource === 'inactive'
         ) {
           await clearSubscriptionCache(`verify:${reason}`);
         }
         console.log('[SUBSCRIPTION_VERIFY]', reason, {
           active,
           expiresAt,
+          resolveSource: r.resolveSource ?? null,
           amount: detailSource.amount ?? null,
           planName: detailSource.planName ?? null,
           startedAt: detailSource.startedAt ?? null,
@@ -282,9 +266,17 @@ export function OsmaniAppProvider({ children }) {
         console.log('[SUBSCRIPTION_VERIFY]', reason, 'error', e?.message ?? e);
         if (verifyKey === lastVerifyKeyRef.current) {
           const transport = isNetworkTransportError(e);
-          const { deviceId } = await getDeviceIdentity().catch(() => ({ deviceId: '' }));
+          const identity = await getDeviceIdentity().catch(() => ({
+            deviceId: '',
+            androidId: null,
+          }));
+          const { deviceId } = identity;
           const cached = transport ? await readSubscriptionCache() : null;
-          const sameDevice = cached && (!cached.deviceId || cached.deviceId === deviceId);
+          const sameDevice =
+            cached &&
+            (!cached.deviceId ||
+              cached.deviceId === deviceId ||
+              (identity.androidId && cached.deviceId === identity.androidId));
           if (transport && cached?.active && sameDevice) {
             isSubscribedRef.current = true;
             setIsSubscribed(true);
@@ -331,10 +323,21 @@ export function OsmaniAppProvider({ children }) {
    */
   const recoverAndVerify = useCallback(async (reason = 'launch') => {
     try {
-      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-      const r = await recoverSubscription(deviceId, deviceFingerprint);
-      console.log('[SUBSCRIPTION_RECOVER]', reason, { active: r.active, expiresAt: r.expiresAt });
-      if (r.active === true) {
+      const identity = await getDeviceIdentity();
+      const { deviceId, deviceFingerprint } = identity;
+      const r = await recoverSubscription(deviceId, deviceFingerprint, {
+        installInstanceId: identity.installInstanceId,
+        packageName: identity.packageName,
+        androidId: identity.androidId,
+        legacyDeviceFingerprint: identity.legacyDeviceFingerprint,
+        legacyPackageName: identity.legacyPackageName,
+      });
+      console.log('[SUBSCRIPTION_RECOVER]', reason, {
+        active: r.active,
+        expiresAt: r.expiresAt,
+        recoverRefreshed: r.recoverRefreshed === true,
+      });
+      if (r.active === true || r.recoverRefreshed === true) {
         await writeSubscriptionCache({
           active: true,
           expiresAt: r.expiresAt ?? null,
