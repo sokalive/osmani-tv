@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BASE_URL } from '../api';
+import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
+import { isNetworkTransportError } from '../lib/catalogApiFetch';
 import { cacheSecurityPhone, pickPhoneFromApiBody } from '../lib/security/securityPhone';
 
 /**
@@ -19,7 +20,14 @@ import { cacheSecurityPhone, pickPhoneFromApiBody } from '../lib/security/securi
  *   POST /api/transfer/respond      { code, decision }
  */
 
-const API = `${BASE_URL.replace(/\/+$/, '')}/api`;
+function apiRoot() {
+  return `${resolveApiBaseUrl().replace(/\/+$/, '')}/api`;
+}
+
+/** @param {unknown} result */
+export function isSubscriptionTransportFailure(result) {
+  return Boolean(result?.error && isNetworkTransportError(result.error));
+}
 
 export const SUB_CACHE_KEYS = Object.freeze({
   active: 'osmani:sub:active',
@@ -49,12 +57,20 @@ function pickActive(body) {
     body.active,
     body.is_active,
     body.isActive,
+    body.has_subscription,
+    body.hasSubscription,
+    body.subscribed,
     data?.active,
     data?.is_active,
     data?.isActive,
+    data?.has_subscription,
+    data?.hasSubscription,
+    data?.subscribed,
     sub?.active,
     sub?.is_active,
     sub?.isActive,
+    sub?.has_subscription,
+    sub?.subscribed,
   ];
   for (const c of candidates) {
     if (c === true || c === 1 || c === '1' || c === 'true') return true;
@@ -704,7 +720,7 @@ async function postJson(url, payload) {
  * @param {string} deviceFingerprint
  */
 export async function verifySubscription(deviceId, deviceFingerprint) {
-  const url = `${API}/subscription/verify`;
+  const url = `${apiRoot()}/subscription/verify`;
   console.log('[SUBSCRIPTION_VERIFY]', 'request', { url, deviceId: String(deviceId).slice(0, 8) });
   try {
     const { res, body } = await postJson(url, {
@@ -750,7 +766,7 @@ export async function verifySubscription(deviceId, deviceFingerprint) {
  * returns the live active flag.
  */
 export async function recoverSubscription(deviceId, deviceFingerprint) {
-  const url = `${API}/subscription/recover`;
+  const url = `${apiRoot()}/subscription/recover`;
   console.log('[SUBSCRIPTION_RECOVER]', 'request', { url });
   try {
     const { res, body } = await postJson(url, {
@@ -833,7 +849,7 @@ function mapOfferRedeemErrorMessage(body, httpStatus) {
  * >}
  */
 export async function redeemOfferCode(deviceId, deviceFingerprint, offerCode) {
-  const url = `${API}/subscription/redeem-offer-code`;
+  const url = `${apiRoot()}/subscription/redeem-offer-code`;
   const code = String(offerCode ?? '').trim();
   console.log('[OFFER_CODE]', 'redeem_try', { codeLen: code.length });
   try {
@@ -868,7 +884,7 @@ export async function redeemOfferCode(deviceId, deviceFingerprint, offerCode) {
 }
 
 export async function acknowledgeManualGift(deviceId, deviceFingerprint, manualGiftAckKey) {
-  const url = `${API}/subscription/acknowledge-manual-gift`;
+  const url = `${apiRoot()}/subscription/acknowledge-manual-gift`;
   const key = String(manualGiftAckKey ?? '').trim();
   console.log('[MANUAL_GIFT]', 'acknowledge_request', { url, keyPreview: key.slice(0, 24) });
   try {
@@ -917,7 +933,7 @@ function ensureTransferPrefix(raw) {
  * Backend route: POST /api/transfer/request
  */
 export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') {
-  const url = `${API}/transfer/request`;
+  const url = `${apiRoot()}/transfer/request`;
   console.log('[TRANSFER_REQUEST]', 'request', { url });
   const payload = {
     source_device_id: deviceId,
@@ -988,7 +1004,7 @@ function isPendingConfirmation(body) {
  * Backend route: POST /api/transfer/confirm
  */
 export async function redeemTransfer(code, deviceId, deviceFingerprint) {
-  const url = `${API}/transfer/confirm`;
+  const url = `${apiRoot()}/transfer/confirm`;
   const codeWithPrefix = ensureTransferPrefix(code);
   console.log('[TRANSFER_CONFIRM]', 'request', { url, code: codeWithPrefix });
   const { res, body } = await postJson(url, {
@@ -1054,7 +1070,7 @@ export async function redeemTransfer(code, deviceId, deviceFingerprint) {
  * @param {'approve'|'reject'} decision
  */
 export async function respondToTransfer(code, decision) {
-  const url = `${API}/transfer/respond`;
+  const url = `${apiRoot()}/transfer/respond`;
   console.log('[TRANSFER_RESPOND]', 'request', { url, code, decision });
   const { res, body } = await postJson(url, {
     code: String(code).trim(),
@@ -1110,7 +1126,7 @@ export async function getTransferStatus(code) {
   const codeBare = stripTransferPrefix(trimmed);
   const candidates = TRANSFER_STATUS_PATHS.flatMap((path) => {
     return [codeWithPrefix, codeBare].map((c) =>
-      `${API}${path.replace('{code}', encodeURIComponent(c))}`,
+      `${apiRoot()}${path.replace('{code}', encodeURIComponent(c))}`,
     );
   });
   for (const url of candidates) {
