@@ -9,7 +9,7 @@
  */
 
 const DEVICE_ID = process.env.DEVICE_ID || '0523d797b3197a0f';
-const BASE = (process.env.EXPO_PUBLIC_API_URL || 'https://osmani-admin-api.onrender.com').replace(
+const BASE = (process.env.EXPO_PUBLIC_API_URL || 'http://144.91.117.90:10001').replace(
   /\/+$/,
   '',
 );

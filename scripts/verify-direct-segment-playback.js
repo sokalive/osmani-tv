@@ -3,7 +3,7 @@
  * Run: node scripts/verify-direct-segment-playback.js
  */
 
-const API_BASE = process.env.API_URL || 'https://osmani-admin-api.onrender.com';
+const API_BASE = process.env.API_URL || process.env.EXPO_PUBLIC_API_URL || 'http://144.91.117.90:10001';
 const CDN_HOST = 'osmanitv.b-cdn.net';
 const BUNNY_SEG_RE = /^https:\/\/osmanitv\.b-cdn\.net\/hls\/seg\?tok=/i;
 

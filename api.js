@@ -1,42 +1,16 @@
 import { getCachedBanners, getCachedChannels, invalidateCatalogCache } from './lib/catalogCache';
+import { DEFAULT_API_URL, resolveApiBaseUrl } from './lib/apiBaseUrl';
 import { rewriteMediaUrlsInJson } from './lib/mediaDelivery';
 import { enrichBannersForViewer } from './lib/bannerViewerSerializer';
 
 export { invalidateCatalogCache };
 
 /**
- * Production Render API host for the mobile app (JSON / SSE / payments only).
- * Public media (uploads, stream-proxy) uses {@link ./lib/mediaDelivery} → BunnyCDN.
+ * Contabo Admin API (JSON / SSE / payments / stream-direct).
+ * Public uploads may use CDN via {@link ./lib/mediaDelivery}; stream-proxy defaults to Contabo.
  * All HTTP modules (`api.js`, `api/payment.js`, `api/settings.js`, etc.) must use this `BASE_URL`.
  */
-const DEFAULT_API_URL = "https://osmani-admin-api.onrender.com";
-/** Older deploy; `/api/channels` is empty there — builds must hit Admin API for channel JSON. */
-const LEGACY_TV_HOST = "https://osmani-tv.onrender.com";
-
-function getExpoPublicApiUrl() {
-  try {
-    const env = typeof process !== "undefined" ? process.env : undefined;
-    const v = env?.EXPO_PUBLIC_API_URL;
-    return typeof v === "string" && v.trim() ? v.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-function resolveBaseUrl() {
-  const raw = getExpoPublicApiUrl() ?? DEFAULT_API_URL;
-  const stripped = String(raw).replace(/\/+$/, "");
-  if (stripped.toLowerCase() === LEGACY_TV_HOST.toLowerCase()) {
-    return DEFAULT_API_URL;
-  }
-  return stripped;
-}
-
-// Centralized API base URL:
-// - Uses EXPO_PUBLIC_API_URL when provided (Expo web build-time injection)
-// - Falls back to the current Render API host for safety
-// - Rewrites legacy `osmani-tv.onrender.com` so channel/catalog calls hit Admin API
-export const BASE_URL = resolveBaseUrl();
+export const BASE_URL = resolveApiBaseUrl();
 
 async function fetchChannelsFromNetwork() {
   const res = await fetch(`${BASE_URL}/api/channels`);
@@ -144,3 +118,6 @@ export async function getServerHealth() {
   }
   return body;
 }
+
+/** @deprecated Use {@link DEFAULT_API_URL} from lib/apiBaseUrl.js */
+export { DEFAULT_API_URL };

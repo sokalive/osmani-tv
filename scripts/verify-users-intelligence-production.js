@@ -12,7 +12,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const BASE_URL = (
-  process.env.EXPO_PUBLIC_API_URL || 'https://osmani-admin-api.onrender.com'
+  process.env.EXPO_PUBLIC_API_URL || 'http://144.91.117.90:10001'
 ).replace(/\/+$/, '');
 const REGISTER_URL = `${BASE_URL}/api/users-intelligence/register`;
 

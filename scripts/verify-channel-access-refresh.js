@@ -11,7 +11,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const BASE = (
-  process.env.EXPO_PUBLIC_API_URL || 'https://osmani-admin-api.onrender.com'
+  process.env.EXPO_PUBLIC_API_URL || 'http://144.91.117.90:10001'
 ).replace(/\/+$/, '');
 
 function fail(msg) {

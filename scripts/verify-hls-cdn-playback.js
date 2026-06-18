@@ -2,7 +2,7 @@
  * Verify HLS channels resolve to BunnyCDN stream-proxy (not Render).
  * Run: node scripts/verify-hls-cdn-playback.js
  */
-const API_BASE = process.env.API_URL || 'https://osmani-admin-api.onrender.com';
+const API_BASE = process.env.API_URL || process.env.EXPO_PUBLIC_API_URL || 'http://144.91.117.90:10001';
 const CDN_BASE = process.env.MEDIA_CDN_BASE || 'https://osmanitv.b-cdn.net';
 
 function looksLikeHls(url) {

@@ -163,6 +163,12 @@ module.exports = {
       infoPlist: {
         NSAppTransportSecurity: {
           NSAllowsLocalNetworking: true,
+          NSExceptionDomains: {
+            '144.91.117.90': {
+              NSExceptionAllowsInsecureHTTPLoads: true,
+              NSIncludesSubdomains: true,
+            },
+          },
         },
         UIBackgroundModes: ['remote-notification'],
       },
