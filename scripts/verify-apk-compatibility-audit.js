@@ -168,9 +168,9 @@ function auditStatic() {
   if (!sub.includes('has_subscription')) fail('pickActive must read has_subscription');
   else pass('pickActive extended fields');
 
-  if (!sub.includes('isSubscriptionTransportFailure')) {
-    fail('subscription transport failure helper missing');
-  } else pass('subscription transport failure helper');
+  if (!sub.includes('refreshSubscriptionAfterRecover') && !sub.includes('refreshed_after_ok')) {
+    fail('recover must re-fetch verify/status when API returns ok without active');
+  } else pass('recover refreshes after minimal ok payload');
 
   const ctx = read('context/OsmaniAppContext.jsx');
   if (!ctx.includes('transport_preserved_cache')) {

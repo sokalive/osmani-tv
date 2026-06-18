@@ -770,6 +770,27 @@ export async function verifySubscription(deviceId, deviceFingerprint) {
   }
 }
 
+async function fetchSubscriptionStatus(deviceId) {
+  const { res, body } = await fetchAdminApiResponse(
+    `/api/subscription-status?device_id=${encodeURIComponent(deviceId)}`,
+    { tag: 'subscription-status-recover' },
+  );
+  if (!res.ok) return null;
+  return normalizeVerifyResponse(body);
+}
+
+/**
+ * Recover may return `{ ok: true, recovered_from }` without subscription fields.
+ * Re-query verify + subscription-status for authoritative active state.
+ */
+async function refreshSubscriptionAfterRecover(deviceId, deviceFingerprint) {
+  const verified = await verifySubscription(deviceId, deviceFingerprint).catch(() => null);
+  if (verified?.active === true) return verified;
+  const status = await fetchSubscriptionStatus(deviceId);
+  if (status?.active === true) return status;
+  return null;
+}
+
 /**
  * Reinstall recovery — ask the backend if any active subscription is
  * bound to this device. Backend matches by deviceId / fingerprint and
@@ -787,7 +808,22 @@ export async function recoverSubscription(deviceId, deviceFingerprint) {
       console.log('[SUBSCRIPTION_RECOVER]', 'failed', res.status);
       return { active: false, expiresAt: null, error: `HTTP ${res.status}` };
     }
-    const out = normalizeVerifyResponse(body);
+    let out = normalizeVerifyResponse(body);
+    const recoverAck =
+      body?.ok === true ||
+      body?.ok === 1 ||
+      body?.ok === 'true' ||
+      (body?.recovered_from != null && String(body.recovered_from).trim() !== '');
+    if (recoverAck && out.active !== true) {
+      const refreshed = await refreshSubscriptionAfterRecover(deviceId, deviceFingerprint);
+      if (refreshed?.active === true) {
+        out = { ...out, ...refreshed, active: true, recoverRefreshed: true };
+        console.log('[SUBSCRIPTION_RECOVER]', 'refreshed_after_ok', {
+          expiresAt: out.expiresAt,
+          planName: out.planName ?? null,
+        });
+      }
+    }
     if (out.phone) void cacheSecurityPhone(out.phone);
     console.log('[SUBSCRIPTION_RECOVER]', 'response', { active: out.active, expiresAt: out.expiresAt });
     console.log('[MANUAL_GIFT]', 'recover_payload', {
