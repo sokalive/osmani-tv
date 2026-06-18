@@ -170,10 +170,10 @@ export function OsmaniAppProvider({ children }) {
       verifyInFlightRef.current = true;
       const verifyKey = ++lastVerifyKeyRef.current;
       try {
-        const identity = await getDeviceIdentity();
-        const { deviceId, deviceFingerprint } = identity;
-        const r = await resolveActiveSubscription(identity);
-        if (verifyKey !== lastVerifyKeyRef.current) return r;
+      const identity = await getDeviceIdentity();
+      const { deviceId, deviceFingerprint } = identity;
+      const r = await resolveActiveSubscription(identity);
+      if (verifyKey !== lastVerifyKeyRef.current) return r;
         let active = r.active === true;
         let expiresAt = r.expiresAt ?? null;
         let effectiveResult = r;
@@ -328,9 +328,14 @@ export function OsmaniAppProvider({ children }) {
       const r = await recoverSubscription(deviceId, deviceFingerprint, {
         installInstanceId: identity.installInstanceId,
         packageName: identity.packageName,
+        packageAndroidId: identity.packageAndroidId,
+        legacyPackageAndroidId: identity.legacyPackageAndroidId,
+        stableHardwareId: identity.stableHardwareId,
+        displayedAccountId: identity.displayedAccountId,
         androidId: identity.androidId,
         legacyDeviceFingerprint: identity.legacyDeviceFingerprint,
         legacyPackageName: identity.legacyPackageName,
+        migration_bridge: true,
       });
       console.log('[SUBSCRIPTION_RECOVER]', reason, {
         active: r.active,

@@ -3,14 +3,17 @@ package com.osmantv.security
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.media.MediaDrm
 import android.os.Build
 import android.os.Debug
+import android.provider.Settings
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileInputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.security.MessageDigest
+import java.util.UUID
 
 /**
  * Best-effort runtime checks for SAFE MODE risk scoring.
@@ -255,5 +258,56 @@ object SecurityAuditor {
         if (path.isEmpty()) return false
         val markers = arrayOf("parallel", "dual", "clone", "multiaccount", "virtual")
         return markers.any { path.contains(it) }
+    }
+
+    /** Current package SSAID (Settings.Secure.ANDROID_ID). */
+    fun getPackageAndroidId(context: Context): String {
+        return try {
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: ""
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
+    /**
+     * Read legacy package SSAID when the old APK is still installed (same device, different package).
+     * Android 8+ SSAID is per-package; this is required for Render → VPS subscription migration.
+     */
+    fun tryReadLegacyPackageAndroidId(context: Context, legacyPackage: String): String {
+        if (legacyPackage.isBlank()) return ""
+        return try {
+            if (legacyPackage == context.packageName) {
+                return getPackageAndroidId(context)
+            }
+            context.packageManager.getPackageInfo(legacyPackage, 0)
+            val legacyCtx = context.createPackageContext(legacyPackage, Context.CONTEXT_IGNORE_SECURITY)
+            Settings.Secure.getString(legacyCtx.contentResolver, Settings.Secure.ANDROID_ID) ?: ""
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
+    /** Widevine MediaDrm id — stable across apps on the same physical device. */
+    fun getStableHardwareId(): String {
+        val widevineUuid = UUID(-0x121074568629b532L, -0x5c37d8232ae2de13L)
+        var drm: MediaDrm? = null
+        return try {
+            drm = MediaDrm(widevineUuid)
+            val id = drm.getPropertyByteArray(MediaDrm.PROPERTY_DEVICE_UNIQUE_ID)
+            id.joinToString("") { byte -> String.format("%02x", byte) }
+        } catch (_: Throwable) {
+            ""
+        } finally {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    drm?.close()
+                } else {
+                    @Suppress("DEPRECATION")
+                    drm?.release()
+                }
+            } catch (_: Throwable) {
+                /* ignore */
+            }
+        }
     }
 }

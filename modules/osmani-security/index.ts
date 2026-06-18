@@ -35,3 +35,15 @@ export async function runSecurityAudit(
 export function getSigningCertSha256(): string {
   return String(NativeModule.getSigningCertSha256?.() ?? '');
 }
+
+export function getPackageAndroidId(): string {
+  return String(NativeModule.getPackageAndroidId?.() ?? '');
+}
+
+export function tryReadLegacyPackageAndroidId(legacyPackageName: string): string {
+  return String(NativeModule.tryReadLegacyPackageAndroidId?.(legacyPackageName) ?? '');
+}
+
+export function getStableHardwareId(): string {
+  return String(NativeModule.getStableHardwareId?.() ?? '');
+}

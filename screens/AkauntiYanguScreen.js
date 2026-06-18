@@ -152,6 +152,7 @@ export default function AkauntiYanguScreen() {
     isSubscribed,
     subscriptionExpiresAt,
     subscriptionDetails,
+    subscriptionSyncLoaded,
     refreshSubscription,
   } = useOsmaniApp();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
@@ -234,7 +235,11 @@ export default function AkauntiYanguScreen() {
   }, [isSubscribed, subscriptionDetails]);
 
   // Card 5 (status)
-  const statusLabel = isSubscribed ? 'ACTIVE' : 'HUNA USAJILI';
+  const statusLabel = !subscriptionSyncLoaded
+    ? 'INAPAKIA…'
+    : isSubscribed
+      ? 'ACTIVE'
+      : 'HUNA USAJILI';
 
   const syncCooldownFromStorage = useCallback(async () => {
     const end = await readOfferCodeCooldownEndMs();
@@ -271,8 +276,13 @@ export default function AkauntiYanguScreen() {
       void syncCooldownFromStorage();
       (async () => {
         try {
-          const { deviceId } = await getDeviceIdentity();
-          setDeviceIdFull(deviceId);
+          const identity = await getDeviceIdentity();
+          setDeviceIdFull(
+            identity.displayedAccountId ||
+              identity.packageAndroidId ||
+              identity.deviceId ||
+              '',
+          );
         } catch {
           setDeviceIdFull('');
         }

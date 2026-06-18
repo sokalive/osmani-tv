@@ -190,9 +190,35 @@ function auditStatic() {
     fail('deviceIdentity must define LEGACY_ANDROID_PACKAGE');
   } else pass('legacy package constant for migration bridge');
 
-  if (!deviceIdSrc.includes('legacyDeviceFingerprint')) {
-    fail('deviceIdentity must compute legacyDeviceFingerprint');
-  } else pass('legacy fingerprint computed for com.osmantv.app');
+  if (!deviceIdSrc.includes('legacyPackageAndroidId')) {
+    fail('deviceIdentity must expose legacyPackageAndroidId');
+  } else pass('legacy package android id bridge');
+
+  if (!deviceIdSrc.includes('stableHardwareId')) {
+    fail('deviceIdentity must expose stableHardwareId');
+  } else pass('stable hardware id field');
+
+  if (!sub.includes('SUBSCRIPTION_MIGRATION')) {
+    fail('subscription resolve must log SUBSCRIPTION_MIGRATION');
+  } else pass('subscription migration logging');
+
+  if (!sub.includes('SUBSCRIPTION_RESTORE_RESULT')) {
+    fail('subscription resolve must log SUBSCRIPTION_RESTORE_RESULT');
+  } else pass('subscription restore result logging');
+
+  if (!sub.includes('legacy_device_id')) {
+    fail('migration payload must include legacy_device_id');
+  } else pass('legacy_device_id in migration payload');
+
+  const nativeBridge = read('lib/nativeDeviceBridge.js');
+  if (!nativeBridge.includes('tryReadLegacyPackageAndroidId')) {
+    fail('native device bridge must read legacy package android id');
+  } else pass('native legacy SSAID bridge');
+
+  const secMod = read('modules/osmani-security/index.ts');
+  if (!secMod.includes('getStableHardwareId')) {
+    fail('osmani-security must export getStableHardwareId');
+  } else pass('native stable hardware id export');
 
   if (!sub.includes('legacy_device_fingerprint')) {
     fail('subscription recover/verify must send legacy_device_fingerprint');

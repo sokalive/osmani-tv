@@ -35,6 +35,32 @@ class SecurityManager : Module() {
             }
         }
 
+        Function("getPackageAndroidId") {
+            val ctx = appContext.reactContext ?: return@Function ""
+            try {
+                SecurityAuditor.getPackageAndroidId(ctx)
+            } catch (_: Throwable) {
+                ""
+            }
+        }
+
+        Function("tryReadLegacyPackageAndroidId") { legacyPackageName: String ->
+            val ctx = appContext.reactContext ?: return@Function ""
+            try {
+                SecurityAuditor.tryReadLegacyPackageAndroidId(ctx, legacyPackageName)
+            } catch (_: Throwable) {
+                ""
+            }
+        }
+
+        Function("getStableHardwareId") {
+            try {
+                SecurityAuditor.getStableHardwareId()
+            } catch (_: Throwable) {
+                ""
+            }
+        }
+
         AsyncFunction("runSecurityAudit") { expectedCertSha256: String?, expectedPackageName: String? ->
             val ctx = appContext.reactContext
                 ?: return@AsyncFunction Bundle().apply {

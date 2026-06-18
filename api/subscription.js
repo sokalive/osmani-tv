@@ -725,17 +725,31 @@ function buildMigrationIdentityPayload(deviceId, deviceFingerprint, identityCont
   const payload = {
     device_id: deviceId,
     device_fingerprint: deviceFingerprint,
-    android_id: identityContext.androidId ?? deviceId,
+    fingerprint: deviceFingerprint,
+    current_device_id:
+      identityContext.packageAndroidId ?? identityContext.current_device_id ?? deviceId,
+    legacy_device_id:
+      identityContext.legacyPackageAndroidId ?? identityContext.legacy_device_id ?? null,
+    displayed_account_id:
+      identityContext.displayedAccountId ??
+      identityContext.packageAndroidId ??
+      identityContext.current_device_id ??
+      deviceId,
+    android_id: identityContext.packageAndroidId ?? identityContext.androidId ?? deviceId,
+    stable_hardware_id: identityContext.stableHardwareId ?? null,
     install_instance_id: identityContext.installInstanceId ?? null,
     package_name: identityContext.packageName ?? null,
+    legacy_package_name: identityContext.legacyPackageName ?? LEGACY_ANDROID_PACKAGE,
     legacy_package: identityContext.legacyPackageName ?? LEGACY_ANDROID_PACKAGE,
   };
   if (identityContext.legacyDeviceFingerprint) {
     payload.legacy_device_fingerprint = identityContext.legacyDeviceFingerprint;
+    payload.legacy_fingerprint = identityContext.legacyDeviceFingerprint;
   }
   if (identityContext.migration_bridge === true) {
     payload.migration_bridge = true;
   }
+  if (identityContext.restore_role) payload.restore_role = identityContext.restore_role;
   if (identityContext.phone) payload.phone = identityContext.phone;
   return expandDeviceKeys(payload);
 }
@@ -844,64 +858,119 @@ async function refreshSubscriptionAfterRecover(deviceId, deviceFingerprint, iden
   return null;
 }
 
-/**
- * Full resolve chain for package migration / reinstall — recover before giving up.
- * @param {import('../lib/deviceIdentity').getDeviceIdentity extends (...args: any) => Promise<infer R> ? R : never>} identity
- */
-export async function resolveActiveSubscription(identity) {
-  const {
-    deviceId,
-    deviceFingerprint,
-    installInstanceId,
-    packageName,
-    androidId,
-    legacyDeviceFingerprint,
-    legacyPackageName,
-  } = identity;
-
+async function tryResolveForDeviceId(candidateDeviceId, identity, role) {
   const ctx = await buildIdentityContext({
-    installInstanceId,
-    packageName,
-    androidId,
-    legacyDeviceFingerprint,
-    legacyPackageName,
+    installInstanceId: identity.installInstanceId,
+    packageName: identity.packageName,
+    packageAndroidId: identity.packageAndroidId,
+    legacyPackageAndroidId: identity.legacyPackageAndroidId,
+    stableHardwareId: identity.stableHardwareId,
+    displayedAccountId: identity.displayedAccountId,
+    androidId: identity.androidId,
+    legacyDeviceFingerprint: identity.legacyDeviceFingerprint,
+    legacyPackageName: identity.legacyPackageName,
+    migration_bridge: role !== 'package_android_id',
+    restore_role: role,
   });
 
-  const statusFirst = await fetchSubscriptionStatus(deviceId);
-  if (statusFirst?.active === true) {
-    console.log('[SUBSCRIPTION_RESOLVE]', 'status_prefetch', { deviceId: deviceId.slice(0, 8) });
-    return { ...statusFirst, resolveSource: 'status_prefetch' };
+  const fingerprint =
+    role === 'legacy_package_android_id' && identity.legacyDeviceFingerprint
+      ? identity.legacyDeviceFingerprint
+      : identity.deviceFingerprint;
+
+  const status = await fetchSubscriptionStatus(candidateDeviceId);
+  if (status?.active === true) {
+    return { ...status, resolveSource: `status:${role}`, restoreRole: role };
   }
 
-  let r = await verifySubscription(deviceId, deviceFingerprint, ctx);
-  if (r.active === true) return { ...r, resolveSource: 'verify' };
-  if (isSubscriptionTransportFailure(r)) return r;
+  const verified = await verifySubscription(candidateDeviceId, fingerprint, ctx);
+  if (verified.active === true) {
+    return { ...verified, resolveSource: `verify:${role}`, restoreRole: role };
+  }
+  if (isSubscriptionTransportFailure(verified)) {
+    return { ...verified, resolveSource: `transport:${role}`, restoreRole: role };
+  }
 
-  const recovered = await recoverSubscription(deviceId, deviceFingerprint, ctx);
-  if (recovered.active === true) return { ...recovered, resolveSource: 'recover' };
+  const recovered = await recoverSubscription(candidateDeviceId, fingerprint, ctx);
+  if (recovered.active === true) {
+    return { ...recovered, resolveSource: `recover:${role}`, restoreRole: role };
+  }
 
-  if (legacyDeviceFingerprint && legacyDeviceFingerprint !== deviceFingerprint) {
-    const legacyCtx = {
-      ...ctx,
-      packageName: legacyPackageName ?? LEGACY_ANDROID_PACKAGE,
-      migration_bridge: true,
-    };
-    const legacyRecover = await recoverSubscription(
-      deviceId,
-      legacyDeviceFingerprint,
-      legacyCtx,
-    );
-    if (legacyRecover.active === true) {
-      return { ...legacyRecover, resolveSource: 'legacy_recover' };
+  const statusAfter = await fetchSubscriptionStatus(candidateDeviceId);
+  if (statusAfter?.active === true) {
+    return { ...statusAfter, resolveSource: `status_after_recover:${role}`, restoreRole: role };
+  }
+
+  return null;
+}
+
+/**
+ * Full resolve chain for package migration / reinstall — recover before giving up.
+ */
+export async function resolveActiveSubscription(identity) {
+  const candidates = Array.isArray(identity.identityCandidates)
+    ? identity.identityCandidates
+    : [{ role: 'primary', deviceId: identity.deviceId }];
+
+  console.log(
+    '[SUBSCRIPTION_MIGRATION]',
+    JSON.stringify({
+      displayedAccountId: identity.displayedAccountId?.slice(0, 8) + '…',
+      subscriptionDeviceId: identity.subscriptionDeviceId?.slice(0, 8) + '…',
+      legacyPackageAndroidId: identity.legacyPackageAndroidId?.slice(0, 8) + '…' || null,
+      stableHardwareId: identity.stableHardwareId?.slice(0, 12) + '…' || null,
+      packageAndroidId: identity.packageAndroidId?.slice(0, 8) + '…' || null,
+      candidateCount: candidates.length,
+    }),
+  );
+
+  let lastInactive = null;
+  for (const candidate of candidates) {
+    const result = await tryResolveForDeviceId(candidate.deviceId, identity, candidate.role);
+    if (!result) continue;
+    if (result.active === true) {
+      console.log(
+        '[SUBSCRIPTION_RESTORE_RESULT]',
+        JSON.stringify({
+          active: true,
+          resolveSource: result.resolveSource,
+          restoreRole: result.restoreRole,
+          deviceId: candidate.deviceId.slice(0, 8) + '…',
+          expiresAt: result.expiresAt ?? null,
+        }),
+      );
+      return result;
     }
-    const legacyVerify = await verifySubscription(deviceId, legacyDeviceFingerprint, legacyCtx);
-    if (legacyVerify.active === true) return { ...legacyVerify, resolveSource: 'legacy_verify' };
+    if (isSubscriptionTransportFailure(result)) {
+      console.log(
+        '[SUBSCRIPTION_RESTORE_RESULT]',
+        JSON.stringify({
+          active: false,
+          transport: true,
+          restoreRole: candidate.role,
+          error: result.error ?? null,
+        }),
+      );
+      return result;
+    }
+    lastInactive = result;
   }
 
-  const status = await fetchSubscriptionStatus(deviceId);
-  if (status?.active === true) return { ...status, resolveSource: 'status' };
-
-  return { ...r, resolveSource: 'inactive' };
+  const inactive = {
+    active: false,
+    expiresAt: null,
+    resolveSource: 'inactive',
+    ...(lastInactive ?? {}),
+  };
+  console.log(
+    '[SUBSCRIPTION_RESTORE_RESULT]',
+    JSON.stringify({
+      active: false,
+      resolveSource: 'inactive',
+      candidateCount: candidates.length,
+    }),
+  );
+  return inactive;
 }
 
 /**
