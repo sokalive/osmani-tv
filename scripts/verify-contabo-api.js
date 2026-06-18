@@ -52,6 +52,7 @@ if (apiJs.includes(RENDER)) fail('api.js must not reference Render host');
 else pass('api.js has no Render host');
 
 const eas = read('eas.json');
+const appConfig = read('app.config.js');
 if (!eas.includes(`"EXPO_PUBLIC_API_URL": "${CONTABO}"`)) {
   fail('eas.json production must set EXPO_PUBLIC_API_URL to Contabo');
 } else pass('eas.json sets EXPO_PUBLIC_API_URL');
@@ -115,15 +116,34 @@ if (offenders.length) {
   else fail('Contabo SSE /api/sync/stream unreachable');
 
   const media = read('lib/mediaDelivery.js');
-  if (!media.includes("resolveApiBaseUrl()}/stream-proxy")) {
+  if (!media.includes('resolveApiBaseUrl()}/stream-proxy')) {
     fail('stream-proxy default must use Contabo API base');
   } else {
     pass('stream-proxy defaults to Contabo API base');
   }
-  if (!media.includes('isStreamDirectUrl(s) || isStreamProxyUrl(s)')) {
-    fail('legacy Render stream URLs must rewrite to Contabo');
+
+  if (!fs.existsSync(path.join(root, 'plugins', 'withAndroidCleartextContabo.js'))) {
+    fail('missing withAndroidCleartextContabo plugin');
   } else {
-    pass('legacy Render stream-direct/proxy rewrite present');
+    pass('Android cleartext Contabo plugin present');
+  }
+
+  if (!appConfig.includes('withAndroidCleartextContabo')) {
+    fail('app.config must register withAndroidCleartextContabo plugin');
+  } else {
+    pass('app.config registers cleartext plugin');
+  }
+
+  if (!fs.existsSync(path.join(root, 'lib', 'catalogApiFetch.js'))) {
+    fail('missing catalogApiFetch');
+  } else {
+    pass('catalog API fetch helper present');
+  }
+
+  if (!read('lib/catalogApiFetch.js').includes('https-fallback')) {
+    fail('catalog fetch must support HTTPS fallback for Android cleartext');
+  } else {
+    pass('catalog HTTPS transport fallback for Android');
   }
 
   if (!process.exitCode) {

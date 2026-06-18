@@ -184,7 +184,7 @@ module.exports = {
         backgroundColor: '#000000',
       },
       /** Must exceed Play Console latest upload. Current release: 1.7.2 (19). */
-      versionCode: 19,
+      versionCode: 20,
       /** Cold-start window color before React (pairs with native splash theme). */
       backgroundColor: '#FFFFFF',
       edgeToEdgeEnabled: true,
@@ -260,6 +260,7 @@ module.exports = {
         'expo-build-properties',
         {
           android: {
+            usesCleartextTraffic: true,
             enableMinifyInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
             extraProguardRules: androidProguardRules,
@@ -267,6 +268,7 @@ module.exports = {
         },
       ],
       'expo-video',
+      './plugins/withAndroidCleartextContabo.js',
       './plugins/withOsmaniUpdate.js',
       './plugins/withStripMediaPermissions.js',
       './plugins/withGlobalSecureScreen.js',

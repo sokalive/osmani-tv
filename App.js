@@ -699,27 +699,19 @@ function ChannelCatalogScreen({
   }, [rawBanners, bannerVisibilityClock]);
 
   const onPullRefresh = useCallback(async () => {
-    if (isOffline) {
-      setOfflineModalVisible(true);
-      return;
-    }
     setPullRefreshing(true);
     try {
       await refresh({ showGlobalLoading: false, forceNetwork: true, preserveDataOnError: true });
     } finally {
       setPullRefreshing(false);
     }
-  }, [isOffline, refresh]);
+  }, [refresh]);
 
   const handleRefresh = useCallback(() => {
-    if (isOffline) {
-      setOfflineModalVisible(true);
-      return;
-    }
     setSelectedFilter('Zote');
     setRefreshKey((k) => k + 1);
     refresh({ showGlobalLoading: false, forceNetwork: true, preserveDataOnError: true });
-  }, [isOffline, refresh]);
+  }, [refresh]);
 
   const onBannerEmergency = useCallback(() => {
     requestEmergencyModal();

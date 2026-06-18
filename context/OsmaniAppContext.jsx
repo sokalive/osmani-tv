@@ -22,6 +22,8 @@ import {
   writeBannersCache,
 } from '../lib/bannersCache';
 import { readChannelsCache, writeChannelsCache } from '../lib/channelsCache';
+import { isNetworkTransportError } from '../lib/catalogApiFetch';
+import { getApiBaseUrl } from '../lib/apiBaseUrl';
 import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
@@ -44,14 +46,7 @@ const LIVE_SYNC_MAX_MS = 120000;
 const SETTINGS_POLL_MS = 10000;
 
 function isLikelyOfflineError(errorLike) {
-  const msg = String(errorLike?.message ?? errorLike ?? '').toLowerCase();
-  return (
-    msg.includes('network request failed') ||
-    msg.includes('networkerror') ||
-    msg.includes('failed to fetch') ||
-    msg.includes('internet') ||
-    msg.includes('offline')
-  );
+  return isNetworkTransportError(errorLike);
 }
 
 const OsmaniAppContext = createContext(null);
@@ -455,6 +450,13 @@ export function OsmaniAppProvider({ children }) {
       if (isLikelyOfflineError(e)) {
         setIsOffline(true);
         setError(null);
+        if (preserveDataOnError && rawChannelsRef.current.length === 0) {
+          const cached = await readChannelsCache();
+          if (cached?.channels?.length) {
+            setRawChannels(sortChannelsByAdminOrder(cached.channels));
+            devLog('[CATALOG_SYNC]', 'offline_cache_fallback', { count: cached.channels.length });
+          }
+        }
       } else {
         setError(e?.message ?? 'Failed to load');
       }
@@ -514,6 +516,7 @@ export function OsmaniAppProvider({ children }) {
   );
 
   useEffect(() => {
+    console.log('[catalog-bootstrap]', JSON.stringify({ apiBaseUrl: getApiBaseUrl() }));
     void refresh({ showGlobalLoading: false, preserveDataOnError: true, forceNetwork: true });
   }, [refresh]);
 

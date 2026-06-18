@@ -1,32 +1,19 @@
 import { getCachedBanners, getCachedChannels, invalidateCatalogCache } from './lib/catalogCache';
-import { DEFAULT_API_URL, resolveApiBaseUrl } from './lib/apiBaseUrl';
+import { DEFAULT_API_URL, getApiBaseUrl, resolveApiBaseUrl } from './lib/apiBaseUrl';
+import { fetchAdminApiJson } from './lib/catalogApiFetch';
 import { rewriteMediaUrlsInJson } from './lib/mediaDelivery';
 import { enrichBannersForViewer } from './lib/bannerViewerSerializer';
 
-export { invalidateCatalogCache };
+export { invalidateCatalogCache, getApiBaseUrl, resolveApiBaseUrl };
 
 /**
  * Contabo Admin API (JSON / SSE / payments / stream-direct).
- * Public uploads may use CDN via {@link ./lib/mediaDelivery}; stream-proxy defaults to Contabo.
- * All HTTP modules (`api.js`, `api/payment.js`, `api/settings.js`, etc.) must use this `BASE_URL`.
+ * Resolved at request time via {@link getApiBaseUrl} for catalog; legacy imports use this snapshot.
  */
-export const BASE_URL = resolveApiBaseUrl();
+export const BASE_URL = getApiBaseUrl();
 
 async function fetchChannelsFromNetwork() {
-  const res = await fetch(`${BASE_URL}/api/channels`);
-  let body;
-  try {
-    body = await res.json();
-  } catch {
-    body = null;
-  }
-  if (!res.ok) {
-    const extra =
-      body && typeof body === 'object' && body.error != null
-        ? ` — ${String(body.error)}`
-        : '';
-    throw new Error(`Could not load channels (${res.status})${extra}`);
-  }
+  const body = await fetchAdminApiJson('/api/channels', { tag: 'catalog-channels' });
   if (!Array.isArray(body)) {
     throw new Error('Could not load channels (invalid response)');
   }
@@ -34,20 +21,7 @@ async function fetchChannelsFromNetwork() {
 }
 
 async function fetchBannersFromNetwork() {
-  const res = await fetch(`${BASE_URL}/api/banners`);
-  let body;
-  try {
-    body = await res.json();
-  } catch {
-    body = null;
-  }
-  if (!res.ok) {
-    const extra =
-      body && typeof body === 'object' && body.error != null
-        ? ` — ${String(body.error)}`
-        : '';
-    throw new Error(`Could not load banners (${res.status})${extra}`);
-  }
+  const body = await fetchAdminApiJson('/api/banners', { tag: 'catalog-banners' });
   if (!Array.isArray(body)) {
     throw new Error('Could not load banners (invalid response)');
   }
@@ -69,16 +43,7 @@ export async function getBanners(opts = {}) {
 }
 
 export async function getWhatsappSettings() {
-  const res = await fetch(`${BASE_URL}/api/whatsapp-settings`);
-  let body;
-  try {
-    body = await res.json();
-  } catch {
-    body = null;
-  }
-  if (!res.ok) {
-    throw new Error(`Could not load WhatsApp settings (${res.status})`);
-  }
+  const body = await fetchAdminApiJson('/api/whatsapp-settings', { tag: 'whatsapp-settings' });
   if (!body || typeof body !== 'object') {
     throw new Error('Could not load WhatsApp settings (invalid response)');
   }
@@ -86,16 +51,7 @@ export async function getWhatsappSettings() {
 }
 
 export async function getPopupSettings() {
-  const res = await fetch(`${BASE_URL}/api/popup-settings`);
-  let body;
-  try {
-    body = await res.json();
-  } catch {
-    body = null;
-  }
-  if (!res.ok) {
-    throw new Error(`Could not load popup settings (${res.status})`);
-  }
+  const body = await fetchAdminApiJson('/api/popup-settings', { tag: 'popup-settings' });
   if (!body || typeof body !== 'object') {
     throw new Error('Could not load popup settings (invalid response)');
   }
@@ -103,21 +59,11 @@ export async function getPopupSettings() {
 }
 
 export async function getServerHealth() {
-  const res = await fetch(`${BASE_URL}/api/server-health`);
-  let body;
-  try {
-    body = await res.json();
-  } catch {
-    body = null;
-  }
-  if (!res.ok) {
-    throw new Error(`Could not load server health (${res.status})`);
-  }
+  const body = await fetchAdminApiJson('/api/server-health', { tag: 'server-health' });
   if (!body || typeof body !== 'object') {
     throw new Error('Could not load server health (invalid response)');
   }
   return body;
 }
 
-/** @deprecated Use {@link DEFAULT_API_URL} from lib/apiBaseUrl.js */
 export { DEFAULT_API_URL };
