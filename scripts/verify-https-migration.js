@@ -79,9 +79,17 @@ if (!apiBase.includes('https://api.osmanitv.com')) fail('VPS HTTPS domain consta
 else pass('VPS HTTPS domain constant present');
 
 const eas = JSON.parse(read('eas.json'));
-if (eas.build.production?.env?.EXPO_PUBLIC_API_URL !== RENDER) {
-  fail('production EAS profile must embed Render HTTPS');
-} else pass('production EAS → Render HTTPS (unchanged for Render users)');
+if (eas.build.production?.env?.EXPO_PUBLIC_API_URL !== VPS) {
+  fail('production EAS profile must embed https://api.osmanitv.com');
+} else pass('production EAS → VPS HTTPS (Play AAB)');
+
+if (eas.build.production?.env?.EXPO_PUBLIC_STREAM_PROXY_URL !== `${VPS}/stream-proxy`) {
+  fail('production stream-proxy must use VPS HTTPS');
+} else pass('production stream-proxy → VPS HTTPS');
+
+if (eas.build.production?.android?.buildType !== 'app-bundle') {
+  fail('production profile must build AAB');
+} else pass('production profile builds AAB');
 
 if (eas.build['vps-preview']?.env?.EXPO_PUBLIC_API_URL !== VPS) {
   fail('vps-preview EAS profile must embed api.osmanitv.com');
@@ -92,8 +100,8 @@ if (eas.build['vps-preview']?.android?.buildType !== 'apk') {
 } else pass('vps-preview builds APK');
 
 const appConfig = require(path.join(root, 'app.config.js'));
-if (Number(appConfig.expo.android?.versionCode) < 23) {
-  fail(`versionCode must be >= 23, got ${appConfig.expo.android?.versionCode}`);
+if (Number(appConfig.expo.android?.versionCode) < 24) {
+  fail(`versionCode must be >= 24, got ${appConfig.expo.android?.versionCode}`);
 } else pass(`versionCode ${appConfig.expo.android.versionCode}`);
 
 if (!String(appConfig.expo.version).startsWith('1.8')) {

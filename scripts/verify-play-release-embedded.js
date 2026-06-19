@@ -28,13 +28,13 @@ function pass(msg) {
 const appConfig = require(path.join(root, 'app.config.js'));
 const expo = appConfig.expo;
 
-if (Number(appConfig.expo.android?.versionCode) !== 23) {
-  fail(`versionCode must be 23, got ${appConfig.expo.android?.versionCode}`);
-} else pass('versionCode is 23');
+if (Number(appConfig.expo.android?.versionCode) !== 24) {
+  fail(`versionCode must be 24, got ${appConfig.expo.android?.versionCode}`);
+} else pass('versionCode is 24');
 
-if (expo.version !== '1.8.1') {
-  fail(`versionName must be 1.8.1, got ${expo.version}`);
-} else pass('versionName is 1.8.1');
+if (expo.version !== '1.8.2') {
+  fail(`versionName must be 1.8.2, got ${expo.version}`);
+} else pass('versionName is 1.8.2');
 
 if (expo.runtimeVersion?.policy !== 'appVersion') fail('runtimeVersion policy');
 else pass('runtimeVersion policy appVersion');

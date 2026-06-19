@@ -46,19 +46,28 @@ async function postJson(path, payload) {
   console.log(`[verify-vps-production] target: ${VPS}\n`);
 
   const appConfig = require('../app.config.js');
-  if (Number(appConfig.expo.android?.versionCode) !== 23) {
-    fail(`versionCode must be 23, got ${appConfig.expo.android?.versionCode}`);
-  } else pass('versionCode 23');
-  if (appConfig.expo.version !== '1.8.1') fail(`version must be 1.8.1, got ${appConfig.expo.version}`);
-  else pass('app version 1.8.1');
+  if (Number(appConfig.expo.android?.versionCode) !== 24) {
+    fail(`versionCode must be 24, got ${appConfig.expo.android?.versionCode}`);
+  } else pass('versionCode 24');
+  if (appConfig.expo.version !== '1.8.2') fail(`version must be 1.8.2, got ${appConfig.expo.version}`);
+  else pass('app version 1.8.2');
 
   const eas = require('../eas.json');
   if (eas.build['vps-preview']?.env?.EXPO_PUBLIC_API_URL !== VPS) {
     fail('vps-preview must embed https://api.osmanitv.com');
   } else pass('vps-preview EAS embeds VPS HTTPS');
-  if (eas.build.production?.env?.EXPO_PUBLIC_API_URL !== RENDER) {
-    fail('production EAS must stay on Render HTTPS');
-  } else pass('production EAS unchanged (Render)');
+if (eas.build.production?.env?.EXPO_PUBLIC_API_URL !== VPS) {
+  fail('production EAS profile must embed VPS HTTPS for Play AAB');
+} else pass('production EAS → https://api.osmanitv.com (Play AAB)');
+
+if (eas.build.production?.android?.buildType !== 'app-bundle') {
+  fail('production profile must build app-bundle (AAB)');
+} else pass('production profile builds AAB');
+
+const { DEFAULT_API_URL, RENDER_PRODUCTION_API_URL } = require('../lib/apiBaseUrl');
+if (DEFAULT_API_URL !== RENDER_PRODUCTION_API_URL) {
+  fail('DEFAULT_API_URL must remain Render HTTPS for legacy OTA/APK users');
+} else pass('DEFAULT_API_URL unchanged (Render legacy safe)');
 
   // Health + catalog (channels / admin sync bootstrap)
   const health = await getJson('/api/health');
@@ -103,16 +112,16 @@ async function postJson(path, payload) {
   const qs = new URLSearchParams({
     platform: 'android',
     package: 'com.burudanitv.app',
-    version_code: '23',
-    version_name: '1.8.1',
+    version_code: '24',
+    version_name: '1.8.2',
   });
   const update = await getJson(`/api/update-check?${qs}`);
   if (!update.res.ok) fail(`/api/update-check HTTP ${update.res.status}`);
   else {
-    const parsed = parseUpdateCheckResponse(update.body, { installedVersionCode: 23 });
+    const parsed = parseUpdateCheckResponse(update.body, { installedVersionCode: 24 });
     pass(`/api/update-check decision=${parsed?.decision} latest=${parsed?.latestVersionCode}`);
-    if (parsed?.decision !== 'NONE' && parsed?.latestVersionCode > 0 && 23 >= parsed.latestVersionCode) {
-      fail('v23 should not see update UI when on latest');
+    if (parsed?.decision !== 'NONE' && parsed?.latestVersionCode > 0 && 24 >= parsed.latestVersionCode) {
+      fail('v24 should not see update UI when on latest');
     }
   }
 

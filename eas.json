@@ -57,13 +57,13 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://osmani-admin-api.onrender.com",
+        "EXPO_PUBLIC_API_URL": "https://api.osmanitv.com",
         "EXPO_PUBLIC_ONESIGNAL_APP_ID": "6a3f9dc9-96e9-402a-90e9-9dd829b212b2",
         "EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS": "0",
         "EXPO_PUBLIC_SECURITY_ENFORCEMENT": "enforce",
         "EXPO_PUBLIC_SECURITY_STARTUP_LOGS": "0",
         "EXPO_PUBLIC_MEDIA_CDN_BASE": "https://osmanitv.b-cdn.net",
-        "EXPO_PUBLIC_STREAM_PROXY_URL": "https://osmani-admin-api.onrender.com/stream-proxy",
+        "EXPO_PUBLIC_STREAM_PROXY_URL": "https://api.osmanitv.com/stream-proxy",
         "EXPO_PUBLIC_APK_INSTALLER_ENABLED": "0"
       }
     }
