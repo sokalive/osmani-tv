@@ -1,6 +1,9 @@
+#!/usr/bin/env node
+'use strict';
+
 /**
- * Allow cleartext HTTP to the Contabo Admin API (IP:port) on Android.
- * Required for React Native fetch() — phone browsers are not subject to the same policy.
+ * @deprecated Cleartext Contabo plugin — removed from app.config (Play Data Safety / HTTPS-only).
+ * Kept in repo for reference only; do not re-register in expo.plugins.
  */
 const { withAndroidManifest, AndroidConfig } = require('@expo/config-plugins');
 const { withDangerousMod } = require('@expo/config-plugins');

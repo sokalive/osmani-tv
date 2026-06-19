@@ -126,7 +126,7 @@ module.exports = {
     name: 'Osmani TV',
     slug: 'osmani-tv',
     /** User-visible version (Android versionName / iOS CFBundleShortVersionString). */
-    version: process.env.OTA_RUNTIME_TARGET?.trim() || '1.7.2',
+    version: process.env.OTA_RUNTIME_TARGET?.trim() || '1.8.0',
     /**
      * EAS Update runtime — OTA bundles only apply when this matches the native build
      * (policy: appVersion → uses `version` above). Bump `version` + versionCode for native changes.
@@ -163,12 +163,6 @@ module.exports = {
       infoPlist: {
         NSAppTransportSecurity: {
           NSAllowsLocalNetworking: true,
-          NSExceptionDomains: {
-            '144.91.117.90': {
-              NSExceptionAllowsInsecureHTTPLoads: true,
-              NSIncludesSubdomains: true,
-            },
-          },
         },
         UIBackgroundModes: ['remote-notification'],
       },
@@ -183,13 +177,12 @@ module.exports = {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#000000',
       },
-      /** Must exceed Play Console latest upload. Current release: 1.7.2 (21). */
-      versionCode: 21,
+      /** VPS HTTPS test build (v22). Render production APKs remain on prior embeds. */
+      versionCode: 22,
       /** Cold-start window color before React (pairs with native splash theme). */
       backgroundColor: '#FFFFFF',
       edgeToEdgeEnabled: true,
       package: 'com.burudanitv.app',
-      usesCleartextTraffic: true,
       /**
        * Strip gallery/storage permissions merged from legacy Expo/RN modules.
        * App only streams remote HLS/MP4 and loads remote banner/channel images (expo-image).
@@ -260,7 +253,6 @@ module.exports = {
         'expo-build-properties',
         {
           android: {
-            usesCleartextTraffic: true,
             enableMinifyInReleaseBuilds: true,
             enableShrinkResourcesInReleaseBuilds: true,
             extraProguardRules: androidProguardRules,
@@ -268,7 +260,6 @@ module.exports = {
         },
       ],
       'expo-video',
-      './plugins/withAndroidCleartextContabo.js',
       './plugins/withOsmaniUpdate.js',
       './plugins/withStripMediaPermissions.js',
       './plugins/withGlobalSecureScreen.js',
