@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { nativeApplicationVersion } from 'expo-application';
-import { BASE_URL } from '../api';
+import { getApiBaseUrl } from '../lib/apiBaseUrl';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { getAnalyticsLocationPayload } from '../lib/analyticsLocation';
 
@@ -11,6 +11,8 @@ const PING_MS = 45000;
 /** Heartbeat for the app-level presence layer (decoupled from channel session). */
 const PRESENCE_PING_MS = 45000;
 const RETRY_DELAYS_MS = [0, 700, 1800];
+/** Channel session heartbeats — keep retries so dashboard counts stay stable. */
+const SESSION_HEARTBEAT_RETRIES_MS = [0, 800, 2000, 5000];
 const ANALYTICS_DEBUG = __DEV__;
 
 let cachedAppSessionId = '';
@@ -76,9 +78,10 @@ async function wait(ms) {
 }
 
 async function postJson(path, body, { retries = RETRY_DELAYS_MS } = {}) {
-  const url = `${BASE_URL}${path}`;
+  const base = getApiBaseUrl().replace(/\/+$/, '');
+  const url = `${base}${path}`;
   if (ANALYTICS_DEBUG) {
-    console.log('[analytics] resolved BASE_URL:', BASE_URL);
+    console.log('[analytics] resolved API base:', base);
     console.log('[analytics] request URL:', url);
     console.log('[analytics] payload:', JSON.stringify(body));
   }
@@ -156,11 +159,12 @@ export async function trackInstallOnce() {
 
 export async function startLiveSession(channelId, channelName) {
   try {
-    const { deviceId } = await getDeviceIdentity();
+    const { deviceId, installInstanceId } = await getDeviceIdentity();
     const loc = await resolveLocationEnvelope();
     if (ANALYTICS_DEBUG) {
       console.log('[analytics] session start values:', {
         device_id: deviceId,
+        install_instance_id: installInstanceId,
         channel_id: String(channelId ?? ''),
         channel_name: String(channelName ?? ''),
         countryCode: loc.countryCode,
@@ -168,16 +172,21 @@ export async function startLiveSession(channelId, channelName) {
         region: loc.region,
       });
     }
-    await postJson('/api/analytics/session/start', {
-      device_id: deviceId,
-      channel_id: String(channelId ?? ''),
-      channel_name: String(channelName ?? ''),
-      countryCode: loc.countryCode,
-      city: loc.city,
-      region: loc.region,
-      country: loc.country,
-      started_at: new Date().toISOString(),
-    });
+    await postJson(
+      '/api/analytics/session/start',
+      {
+        device_id: deviceId,
+        install_instance_id: installInstanceId,
+        channel_id: String(channelId ?? ''),
+        channel_name: String(channelName ?? ''),
+        countryCode: loc.countryCode,
+        city: loc.city,
+        region: loc.region,
+        country: loc.country,
+        started_at: new Date().toISOString(),
+      },
+      { retries: SESSION_HEARTBEAT_RETRIES_MS },
+    );
     return deviceId;
   } catch {
     return '';
@@ -220,15 +229,19 @@ export async function pingLiveSession(deviceId, channelId) {
       region: loc.region,
     });
   }
-  await postJson('/api/analytics/session/heartbeat', {
-    device_id: deviceId,
-    channel_id: String(channelId ?? ''),
-    countryCode: loc.countryCode,
-    city: loc.city,
-    region: loc.region,
-    country: loc.country,
-    timestamp: new Date().toISOString(),
-  });
+  await postJson(
+    '/api/analytics/session/heartbeat',
+    {
+      device_id: deviceId,
+      channel_id: String(channelId ?? ''),
+      countryCode: loc.countryCode,
+      city: loc.city,
+      region: loc.region,
+      country: loc.country,
+      timestamp: new Date().toISOString(),
+    },
+    { retries: SESSION_HEARTBEAT_RETRIES_MS },
+  );
 }
 
 /**

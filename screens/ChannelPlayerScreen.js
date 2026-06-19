@@ -21,6 +21,7 @@ import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
 import { clearActiveChannel, setActiveChannel } from '../lib/presenceTracker';
+import { subscriptionTransferSseRole } from '../lib/subscriptionSseGuard';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
@@ -441,8 +442,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const sessionDeviceIdRef = useRef('');
   const sessionChannelIdRef = useRef('');
+  const sessionChannelNameRef = useRef('');
   const pingTimerRef = useRef(null);
   const stopSentRef = useRef(false);
+  const analyticsBgStopTimerRef = useRef(null);
+  const PLAYER_ANALYTICS_BG_GRACE_MS = 4000;
   const emergencyInterruptOnceRef = useRef(false);
   const deviceIntelInterruptOnceRef = useRef(false);
   /** True after hard expiry: no Video/WebView surfaces (buffers cleared by unmount). */
@@ -688,20 +692,24 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     navigation,
   ]);
 
-  // Realtime revoke / transfer-away kills the player instantly.
+  // Realtime revoke / transfer-away kills the player only when this device is affected.
   useEffect(() => {
     if (!channelIsPremium) return undefined;
-    const handleKill = (label) => () => {
-      console.log('[player][gate]', `kill:${label}`);
-      setAccessAllowed(false);
-      void reverifySubscription(`player-${label}`);
-      if (exitPlayerRef.current) {
-        void exitPlayerRef.current(`gate_${label}`);
-      } else {
-        try {
-          navigation.goBack();
-        } catch {}
-      }
+    const handleKill = (label) => (payload) => {
+      void (async () => {
+        const role = await subscriptionTransferSseRole(payload, label);
+        if (role === 'none' || role === 'other') return;
+        console.log('[player][gate]', `kill:${label}`, { role });
+        setAccessAllowed(false);
+        void reverifySubscription(`player-${label}`);
+        if (exitPlayerRef.current) {
+          void exitPlayerRef.current(`gate_${label}`);
+        } else {
+          try {
+            navigation.goBack();
+          } catch {}
+        }
+      })();
     };
     const offRevoked = subscribeRealtimeEvent('subscription_revoked', handleKill('revoked'));
     const offCompleted = subscribeRealtimeEvent('transfer_completed', handleKill('transfer_completed'));
@@ -1076,11 +1084,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     const channelId = channel?.id ?? channel?.channel_id ?? channel?.name ?? 'unknown';
     const channelName = channel?.name ?? '';
     sessionChannelIdRef.current = String(channelId);
+    sessionChannelNameRef.current = channelName;
     console.log('[player][analytics] mounting session with channel:', {
       channel_id: sessionChannelIdRef.current,
       channel_name: channelName,
     });
-
     // App-level presence: attach the channel to the live session so the
     // admin Live User Locations watcher count updates immediately.
     setActiveChannel(channelId, channelName);
@@ -1125,26 +1133,57 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     };
   }, [channel?.id, channel?.channel_id, channel?.name]);
 
-  // If app goes to background while player is open, close analytics session safely.
+  // Background grace + resume: do not end session on transient `inactive`.
   useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState) => {
       console.log('[player][analytics] app state changed:', nextState);
-      if (nextState === 'active') return;
-      if (pingTimerRef.current) {
-        clearInterval(pingTimerRef.current);
-        pingTimerRef.current = null;
-        console.log('[player][analytics] heartbeat timer cleared on app state change');
+      if (nextState === 'active') {
+        if (analyticsBgStopTimerRef.current) {
+          clearTimeout(analyticsBgStopTimerRef.current);
+          analyticsBgStopTimerRef.current = null;
+        }
+        if (stopSentRef.current && sessionChannelIdRef.current) {
+          stopSentRef.current = false;
+          void (async () => {
+            const deviceId = await startLiveSession(
+              sessionChannelIdRef.current,
+              sessionChannelNameRef.current,
+            );
+            sessionDeviceIdRef.current = deviceId;
+            if (pingTimerRef.current) clearInterval(pingTimerRef.current);
+            pingTimerRef.current = setInterval(() => {
+              void pingLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
+            }, PING_MS);
+            setActiveChannel(sessionChannelIdRef.current, sessionChannelNameRef.current);
+          })();
+        } else if (!pingTimerRef.current && sessionDeviceIdRef.current) {
+          pingTimerRef.current = setInterval(() => {
+            void pingLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
+          }, PING_MS);
+        }
+        return;
       }
-      if (!stopSentRef.current) {
-        stopSentRef.current = true;
-        console.log('[player][analytics] sending session end on app state change', {
-          device_id: sessionDeviceIdRef.current,
-          channel_id: sessionChannelIdRef.current,
-        });
-        void stopLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
-      }
+      if (nextState !== 'background') return;
+      if (analyticsBgStopTimerRef.current) return;
+      analyticsBgStopTimerRef.current = setTimeout(() => {
+        analyticsBgStopTimerRef.current = null;
+        if (pingTimerRef.current) {
+          clearInterval(pingTimerRef.current);
+          pingTimerRef.current = null;
+        }
+        if (!stopSentRef.current) {
+          stopSentRef.current = true;
+          void stopLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
+        }
+      }, PLAYER_ANALYTICS_BG_GRACE_MS);
     });
-    return () => sub.remove();
+    return () => {
+      sub.remove();
+      if (analyticsBgStopTimerRef.current) {
+        clearTimeout(analyticsBgStopTimerRef.current);
+        analyticsBgStopTimerRef.current = null;
+      }
+    };
   }, []);
 
   // AUTO HIDE CONTROLS

@@ -31,6 +31,11 @@ import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
+import {
+  isConfirmedSubscriptionLoss,
+  subscriptionTransferSseRole,
+  unwrapSubscriptionSsePayload,
+} from '../lib/subscriptionSseGuard';
 import { withTimeout } from '../lib/asyncTimeout';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
@@ -711,18 +716,28 @@ export function OsmaniAppProvider({ children }) {
   // Realtime subscription lifecycle events from /api/sync/stream.
   useEffect(() => {
     const offRevoked = subscribeRealtimeEvent('subscription_revoked', (payload) => {
-      console.log('[SUBSCRIPTION_REVOKED]', 'sse', payload);
-      const reason =
-        (payload && typeof payload === 'object' && typeof payload.reason === 'string')
-          ? payload.reason
-          : 'revoked';
-      setRevokedReason(reason);
-      isSubscribedRef.current = false;
-      setIsSubscribed(false);
-      setSubscriptionExpiresAt(null);
-      setSubscriptionDetails(null);
-      void clearSubscriptionCache('sse:subscription_revoked');
-      void reverifySubscription('sse:subscription_revoked');
+      void (async () => {
+        const role = await subscriptionTransferSseRole(payload, 'subscription_revoked');
+        if (role === 'none' || role === 'other') return;
+        console.log('[SUBSCRIPTION_REVOKED]', 'sse', payload, { role });
+        const inner = unwrapSubscriptionSsePayload(payload);
+        const reason =
+          inner && typeof inner === 'object' && typeof inner.reason === 'string'
+            ? inner.reason
+            : 'revoked';
+        const r = await reverifySubscription('sse:subscription_revoked');
+        if (r?.active === true) {
+          setRevokedReason(null);
+          return;
+        }
+        if (!isConfirmedSubscriptionLoss(r)) return;
+        setRevokedReason(reason);
+        isSubscribedRef.current = false;
+        setIsSubscribed(false);
+        setSubscriptionExpiresAt(null);
+        setSubscriptionDetails(null);
+        void clearSubscriptionCache('sse:subscription_revoked');
+      })();
     });
     const offSubscriptionLifecycle = SUBSCRIPTION_SSE_EVENTS.map((ev) =>
       subscribeRealtimeEvent(ev, (payload) => {
@@ -732,16 +747,21 @@ export function OsmaniAppProvider({ children }) {
       }),
     );
     const offCompleted = subscribeRealtimeEvent('transfer_completed', (payload) => {
-      console.log('[TRANSFER_COMPLETED]', 'sse', payload);
-      // The source device loses access; the destination gains it. Either
-      // way, ask the backend who owns the subscription right now.
-      sourceTransferSessionRef.current = null;
-      setPendingTransfer(null);
-      void reverifySubscription('sse:transfer_completed').then((r) => {
-        if (r?.active !== true) {
+      void (async () => {
+        const role = await subscriptionTransferSseRole(payload, 'transfer_completed');
+        if (role === 'none' || role === 'other') return;
+        console.log('[TRANSFER_COMPLETED]', 'sse', payload, { role });
+        sourceTransferSessionRef.current = null;
+        setPendingTransfer(null);
+        const r = await reverifySubscription('sse:transfer_completed');
+        if (r?.active === true) {
+          setRevokedReason(null);
+          return;
+        }
+        if (role === 'source' && isConfirmedSubscriptionLoss(r)) {
           setRevokedReason('transferred');
         }
-      });
+      })();
     });
     // `transfer_approved` fires on the TARGET device once the source
     // approves the pending transfer. Treat it the same as
