@@ -149,7 +149,11 @@ export async function getSettings() {
  * when GET /api/public/app-settings is deployed.
  */
 export async function tryGetViewerAppSettings() {
-  const paths = ['/api/public/app-settings', '/api/public/runtime-modes'];
+  const paths = [
+    '/api/public/app-settings',
+    '/api/public/runtime-modes',
+    '/api/settings',
+  ];
   for (const path of paths) {
     try {
       const res = await fetch(`${BASE_URL}${path}`);

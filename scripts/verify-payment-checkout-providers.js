@@ -100,13 +100,14 @@ const runtimeTargets = [
   { versionCode: 20, runtime: '1.7.2' },
   { versionCode: 21, runtime: '1.7.2' },
   { versionCode: 22, runtime: '1.8.0' },
+  { versionCode: 23, runtime: '1.8.1' },
 ];
 console.log('\n--- OTA runtime targets (same JS, publish per runtime) ---');
 for (const t of runtimeTargets) {
   console.log(`  versionCode ${t.versionCode} → runtime ${t.runtime}`);
 }
-assert(appConfig.expo.version === '1.8.0', 'current app version 1.8.0');
-assert(Number(appConfig.expo.android?.versionCode) === 22, 'current versionCode 22');
+assert(appConfig.expo.version === '1.8.1', 'current app version 1.8.1');
+assert(Number(appConfig.expo.android?.versionCode) === 23, 'current versionCode 23');
 
 if (!process.exitCode) {
   console.log('\n[verify-payment-checkout-providers] ok');

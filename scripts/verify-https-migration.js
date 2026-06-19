@@ -92,8 +92,8 @@ if (eas.build['vps-preview']?.android?.buildType !== 'apk') {
 } else pass('vps-preview builds APK');
 
 const appConfig = require(path.join(root, 'app.config.js'));
-if (Number(appConfig.expo.android?.versionCode) < 22) {
-  fail(`versionCode must be >= 22, got ${appConfig.expo.android?.versionCode}`);
+if (Number(appConfig.expo.android?.versionCode) < 23) {
+  fail(`versionCode must be >= 23, got ${appConfig.expo.android?.versionCode}`);
 } else pass(`versionCode ${appConfig.expo.android.versionCode}`);
 
 if (!String(appConfig.expo.version).startsWith('1.8')) {

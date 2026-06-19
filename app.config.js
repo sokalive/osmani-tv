@@ -126,7 +126,7 @@ module.exports = {
     name: 'Osmani TV',
     slug: 'osmani-tv',
     /** User-visible version (Android versionName / iOS CFBundleShortVersionString). */
-    version: process.env.OTA_RUNTIME_TARGET?.trim() || '1.8.0',
+    version: process.env.OTA_RUNTIME_TARGET?.trim() || '1.8.1',
     /**
      * EAS Update runtime — OTA bundles only apply when this matches the native build
      * (policy: appVersion → uses `version` above). Bump `version` + versionCode for native changes.
@@ -177,8 +177,8 @@ module.exports = {
         foregroundImage: BRAND_ASSETS.adaptiveIcon,
         backgroundColor: '#000000',
       },
-      /** VPS HTTPS test build (v22). Render production APKs remain on prior embeds. */
-      versionCode: 22,
+      /** VPS HTTPS test build (v23). Render production APKs remain on prior embeds. */
+      versionCode: 23,
       /** Cold-start window color before React (pairs with native splash theme). */
       backgroundColor: '#FFFFFF',
       edgeToEdgeEnabled: true,
