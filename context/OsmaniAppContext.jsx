@@ -17,7 +17,7 @@ import {
   resolveActiveSubscription,
   writeSubscriptionCache,
 } from '../api/subscription';
-import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
+import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS, SUBSCRIPTION_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import {
   dropLegacyBannersCache,
   readBannersCache,
@@ -692,7 +692,10 @@ export function OsmaniAppProvider({ children }) {
   useEffect(() => {
     let interval = null;
     const onAppState = (next) => {
-      if (next === 'active') void refreshSettingsOnly('app_resume');
+      if (next === 'active') {
+        void refreshSettingsOnly('app_resume');
+        scheduleAdminDrivenSoftSync('app_resume');
+      }
     };
     const sub = AppState.addEventListener('change', onAppState);
     interval = setInterval(() => {
@@ -703,7 +706,7 @@ export function OsmaniAppProvider({ children }) {
       sub.remove();
       if (interval) clearInterval(interval);
     };
-  }, [refreshSettingsOnly]);
+  }, [refreshSettingsOnly, scheduleAdminDrivenSoftSync]);
 
   // Realtime subscription lifecycle events from /api/sync/stream.
   useEffect(() => {
@@ -721,6 +724,13 @@ export function OsmaniAppProvider({ children }) {
       void clearSubscriptionCache('sse:subscription_revoked');
       void reverifySubscription('sse:subscription_revoked');
     });
+    const offSubscriptionLifecycle = SUBSCRIPTION_SSE_EVENTS.map((ev) =>
+      subscribeRealtimeEvent(ev, (payload) => {
+        console.log('[SUBSCRIPTION_SSE]', ev, payload);
+        void reverifySubscription(`sse:${ev}`);
+        scheduleAdminDrivenSoftSync(`sse:${ev}`);
+      }),
+    );
     const offCompleted = subscribeRealtimeEvent('transfer_completed', (payload) => {
       console.log('[TRANSFER_COMPLETED]', 'sse', payload);
       // The source device loses access; the destination gains it. Either
@@ -840,6 +850,7 @@ export function OsmaniAppProvider({ children }) {
     );
     return () => {
       offRevoked();
+      offSubscriptionLifecycle.forEach((off) => off());
       offCompleted();
       offApproved();
       offRequested();

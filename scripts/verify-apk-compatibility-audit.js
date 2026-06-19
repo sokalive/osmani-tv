@@ -270,7 +270,7 @@ function auditStatic() {
           'recover + verify on cold start re-binds VPS subscription by device_id',
           'Transport errors no longer clear active subscription cache',
         ],
-        forceUpdate: 'OFF for v19/v20 (client version gate)',
+        forceUpdate: 'OFF for v20/v21 (client version gate)',
       },
       null,
       2,

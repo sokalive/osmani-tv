@@ -28,9 +28,9 @@ function pass(msg) {
 const appConfig = require(path.join(root, 'app.config.js'));
 const expo = appConfig.expo;
 
-if (Number(expo.android?.versionCode) !== 19) {
-  fail(`versionCode must be 19, got ${expo.android?.versionCode}`);
-} else pass('versionCode is 19');
+if (Number(expo.android?.versionCode) !== 21) {
+  fail(`versionCode must be 21, got ${expo.android?.versionCode}`);
+} else pass('versionCode is 21');
 
 if (expo.version !== '1.7.2') {
   fail(`versionName must be 1.7.2, got ${expo.version}`);

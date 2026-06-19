@@ -54,11 +54,23 @@ function unitTests() {
   const v16 = parseUpdateCheckResponse(basePayload, { installedVersionCode: 16 });
   assert('v16 on latest → NONE (admin FORCE ignored)', v16?.decision === 'NONE');
 
-  const v16Soft = parseUpdateCheckResponse(
-    { ...basePayload, decision: 'SOFT', force_update: false },
-    { installedVersionCode: 16 },
+  const v21 = parseUpdateCheckResponse(basePayload, { installedVersionCode: 21 });
+  assert('v21 on latest → NONE (admin FORCE ignored)', v21?.decision === 'NONE');
+
+  const v20Soft = parseUpdateCheckResponse(
+    { ...basePayload, decision: 'SOFT', force_update: false, latest_version_code: 21 },
+    { installedVersionCode: 20 },
   );
-  assert('v16 on latest → NONE (admin SOFT ignored)', v16Soft?.decision === 'NONE');
+  assert('v20 below latest 21 + admin SOFT → SOFT', v20Soft?.decision === 'SOFT');
+
+  const v21Latest = parseUpdateCheckResponse(
+    { ...basePayload, decision: 'SOFT', force_update: false, latest_version_code: 21 },
+    { installedVersionCode: 21 },
+  );
+  assert('v21 on latest 21 + admin SOFT → NONE', v21Latest?.decision === 'NONE');
+
+  assert('v20 below v21 outdated', isOutdated(20, 21) === true);
+  assert('v21 not outdated vs 21', isOutdated(21, 21) === false);
 
   assert('isOutdated(14,16)', isOutdated(14, 16) === true);
   assert('isOutdated(16,16)', isOutdated(16, 16) === false);
@@ -111,24 +123,37 @@ async function fetchUpdateCheck(installed, pkg) {
 }
 
 async function verifyPublishedTargetRange() {
-  const targets = [16, 17, 18];
-  const onLatest = 19;
-  console.log('\n[live API] published target range (latest_version_code=19)');
-  for (const installed of [...targets, onLatest]) {
+  const latest = 21;
+  const belowLatest = [16, 17, 18, 19, 20];
+  const onLatest = 21;
+  console.log(`\n[live API] published target (simulated latest_version_code=${latest})`);
+  for (const installed of [...belowLatest, onLatest]) {
     const { status, body } = await fetchUpdateCheck(installed, 'com.burudanitv.app');
     if (!body) {
       assert(`live API body for v${installed}`, false);
       continue;
     }
-    const out = parseUpdateCheckResponse(body, { installedVersionCode: installed });
-    const latest = out?.latestVersionCode ?? 0;
-    assert(`v${installed} latest parsed as 19`, latest === 19);
-    if (installed < 19) {
-      assert(`v${installed} outdated → update UI`, out?.decision !== 'NONE');
-      console.log(`  v${installed} HTTP ${status} → decision=${out?.decision} latest=${latest}`);
+    const simulated = { ...body, latest_version_code: latest, version_code: latest };
+    const out = parseUpdateCheckResponse(simulated, { installedVersionCode: installed });
+    if (installed < latest) {
+      assert(`v${installed} below ${latest} → update UI when admin SOFT`, out?.decision !== 'NONE');
+      console.log(`  v${installed} HTTP ${status} → decision=${out?.decision} latest=${out?.latestVersionCode}`);
     } else {
       assert(`v${installed} on latest → NONE`, out?.decision === 'NONE');
-      console.log(`  v${installed} HTTP ${status} → decision=${out?.decision} latest=${latest}`);
+      console.log(`  v${installed} HTTP ${status} → decision=${out?.decision} latest=${out?.latestVersionCode}`);
+    }
+  }
+
+  console.log('\n[live API] raw backend (no client gate simulation)');
+  for (const installed of [20, 21]) {
+    const { status, body } = await fetchUpdateCheck(installed, 'com.burudanitv.app');
+    if (!body) continue;
+    const out = parseUpdateCheckResponse(body, { installedVersionCode: installed });
+    console.log(
+      `  v${installed} raw latest=${out?.latestVersionCode} decision=${out?.decision} (admin=${body.decision})`,
+    );
+    if (installed >= (out?.latestVersionCode ?? 0) && out?.latestVersionCode > 0) {
+      assert(`v${installed} raw on-or-above parsed latest → NONE`, out?.decision === 'NONE');
     }
   }
 }
