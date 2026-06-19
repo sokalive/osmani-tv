@@ -1,4 +1,5 @@
 import { parseCheckoutProvidersResponse } from '../lib/checkoutPaymentProviders';
+import { formatCheckoutPaymentError } from '../lib/paymentCheckoutErrors';
 import { resolveMediaAssetUrl } from '../lib/mediaDelivery';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { fetchAdminApiJson, fetchAdminApiResponse } from '../lib/catalogApiFetch';
@@ -184,20 +185,52 @@ export async function getCheckoutPaymentProviders() {
   return parseCheckoutProvidersResponse(body);
 }
 
-async function postCreateOrder(pathSuffix, payload, errorLabel) {
-  const { res, parsed: body } = await fetchAdminApiResponse(pathSuffix, {
-    method: 'POST',
-    body: payload,
-    tag: 'payment-create-order',
-  });
+function buildCreateOrderPayload(payload) {
+  const planId = payload.plan_id ?? payload.planId;
+  return {
+    phone: payload.phone,
+    plan_id: planId,
+    planId,
+    amount: payload.amount,
+    device_id: payload.device_id ?? payload.deviceId,
+    deviceId: payload.device_id ?? payload.deviceId,
+    ...(payload.device_fingerprint != null
+      ? { device_fingerprint: payload.device_fingerprint, deviceFingerprint: payload.device_fingerprint }
+      : {}),
+  };
+}
+
+async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
+  const paths = Array.isArray(pathSuffixes) ? pathSuffixes : [pathSuffixes];
+  const bodyPayload = buildCreateOrderPayload(payload);
+  let last = null;
+
+  for (let i = 0; i < paths.length; i += 1) {
+    const pathSuffix = paths[i];
+    const attempt = await fetchAdminApiResponse(pathSuffix, {
+      method: 'POST',
+      body: bodyPayload,
+      tag: 'payment-create-order',
+    });
+    last = attempt;
+    const routeMissing = attempt.res.status === 404;
+    if (routeMissing && i < paths.length - 1) continue;
+    break;
+  }
+
+  const { res, parsed: body } = last;
   if (!res.ok) {
-    const msg =
+    const raw =
       body?.error != null
         ? String(body.error)
         : body?.message != null
           ? String(body.message)
-          : `HTTP ${res.status}`;
-    throw new Error(msg || `${errorLabel} could not be started`);
+          : body?.details != null && typeof body.details === 'string'
+            ? body.details
+            : `HTTP ${res.status}`;
+    throw new Error(
+      formatCheckoutPaymentError(raw, { httpStatus: res.status, provider }),
+    );
   }
   const orderId = pickOrderId(body);
   if (!orderId) throw new Error('Missing order_id from server');
@@ -209,28 +242,18 @@ async function postCreateOrder(pathSuffix, payload, errorLabel) {
 }
 
 export async function createSonicpesaOrder(payload) {
-  return postCreateOrder(
-    '/api/payments/sonicpesa/create-order',
-    {
-      phone: payload.phone,
-      plan_id: payload.plan_id,
-      amount: payload.amount,
-      device_id: payload.device_id,
-    },
-    'SonicPesa payment',
-  );
+  return postCreateOrder('/api/payments/sonicpesa/create-order', payload, 'SonicPesa payment', 'sonicpesa');
 }
 
 export async function createAuraxpayOrder(payload) {
   return postCreateOrder(
-    '/api/payments/auraxpay/create-order',
-    {
-      phone: payload.phone,
-      plan_id: payload.plan_id,
-      amount: payload.amount,
-      device_id: payload.device_id,
-    },
+    [
+      '/api/payments/auraxpay/create-order',
+      '/api/payments/auraxPay/create-order',
+    ],
+    payload,
     'Aurax Pay payment',
+    'auraxpay',
   );
 }
 
@@ -247,7 +270,7 @@ export function resolveCheckoutStartPayment(provider) {
  * @param {{ phone: string; plan_id: string; amount: number; device_id: string; device_fingerprint: string }} payload
  */
 export async function createPayment(payload) {
-  return postCreateOrder('/api/payments/create-payment', payload, 'Payment');
+  return postCreateOrder('/api/payments/create-payment', payload, 'Payment', 'zenopay');
 }
 
 /**
@@ -262,11 +285,13 @@ export async function getPaymentStatus(orderId) {
     if (res.status === 404) {
       return {
         status: 'FAILED',
-        reason: String(body?.reason ?? body?.error ?? 'Order not found'),
+        reason: formatCheckoutPaymentError(body?.reason ?? body?.error ?? 'Order not found', {
+          httpStatus: 404,
+        }),
       };
     }
     const msg = body?.error != null ? String(body.error) : `HTTP ${res.status}`;
-    throw new Error(msg || 'Could not check payment status');
+    throw new Error(formatCheckoutPaymentError(msg, { httpStatus: res.status }));
   }
   const st = String(body?.status ?? 'PENDING').toUpperCase();
   const reason = String(body?.reason ?? '');

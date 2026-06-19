@@ -30,6 +30,7 @@ import {
   resolveCheckoutStartPayment,
 } from '../api/payment';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
+import { formatCheckoutPaymentError } from '../lib/paymentCheckoutErrors';
 import { verifySubscription } from '../api/subscription';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
@@ -417,10 +418,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       if (doneRef.current) return;
       doneRef.current = true;
       clearTimers();
-      setFailureReason(reason || 'Malipo hayajafanikiwa');
+      setFailureReason(
+        formatCheckoutPaymentError(reason || 'Malipo hayajafanikiwa', {
+          provider: checkoutProvider,
+        }) || 'Malipo hayajafanikiwa',
+      );
       setStep(5);
     },
-    [clearTimers],
+    [clearTimers, checkoutProvider],
   );
 
   const pollOnce = useCallback(

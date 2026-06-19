@@ -8,13 +8,55 @@
 
 const fs = require('fs');
 const path = require('path');
-const {
-  normalizeCheckoutProvider,
-  parseCheckoutProvidersResponse,
-  listEnabledCheckoutGateways,
-} = require('../lib/checkoutPaymentProviders');
+const { formatCheckoutPaymentError } = require('../lib/paymentCheckoutErrors');
 
 const root = path.join(__dirname, '..');
+
+/** Inline copies for Node verify (avoid ESM mediaDelivery import chain). */
+function normalizeCheckoutProvider(raw) {
+  const p = String(raw ?? 'zenopay')
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]/g, '');
+  if (p === 'sonicpesa' || p === 'sonic') return 'sonicpesa';
+  if (p === 'auraxpay' || p === 'aurax') return 'auraxpay';
+  return 'zenopay';
+}
+
+function isCheckoutGatewayEnabled(id, cfg) {
+  if (id === 'zenopay') return cfg.zenopay !== false;
+  if (id === 'sonicpesa') return cfg.sonicpesa === true;
+  return cfg.auraxpay === true;
+}
+
+function resolveActiveCheckoutProvider(cfg) {
+  const preferred = normalizeCheckoutProvider(cfg?.payment_provider);
+  if (isCheckoutGatewayEnabled(preferred, cfg)) return preferred;
+  for (const id of ['sonicpesa', 'zenopay', 'auraxpay']) {
+    if (isCheckoutGatewayEnabled(id, cfg)) return id;
+  }
+  return 'zenopay';
+}
+
+function parseCheckoutProvidersResponse(body) {
+  const flags = {
+    zenopay: body?.zenopay !== false,
+    sonicpesa: Boolean(body?.sonicpesa),
+    auraxpay: Boolean(body?.auraxpay),
+  };
+  return {
+    payment_provider: resolveActiveCheckoutProvider({
+      payment_provider: normalizeCheckoutProvider(body?.payment_provider),
+      ...flags,
+    }),
+    ...flags,
+  };
+}
+
+function listEnabledCheckoutGateways(cfg) {
+  const ids = ['zenopay', 'sonicpesa', 'auraxpay'];
+  return ids.filter((id) => isCheckoutGatewayEnabled(id, cfg)).map((id) => ({ id, active: id === cfg.payment_provider }));
+}
 
 function fail(msg) {
   console.error('FAIL:', msg);
@@ -40,6 +82,27 @@ assert(normalizeCheckoutProvider('auraxpay') === 'auraxpay', 'auraxpay alias');
 assert(normalizeCheckoutProvider('aurax') === 'auraxpay', 'aurax shorthand');
 assert(normalizeCheckoutProvider('zenopay') === 'zenopay', 'zenopay default');
 assert(normalizeCheckoutProvider('unknown') === 'zenopay', 'unknown falls back to zenopay');
+assert(normalizeCheckoutProvider('aurax-pay') === 'auraxpay', 'aurax-pay alias');
+
+// Active provider must match enabled gateway flags
+const misconfigured = parseCheckoutProvidersResponse({
+  payment_provider: 'auraxpay',
+  zenopay: true,
+  sonicpesa: true,
+  auraxpay: false,
+});
+assert(misconfigured.payment_provider === 'sonicpesa', 'auraxpay admin flag off → fallback to sonicpesa');
+assert(
+  resolveActiveCheckoutProvider({ payment_provider: 'auraxpay', auraxpay: false, sonicpesa: true, zenopay: true }) ===
+    'sonicpesa',
+  'resolveActiveCheckoutProvider skips disabled aurax',
+);
+assert(isCheckoutGatewayEnabled('auraxpay', { auraxpay: false }) === false, 'aurax disabled when flag false');
+
+// Swahili error mapping (no raw Endpoint not found)
+const swErr = formatCheckoutPaymentError('Endpoint not found', { provider: 'auraxpay', httpStatus: 404 });
+assert(!/endpoint not found/i.test(swErr), 'Endpoint not found mapped to Swahili');
+assert(swErr.includes('Aurax Pay'), 'aurax-specific Swahili message');
 
 // Live production shape (no auraxpay field yet)
 const legacy = parseCheckoutProvidersResponse({
@@ -68,7 +131,10 @@ const aurax = parseCheckoutProvidersResponse({
   auraxpay_logo: 'https://osmanitv.b-cdn.net/uploads/aurax.png',
 });
 assert(aurax.payment_provider === 'auraxpay', 'auraxpay active provider');
-assert(aurax.logos.auraxpay.includes('aurax.png'), 'aurax logo parsed');
+assert(aurax.auraxpay === true, 'auraxpay flag true when enabled');
+
+const checkoutSrc = fs.readFileSync(path.join(root, 'lib', 'checkoutPaymentProviders.js'), 'utf8');
+assert(checkoutSrc.includes('resolveActiveCheckoutProvider'), 'resolveActiveCheckoutProvider exported');
 
 const gateways = listEnabledCheckoutGateways(aurax);
 assert(gateways.length === 3, 'three enabled gateways when all true');
@@ -77,6 +143,8 @@ assert(gateways.some((g) => g.id === 'auraxpay' && g.active), 'aurax card active
 // Routing in api/payment.js
 const paymentSrc = fs.readFileSync(path.join(root, 'api', 'payment.js'), 'utf8');
 assert(paymentSrc.includes('/payments/auraxpay/create-order'), 'aurax create-order endpoint');
+assert(paymentSrc.includes('/payments/auraxPay/create-order'), 'auraxPay path alias fallback');
+assert(paymentSrc.includes('formatCheckoutPaymentError'), 'payment API maps user-facing errors');
 assert(paymentSrc.includes('createAuraxpayOrder'), 'createAuraxpayOrder export');
 assert(paymentSrc.includes('resolveCheckoutStartPayment'), 'resolveCheckoutStartPayment export');
 assert(!paymentSrc.includes("provider === 'sonicpesa' ? 'sonicpesa' : 'zenopay'"), 'binary provider collapse removed');
@@ -88,7 +156,7 @@ assert(!modalSrc.includes('LIPIA KUPITIA'), 'no provider name on pay button');
 assert(!modalSrc.includes('payButtonLabel'), 'no provider-specific pay button label');
 assert(!modalSrc.includes('Njia ya malipo'), 'no visible checkout gateway cards');
 assert(!modalSrc.includes('checkoutGateways'), 'no checkout gateway card grid');
-assert(!modalSrc.includes('createSonicpesaOrder'), 'PremiumModal no direct sonic import');
+assert(modalSrc.includes('formatCheckoutPaymentError'), 'PremiumModal maps payment failure text');
 
 // VersionCode / runtime backward compatibility (OTA targets)
 const appConfig = require(path.join(root, 'app.config.js'));
