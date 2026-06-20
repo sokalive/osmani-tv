@@ -265,15 +265,11 @@ export async function getCheckoutPaymentProvidersCachedFirst() {
 }
 
 export async function warmPaymentCatalogCache() {
-  try {
-    await Promise.allSettled([
-      getPlansCachedFirst(),
-      getCheckoutPaymentProvidersCachedFirst(),
-      getPaymentProvidersCachedFirst(),
-    ]);
-  } catch (e) {
-    console.log('[payment-catalog-warm]', e?.message ?? e);
-  }
+  await Promise.allSettled([
+    getPlansCachedFirst(),
+    getCheckoutPaymentProvidersCachedFirst(),
+    getPaymentProvidersCachedFirst(),
+  ]);
 }
 
 function buildCreateOrderPayload(payload) {

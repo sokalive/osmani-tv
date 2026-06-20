@@ -62,7 +62,6 @@ import { startPresence, stopPresence } from './lib/presenceTracker';
 import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startExpoUpdatesClient } from './lib/expoUpdatesClient';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
-import { deferStartupTask } from './lib/deferStartupTask';
 import { setupOneSignal } from './lib/oneSignal';
 import { dispatchOsmaniDeepLink } from './lib/osmaniDeepLinkDispatch';
 import OsmaniDeepLinkGate from './components/OsmaniDeepLinkGate';
@@ -77,10 +76,7 @@ import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
 import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
 import { useStartupSplash } from './hooks/useStartupSplash';
-import { logStartupPaint } from './lib/startupPaintDiagnostics';
 import EmbeddedOtaBootGate from './components/EmbeddedOtaBootGate';
-import StartupErrorBoundary from './components/StartupErrorBoundary';
-import DeferredMount from './components/DeferredMount';
 import { logFirstLaunchBootDiagnostics } from './lib/firstLaunchBootDiagnostics';
 import {
   clearPendingManualGiftKey,
@@ -312,11 +308,6 @@ function ChannelCatalogScreen({
 
   /** Once per mount: log real API shape + derived section (production-safe diagnostic). */
   const catalogShapeLoggedRef = useRef(false);
-  useEffect(() => {
-    logStartupPaint('home_screen_mounted', {
-      channelCount: Array.isArray(rawChannels) ? rawChannels.length : 0,
-    });
-  }, []);
   useEffect(() => {
     if (catalogShapeLoggedRef.current || !Array.isArray(rawChannels) || rawChannels.length === 0) return;
     catalogShapeLoggedRef.current = true;
@@ -1428,9 +1419,7 @@ export default function App() {
     <SafeAreaProvider style={styles.appRoot}>
       <StatusBar style="light" backgroundColor="#000000" />
       <EmbeddedOtaBootGate>
-        <StartupErrorBoundary>
-          <AppShell navigationRevision={navigationRevision} setNavigationRevision={setNavigationRevision} />
-        </StartupErrorBoundary>
+        <AppShell navigationRevision={navigationRevision} setNavigationRevision={setNavigationRevision} />
       </EmbeddedOtaBootGate>
     </SafeAreaProvider>
   );
@@ -1439,40 +1428,31 @@ export default function App() {
 function AppShell({ navigationRevision, setNavigationRevision }) {
   useStartupSplash();
   useGlobalSecureScreen();
-  const stopExpoUpdatesRef = useRef(null);
-  const stopOneSignalRef = useRef(null);
 
   useEffect(() => {
-    logStartupPaint('app_shell_mounted');
     logFirstLaunchBootDiagnostics('app_boot_ready');
-    deferStartupTask('analytics-install', () => trackInstallOnce());
-    deferStartupTask('presence-tracker', () => startPresence());
-    deferStartupTask('realtime-sync', () => startRealtimeSync());
-    deferStartupTask('update-client', () => startUpdateClient());
-    deferStartupTask('expo-updates-client', () => {
-      stopExpoUpdatesRef.current = startExpoUpdatesClient();
-    });
-    deferStartupTask('onesignal', () => {
-      stopOneSignalRef.current = setupOneSignal({
-        onOpenUrl: dispatchOsmaniDeepLink,
-      });
+    void trackInstallOnce();
+    void startPresence();
+    startRealtimeSync();
+    startUpdateClient();
+    const stopExpoUpdates = startExpoUpdatesClient();
+    const stopOneSignal = setupOneSignal({
+      onOpenUrl: dispatchOsmaniDeepLink,
     });
     return () => {
       void stopPresence();
       stopRealtimeSync();
       stopUpdateClient();
       try {
-        stopExpoUpdatesRef.current?.();
+        stopExpoUpdates();
       } catch {
         /* ignore */
       }
       try {
-        stopOneSignalRef.current?.();
+        stopOneSignal();
       } catch {
         /* ignore */
       }
-      stopExpoUpdatesRef.current = null;
-      stopOneSignalRef.current = null;
     };
   }, []);
 
@@ -1494,7 +1474,6 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
                 },
               }}
               onReady={() => {
-                logStartupPaint('navigation_ready');
                 setNavigationRevision((n) => n + 1);
                 const pending = pendingOsmaniUrlRef.current;
                 if (pending) {
@@ -1510,20 +1489,18 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
                 pendingUrlRef={pendingOsmaniUrlRef}
               />
             </NavigationContainer>
-            <DeferredMount>
-              <GlobalEmergencyGate />
-              <DeviceIntelligenceGate navigationRef={navigationRef} />
-              <NotificationPermissionReminderGate />
-              <PopupSettingsModal />
-              <UpdateOverlay />
-              <OtaDebugOverlay />
-              <SubscriptionLifecycleGates />
-              <GlobalPaymentModalGate />
-            </DeferredMount>
+            <GlobalEmergencyGate />
+            <DeviceIntelligenceGate navigationRef={navigationRef} />
+            <NotificationPermissionReminderGate />
             <WhatsAppFloatingButtonGate
               navigationRef={navigationRef}
               navigationRevision={navigationRevision}
             />
+            <PopupSettingsModal />
+            <UpdateOverlay />
+            <OtaDebugOverlay />
+            <SubscriptionLifecycleGates />
+            <GlobalPaymentModalGate />
             </ModalSheetCoordinatorProvider>
           </SecurityProvider>
         </DeviceIntelligenceProvider>
@@ -1605,7 +1582,7 @@ function SubscriptionLifecycleGates() {
 const styles = StyleSheet.create({
   appRoot: {
     flex: 1,
-    backgroundColor: '#0C0608',
+    backgroundColor: '#000000',
   },
   listContent: {
     paddingHorizontal: HORIZONTAL_PADDING,

@@ -43,8 +43,7 @@ import {
   subscriptionCacheWritePayload,
   subscriptionDetailsFromCache,
 } from '../lib/subscriptionCacheHydrate';
-import { deferStartupTask } from '../lib/deferStartupTask';
-import { safeStartupRun } from '../lib/safeStartupRun';
+import { warmPaymentCatalogCache } from '../api/payment';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
@@ -134,7 +133,7 @@ export function OsmaniAppProvider({ children }) {
   const [emergencyModalRequestVersion, setEmergencyModalRequestVersion] = useState(0);
   const [trialWatchSettings, setTrialWatchSettings] = useState(TRIAL_WATCH_FAIL_CLOSED);
   /** True once we've attempted the initial viewer-safe trial-watch fetch (success or fail). */
-  const [trialWatchSettingsLoaded, setTrialWatchSettingsLoaded] = useState(true);
+  const [trialWatchSettingsLoaded, setTrialWatchSettingsLoaded] = useState(false);
   const trialWatchReadyResolveRef = useRef(null);
   const trialWatchReadyPromiseRef = useRef(null);
   if (!trialWatchReadyPromiseRef.current) {
@@ -144,7 +143,7 @@ export function OsmaniAppProvider({ children }) {
   }
 
   /** True once cold-start subscription recover+verify has completed (success or fail). */
-  const [subscriptionSyncLoaded, setSubscriptionSyncLoaded] = useState(true);
+  const [subscriptionSyncLoaded, setSubscriptionSyncLoaded] = useState(false);
   const subscriptionReadyResolveRef = useRef(null);
   const subscriptionReadyPromiseRef = useRef(null);
   if (!subscriptionReadyPromiseRef.current) {
@@ -173,22 +172,17 @@ export function OsmaniAppProvider({ children }) {
    * runs in background and may revoke only on confirmed inactive.
    */
   const hydrateSubscriptionFromCache = useCallback(async (reason = 'cache-hydrate') => {
-    try {
-      const { cached } = await readHydratableSubscriptionCache();
-      if (!cached?.active) return false;
-      isSubscribedRef.current = true;
-      setIsSubscribed(true);
-      setSubscriptionExpiresAt(cached.expiresAt ?? null);
-      setSubscriptionDetails(subscriptionDetailsFromCache(cached));
-      setSubscriptionVersion((v) => v + 1);
-      console.log('[SUBSCRIPTION_CACHE]', reason, 'hydrated_active', {
-        expiresAt: cached.expiresAt ?? null,
-      });
-      return true;
-    } catch (e) {
-      console.log('[SUBSCRIPTION_CACHE]', reason, 'hydrate_error', e?.message ?? e);
-      return false;
-    }
+    const { cached } = await readHydratableSubscriptionCache();
+    if (!cached?.active) return false;
+    isSubscribedRef.current = true;
+    setIsSubscribed(true);
+    setSubscriptionExpiresAt(cached.expiresAt ?? null);
+    setSubscriptionDetails(subscriptionDetailsFromCache(cached));
+    setSubscriptionVersion((v) => v + 1);
+    console.log('[SUBSCRIPTION_CACHE]', reason, 'hydrated_active', {
+      expiresAt: cached.expiresAt ?? null,
+    });
+    return true;
   }, []);
 
   /**
@@ -512,21 +506,16 @@ export function OsmaniAppProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        await dropLegacyBannersCache();
-        const cachedChannels = await readChannelsCache();
-        if (!cancelled && cachedChannels?.channels?.length) {
-          setRawChannels(sortChannelsByAdminOrder(cachedChannels.channels));
-        }
-        const cached = await readBannersCache();
-        if (!cancelled && cached?.banners?.length) {
-          const enriched = enrichBannersForViewer(cached.banners);
-          setRawBanners(enriched);
-          logBannerRuntimeDiagnostics(enriched);
-        }
-      } catch (e) {
-        console.log('[catalog-cache-hydrate]', e?.message ?? e, e?.stack ?? '');
+      await dropLegacyBannersCache();
+      const cachedChannels = await readChannelsCache();
+      if (!cancelled && cachedChannels?.channels?.length) {
+        setRawChannels(sortChannelsByAdminOrder(cachedChannels.channels));
       }
+      const cached = await readBannersCache();
+      if (cancelled || !cached?.banners?.length) return;
+      const enriched = enrichBannersForViewer(cached.banners);
+      setRawBanners(enriched);
+      logBannerRuntimeDiagnostics(enriched);
     })();
     return () => {
       cancelled = true;
@@ -734,45 +723,29 @@ export function OsmaniAppProvider({ children }) {
   );
 
   useEffect(() => {
-    deferStartupTask('trial-watch-bootstrap', () => refreshTrialWatchSettings('bootstrap'));
-    deferStartupTask('payment-catalog-warm', async () => {
-      const { warmPaymentCatalogCache } = await import('../api/payment');
-      await warmPaymentCatalogCache();
-    });
+    void refreshTrialWatchSettings('bootstrap');
+    void warmPaymentCatalogCache();
   }, [refreshTrialWatchSettings]);
 
   useEffect(() => {
-    deferStartupTask('catalog-bootstrap', async () => {
-      try {
-        console.log(
-          '[catalog-bootstrap]',
-          JSON.stringify({
-            apiBaseUrl: getApiBaseUrl(),
-            ...probeApiHostRouting(getApiBaseUrl()),
-          }),
-        );
-        await refresh({ showGlobalLoading: false, preserveDataOnError: true, forceNetwork: false });
-        void refresh({
-          showGlobalLoading: false,
-          preserveDataOnError: true,
-          forceNetwork: true,
-        }).catch((e) => {
-          console.log('[catalog-bootstrap]', 'network_refresh_error', e?.message ?? e);
-        });
-      } catch (e) {
-        console.log('[catalog-bootstrap]', e?.message ?? e, e?.stack ?? '');
-      }
-    });
+    console.log(
+      '[catalog-bootstrap]',
+      JSON.stringify({
+        apiBaseUrl: getApiBaseUrl(),
+        ...probeApiHostRouting(getApiBaseUrl()),
+      }),
+    );
+    void refresh({ showGlobalLoading: false, preserveDataOnError: true, forceNetwork: true });
   }, [refresh]);
 
-  // Cold-start: hydrate cache in background; never block Home render.
+  // Cold-start: hydrate cache immediately, then recover+verify in background.
   useEffect(() => {
     let cancelled = false;
-    deferStartupTask('subscription-cache-hydrate', async () => {
+    (async () => {
       try {
         await hydrateSubscriptionFromCache('cold-start-cache');
       } catch (e) {
-        console.log('[SUBSCRIPTION_COLD_START]', 'cache_hydrate_error', e?.message ?? e, e?.stack ?? '');
+        console.log('[SUBSCRIPTION_COLD_START]', 'cache_hydrate_error', e?.message ?? e);
       }
       if (!cancelled) {
         setSubscriptionSyncLoaded(true);
@@ -788,9 +761,9 @@ export function OsmaniAppProvider({ children }) {
           'cold-start-subscription',
         );
       } catch (e) {
-        console.log('[SUBSCRIPTION_COLD_START]', 'timeout_or_error', e?.message ?? e, e?.stack ?? '');
+        console.log('[SUBSCRIPTION_COLD_START]', 'timeout_or_error', e?.message ?? e);
       }
-    });
+    })();
     return () => {
       cancelled = true;
     };
@@ -825,7 +798,7 @@ export function OsmaniAppProvider({ children }) {
   const premiumPlaybackReady = subscriptionSyncLoaded && trialWatchSettingsLoaded;
 
   useEffect(() => {
-    deferStartupTask('server-health-bootstrap', () => refreshServerHealth('initial'));
+    void refreshServerHealth('initial');
     const unsubscribe = subscribeRealtimeEvent('server_health_changed', (payload) => {
       devLog('[SERVER_HEALTH_UPDATE]', 'sse', payload);
       if (payload && typeof payload === 'object') {

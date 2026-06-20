@@ -272,12 +272,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   /** When modal opens, refresh subscription in background (never block UI). */
   useEffect(() => {
     if (!visible) return undefined;
-    try {
-      void refreshSubscription();
-    } catch (e) {
-      console.log('[PremiumModal]', 'refresh_subscription_boot_error', e?.message ?? e);
-    }
-    return undefined;
+    void refreshSubscription();
   }, [visible, refreshSubscription]);
 
   useEffect(() => {
