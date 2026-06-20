@@ -728,6 +728,8 @@ export function OsmaniAppProvider({ children }) {
   }, [refreshTrialWatchSettings]);
 
   useEffect(() => {
+    console.log(
+      '[catalog-bootstrap]',
       JSON.stringify({
         apiBaseUrl: getApiBaseUrl(),
         ...probeApiHostRouting(getApiBaseUrl()),
