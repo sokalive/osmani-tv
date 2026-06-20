@@ -27,6 +27,7 @@ import { readChannelsCache, writeChannelsCache } from '../lib/channelsCache';
 import { isNetworkTransportError } from '../lib/catalogApiFetch';
 import { shouldMarkCatalogOffline } from '../lib/catalogConnectivity';
 import { getApiBaseUrl } from '../lib/apiBaseUrl';
+import { probeApiHostRouting } from '../lib/playVpsApiHost';
 import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
@@ -622,7 +623,13 @@ export function OsmaniAppProvider({ children }) {
   );
 
   useEffect(() => {
-    console.log('[catalog-bootstrap]', JSON.stringify({ apiBaseUrl: getApiBaseUrl() }));
+    console.log(
+      '[catalog-bootstrap]',
+      JSON.stringify({
+        apiBaseUrl: getApiBaseUrl(),
+        ...probeApiHostRouting(getApiBaseUrl()),
+      }),
+    );
     void refresh({ showGlobalLoading: false, preserveDataOnError: true, forceNetwork: true });
   }, [refresh]);
 

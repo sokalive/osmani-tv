@@ -1,4 +1,5 @@
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
+import { guardProductionFetchUrl } from '../lib/playVpsApiHost';
 
 async function parseJson(res) {
   const text = await res.text();
@@ -131,7 +132,9 @@ export function parseAppSettingsRealtimePatch(payload) {
  * GET /api/settings — may require admin session on hardened APIs.
  */
 export async function getSettings() {
-  const res = await fetch(`${resolveApiBaseUrl()}/api/settings`);
+  const url = `${resolveApiBaseUrl()}/api/settings`;
+  guardProductionFetchUrl(url, 'settings');
+  const res = await fetch(url);
   const body = await parseJson(res);
   if (!res.ok) {
     const err = body && typeof body === 'object' && body.error != null ? String(body.error) : '';
@@ -156,7 +159,9 @@ export async function tryGetViewerAppSettings() {
   ];
   for (const path of paths) {
     try {
-      const res = await fetch(`${resolveApiBaseUrl()}${path}`);
+      const url = `${resolveApiBaseUrl()}${path}`;
+      guardProductionFetchUrl(url, 'viewer-app-settings');
+      const res = await fetch(url);
       const body = await parseJson(res);
       if (!res.ok) continue;
       const patch = parseAppSettingsRealtimePatch(body);

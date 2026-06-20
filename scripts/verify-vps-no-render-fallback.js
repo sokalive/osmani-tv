@@ -42,16 +42,23 @@ if (!catalogFetch.includes('isVpsApiTarget')) {
 }
 
 const apiBase = read('lib/apiBaseUrl.js');
-if (!apiBase.includes('readPlayVpsMigrationDefault') || !apiBase.includes('readManifestApiUrl')) {
-  fail('apiBaseUrl missing OTA-safe VPS resolution helpers');
+if (!apiBase.includes('forcedPlayVpsApiBaseUrl') || !apiBase.includes('isPlayStoreVpsBuild')) {
+  fail('apiBaseUrl must force VPS from native versionCode >= 23');
 } else {
-  pass('apiBaseUrl has manifest + versionCode VPS defaults');
+  pass('apiBaseUrl forces VPS for Play versionCode >= 23');
 }
 
-if (read('api.js').includes('export const BASE_URL')) {
-  fail('api.js must not snapshot BASE_URL at module load');
+const playVps = read('lib/playVpsApiHost.js');
+if (!playVps.includes('nativeBuildVersion')) {
+  fail('playVpsApiHost must read Application.nativeBuildVersion');
 } else {
-  pass('api.js resolves base URL at request time');
+  pass('playVpsApiHost uses nativeBuildVersion');
+}
+
+if (!read('lib/otaBootGatePolicy.js').includes('isStaleApiHostBundle')) {
+  fail('otaBootGatePolicy must force OTA when API host still Render on Play VPS');
+} else {
+  pass('OTA gate detects stale Render API routing');
 }
 
 const appConfig = read('app.config.js');
