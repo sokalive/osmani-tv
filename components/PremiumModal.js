@@ -66,8 +66,8 @@ const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
 
 const POLL_MS = 1500;
-const PAYMENT_ACTIVATION_RETRY_MS = 750;
-const PAYMENT_ACTIVATION_MAX_ATTEMPTS = 10;
+const PAYMENT_ACTIVATION_RETRY_MS = 400;
+const PAYMENT_ACTIVATION_MAX_ATTEMPTS = 12;
 
 /**
  * Local fallback used only when GET /api/payment-providers fails or
@@ -352,54 +352,70 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
-  /** After payment gateway / verify confirms active: apply context + success UI only when verify succeeds. */
-  const moveToSuccessStep = useCallback(async () => {
-    if (doneRef.current) return;
-    clearTimers();
-    closeSse();
-    let verified = null;
-    let fetchExpires = null;
-    try {
-      const { deviceId } = await getDeviceIdentity();
-      for (let attempt = 0; attempt < PAYMENT_ACTIVATION_MAX_ATTEMPTS; attempt += 1) {
-        if (doneRef.current) return;
-        verified = await refreshSubscription();
-        try {
-          const sub = await fetchSubscription(deviceId);
-          fetchExpires = sub?.expiresAt ?? fetchExpires;
-          if (sub?.active === true && !isSubscriptionActive(verified)) {
-            verified = { ...verified, active: true, isActive: true, expiresAt: sub.expiresAt ?? null };
-          }
-        } catch {
-          // optional enrichment only
-        }
-        if (verified && isSubscriptionActive(verified)) break;
-        if (attempt < PAYMENT_ACTIVATION_MAX_ATTEMPTS - 1) {
-          await new Promise((resolve) => setTimeout(resolve, PAYMENT_ACTIVATION_RETRY_MS));
-        }
-      }
-      if (verified && isSubscriptionActive(verified)) {
+  /** After payment gateway confirms success: show paid UI immediately, enrich via verify in background. */
+  const moveToSuccessStep = useCallback(
+    async ({ optimistic = false } = {}) => {
+      if (doneRef.current && !optimistic) return;
+
+      const applySuccessUi = (verified, fetchExpires) => {
         doneRef.current = true;
+        clearTimers();
+        closeSse();
         const mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
         unlockChannels({
-          ...verified,
+          ...(verified && typeof verified === 'object' ? verified : {}),
           active: true,
           isActive: true,
           expiresAt: mergedExpires ?? verified?.expiresAt ?? null,
         });
-        const mergedForUi = latestExpiryIso(verified?.expiresAt, fetchExpires);
-        setSuccessExpiresAt(mergedForUi ?? verified?.expiresAt ?? null);
+        setSuccessExpiresAt(mergedExpires ?? verified?.expiresAt ?? null);
         setStep(4);
-        return;
+      };
+
+      if (optimistic) {
+        applySuccessUi({ active: true, isActive: true }, null);
       }
-    } catch (e) {
-      console.log('[PAYMENT_SUCCESS_VERIFY]', 'refresh_failed', e?.message ?? e);
-    }
-    console.log('[PAYMENT_SUCCESS_VERIFY]', 'verify_not_active_stay_waiting', {
-      active: verified?.active,
-      isActive: verified?.isActive,
-    });
-  }, [clearTimers, closeSse, refreshSubscription, unlockChannels]);
+
+      let verified = null;
+      let fetchExpires = null;
+      try {
+        const { deviceId } = await getDeviceIdentity();
+        for (let attempt = 0; attempt < PAYMENT_ACTIVATION_MAX_ATTEMPTS; attempt += 1) {
+          if (doneRef.current && !optimistic) return;
+          verified = await refreshSubscription();
+          try {
+            const sub = await fetchSubscription(deviceId);
+            fetchExpires = sub?.expiresAt ?? fetchExpires;
+            if (sub?.active === true && !isSubscriptionActive(verified)) {
+              verified = { ...verified, active: true, isActive: true, expiresAt: sub.expiresAt ?? null };
+            }
+          } catch {
+            // optional enrichment only
+          }
+          if (verified && isSubscriptionActive(verified)) {
+            if (optimistic) {
+              applySuccessUi(verified, fetchExpires);
+            } else {
+              applySuccessUi(verified, fetchExpires);
+            }
+            return;
+          }
+          if (attempt < PAYMENT_ACTIVATION_MAX_ATTEMPTS - 1) {
+            await new Promise((resolve) => setTimeout(resolve, PAYMENT_ACTIVATION_RETRY_MS));
+          }
+        }
+      } catch (e) {
+        console.log('[PAYMENT_SUCCESS_VERIFY]', 'refresh_failed', e?.message ?? e);
+      }
+      if (!optimistic) {
+        console.log('[PAYMENT_SUCCESS_VERIFY]', 'verify_not_active_stay_waiting', {
+          active: verified?.active,
+          isActive: verified?.isActive,
+        });
+      }
+    },
+    [clearTimers, closeSse, refreshSubscription, unlockChannels],
+  );
 
   /** ENDELEA: always await fresh API via context; branch only on returned object (never stale context). */
   const handleCompleted = useCallback(async () => {
@@ -466,12 +482,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         }
         if (doneRef.current) return;
         if (peek && isSubscriptionActive(peek)) {
-          await moveToSuccessStep();
+          await moveToSuccessStep({ optimistic: false });
           return;
         }
 
         if (status === 'SUCCESS') {
-          await moveToSuccessStep();
+          await moveToSuccessStep({ optimistic: true });
         }
       } catch {
         // transient network — keep polling
@@ -519,7 +535,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           const verified = await verifySubscription(deviceId, deviceFingerprint);
           if (doneRef.current) return;
           if (verified && isSubscriptionActive(verified)) {
-            void moveToSuccessStep();
+            void moveToSuccessStep({ optimistic: true });
           }
         } catch {
           // ignore malformed stream payloads / transient verify errors

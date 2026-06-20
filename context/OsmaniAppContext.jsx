@@ -33,6 +33,7 @@ import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { warmPaymentCatalogCache } from '../api/payment';
+import { hydrateSubscriptionFromCache } from '../lib/subscriptionCacheHydrate';
 import {
   isConfirmedSubscriptionLoss,
   subscriptionTransferSseRole,
@@ -408,6 +409,25 @@ export function OsmaniAppProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const identity = await getDeviceIdentity().catch(() => ({}));
+      const hydrated = await hydrateSubscriptionFromCache(identity);
+      if (cancelled || !hydrated?.active) return;
+      isSubscribedRef.current = true;
+      setIsSubscribed(true);
+      setSubscriptionExpiresAt(hydrated.expiresAt);
+      console.log('[SUBSCRIPTION_CACHE]', 'hydrate_boot', {
+        expiresAt: hydrated.expiresAt,
+        deviceId: identity.deviceId?.slice?.(0, 8),
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
       await dropLegacyBannersCache();
       const cachedChannels = await readChannelsCache();
       if (!cancelled && cachedChannels?.channels?.length) {
@@ -598,9 +618,8 @@ export function OsmaniAppProvider({ children }) {
   /** Debounced channels/banners + subscription reverify after admin SSE bursts. */
   const adminSoftSyncTimerRef = useRef(null);
   const scheduleAdminDrivenSoftSync = useCallback(
-    (reason = 'sse:admin') => {
-      if (adminSoftSyncTimerRef.current) clearTimeout(adminSoftSyncTimerRef.current);
-      adminSoftSyncTimerRef.current = setTimeout(() => {
+    (reason = 'sse:admin', { immediate = false } = {}) => {
+      const run = () => {
         adminSoftSyncTimerRef.current = null;
         devLog('[ADMIN_SYNC]', 'soft_refresh', reason);
         invalidateCatalogCache();
@@ -612,7 +631,17 @@ export function OsmaniAppProvider({ children }) {
           forceNetwork: true,
         });
         void reverifySubscription(reason);
-      }, 320);
+      };
+      if (immediate) {
+        if (adminSoftSyncTimerRef.current) {
+          clearTimeout(adminSoftSyncTimerRef.current);
+          adminSoftSyncTimerRef.current = null;
+        }
+        run();
+        return;
+      }
+      if (adminSoftSyncTimerRef.current) clearTimeout(adminSoftSyncTimerRef.current);
+      adminSoftSyncTimerRef.current = setTimeout(run, 180);
     },
     [refresh, refreshTrialWatchSettings, reverifySubscription],
   );
@@ -875,7 +904,7 @@ export function OsmaniAppProvider({ children }) {
           setSettings((prev) => ({ ...prev, ...patch }));
           console.log('[SETTINGS_SYNC]', ev, patch);
         }
-        scheduleAdminDrivenSoftSync(`sse:${ev}`);
+        scheduleAdminDrivenSoftSync(`sse:${ev}`, { immediate: true });
       }),
     );
     return () => {

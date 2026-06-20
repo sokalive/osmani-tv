@@ -360,7 +360,8 @@ function BannerCarousel({
         freeMode,
         trialWatchSettings: null,
       };
-      const unpaidPremiumTap = isPremium && !freeMode && !quickSnapshot.isSubscribed;
+      const unpaidPremiumTap =
+        isPremium && !freeMode && premiumPlaybackReady && !quickSnapshot.isSubscribed;
       if (isPremium && !freeMode && !premiumPlaybackReady && !unpaidPremiumTap) {
         await awaitPremiumAccessSnapshot?.();
       }

@@ -742,8 +742,9 @@ function ChannelCatalogScreen({
       }
       const isFree = freeMode || channelIsFreeAccess(playerChannel, { freeMode });
       const quickSnapshot = getPremiumAccessSnapshot();
-      /** Unpaid premium taps open payment UI immediately — never block on subscription verify. */
-      const unpaidPremiumTap = isPremium && !isFree && !quickSnapshot.isSubscribed;
+      /** Unpaid premium taps open payment UI immediately — only after sync confirms unpaid. */
+      const unpaidPremiumTap =
+        isPremium && !isFree && subscriptionSyncLoaded && !quickSnapshot.isSubscribed;
       const snapshot =
         premiumPlaybackReady || isFree || unpaidPremiumTap
           ? quickSnapshot
