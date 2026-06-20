@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BASE_URL } from '../api';
+import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { buildDeviceIntelligenceRegistrationBody } from '../lib/deviceIntelligencePayload';
 import { getLastDeviceAccessReportFields } from '../lib/deviceAccessReportFields';
 
@@ -8,8 +8,9 @@ const LAST_STATUS_KEY = 'osmani:device_intel_last_status';
 
 const RETRY_DELAYS_MS = [0, 900, 2200];
 
-/** Production Users Intelligence register + access check (single endpoint). */
-const REGISTER_URL = `${BASE_URL}/api/users-intelligence/register`;
+function registerUrl() {
+  return `${resolveApiBaseUrl()}/api/users-intelligence/register`;
+}
 
 const DEBUG =
   __DEV__ || String(process.env.EXPO_PUBLIC_DEVICE_INTEL_LOGS ?? '') === '1';
@@ -250,7 +251,7 @@ export async function registerDeviceIntelligence() {
   for (let i = 0; i < RETRY_DELAYS_MS.length; i += 1) {
     await wait(RETRY_DELAYS_MS[i]);
     try {
-      if (DEBUG) console.log('[device-intel] POST', REGISTER_URL, JSON.stringify(body));
+      if (DEBUG) console.log('[device-intel] POST', registerUrl(), JSON.stringify(body));
       const accessFields = getLastDeviceAccessReportFields();
       if (accessFields) {
         body.device_access_state = accessFields.deviceAccessState;
@@ -259,7 +260,7 @@ export async function registerDeviceIntelligence() {
         body.device_access_message = accessFields.userMessage;
         body.playback_allowed = accessFields.playbackAllowed === true;
       }
-      const res = await fetch(REGISTER_URL, {
+      const res = await fetch(registerUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(body),

@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { nativeApplicationVersion, nativeBuildVersion } from 'expo-application';
 import { Platform } from 'react-native';
-import { BASE_URL } from '../api';
+import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { getLastDeviceAccessReportFields } from '../lib/deviceAccessReportFields';
 import { getLastSecurityReportSnapshot, setLastSecurityReportSnapshot } from '../lib/lastSecurityReportSnapshot';
@@ -13,10 +13,10 @@ const CLEAN_REPORT_DEDUPE_MS = 6 * 60 * 60 * 1000;
 const RETRY_DELAYS_MS = [0, 900, 2200];
 const SECURITY_DEBUG = __DEV__ || process.env.EXPO_PUBLIC_SECURITY_STARTUP_LOGS === '1';
 
-const REPORT_URLS = [
-  `${BASE_URL}/api/runtime/security-report`,
-  `${BASE_URL}/api/security/device-report`,
-];
+function reportUrls() {
+  const base = resolveApiBaseUrl();
+  return [`${base}/api/runtime/security-report`, `${base}/api/security/device-report`];
+}
 
 async function wait(ms) {
   if (!ms) return;
@@ -229,7 +229,7 @@ export async function reportSecurityDevice(args) {
 
   let lastError = null;
 
-  for (const url of REPORT_URLS) {
+  for (const url of reportUrls()) {
     for (let i = 0; i < RETRY_DELAYS_MS.length; i += 1) {
       await wait(RETRY_DELAYS_MS[i]);
       try {
@@ -251,7 +251,7 @@ export async function reportSecurityDevice(args) {
         if (SECURITY_DEBUG) {
           console.log('[security] response', res.status, text?.slice?.(0, 400) ?? '');
         }
-        if (res.status === 404 && url === REPORT_URLS[0]) {
+        if (res.status === 404 && url === reportUrls()[0]) {
           lastError = new Error('HTTP 404 primary endpoint');
           break;
         }

@@ -1,4 +1,4 @@
-import { BASE_URL } from '../api';
+import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { parseTrialWatchSettings } from '../lib/trialWatchSettings.shared';
 
 async function parseJson(res) {
@@ -24,7 +24,7 @@ export async function tryGetViewerTrialWatchSettings() {
   ];
   for (const path of paths) {
     try {
-      const res = await fetch(`${BASE_URL}${path}`);
+      const res = await fetch(`${resolveApiBaseUrl()}${path}`);
       const body = await parseJson(res);
       if (!res.ok || !body) continue;
       const parsed = parseTrialWatchSettings(body);

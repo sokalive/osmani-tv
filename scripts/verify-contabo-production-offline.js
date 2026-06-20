@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
-const CONTABO = (process.env.EXPO_PUBLIC_API_URL || 'http://144.91.117.90:10001').replace(/\/+$/, '');
+const CONTABO = (process.env.EXPO_PUBLIC_API_URL || 'https://api.osmanitv.com').replace(/\/+$/, '');
 const RENDER = 'https://osmani-admin-api.onrender.com';
 const CDN = process.env.EXPO_PUBLIC_MEDIA_CDN_BASE || 'https://osmanitv.b-cdn.net';
 const RENDER_HOST = 'osmani-admin-api.onrender.com';
@@ -66,12 +66,17 @@ function rewriteAdminUploadUrl(input) {
   }
 }
 
-// --- Static: no Render runtime fetch fallback ---
+// --- Static: VPS must not fall back to Render; cleartext HTTP may mirror to HTTPS Render ---
 const catalogFetch = read('lib/catalogApiFetch.js');
-if (catalogFetch.includes('https-fallback') || catalogFetch.includes('HTTPS_TRANSPORT_FALLBACK')) {
-  fail('catalogApiFetch must not use Render HTTPS fallback in production');
+if (catalogFetch.includes('RENDER_PRODUCTION_API_URL') || catalogFetch.includes('bases.push(RENDER')) {
+  fail('catalogApiFetch must not add Render fallback for VPS builds');
 } else {
-  pass('no Render HTTPS fallback in catalogApiFetch');
+  pass('no VPS→Render fallback in catalogApiFetch');
+}
+if (!catalogFetch.includes('isVpsApiTarget')) {
+  fail('catalogApiFetch must gate legacy fallback with isVpsApiTarget');
+} else {
+  pass('catalogApiFetch uses isVpsApiTarget');
 }
 
 const excludedRenderLists = new Set([

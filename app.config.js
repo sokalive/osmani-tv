@@ -3,6 +3,12 @@ const path = require('path');
 
 const easProfile = process.env.EAS_BUILD_PROFILE || '';
 const oneSignalMode = easProfile === 'production' ? 'production' : 'development';
+const VPS_API_URL = 'https://api.osmanitv.com';
+const RENDER_API_URL = 'https://osmani-admin-api.onrender.com';
+/** Baked into native manifest — OTA fallback when EXPO_PUBLIC_API_URL missing from JS bundle. */
+const manifestApiBaseUrl =
+  process.env.EXPO_PUBLIC_API_URL?.trim?.() ||
+  (easProfile === 'production' || easProfile === 'vps-preview' ? VPS_API_URL : RENDER_API_URL);
 
 const rootGooglePath = path.join(__dirname, 'google-services.json');
 
@@ -204,6 +210,8 @@ module.exports = {
       eas: {
         projectId: EAS_PROJECT_ID,
       },
+      /** Native fallback for {@link lib/apiBaseUrl} when OTA JS omits EXPO_PUBLIC_API_URL. */
+      apiBaseUrl: manifestApiBaseUrl,
       oneSignalAppId,
       /** EAS: set EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS=1 to log push id / permission / opt-in at startup (logcat). */
       oneSignalStartupLogs: process.env.EXPO_PUBLIC_ONESIGNAL_STARTUP_LOGS === '1',

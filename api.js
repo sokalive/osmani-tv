@@ -8,9 +8,16 @@ export { invalidateCatalogCache, getApiBaseUrl, resolveApiBaseUrl };
 
 /**
  * Contabo Admin API (JSON / SSE / payments / stream-direct).
- * Resolved at request time via {@link getApiBaseUrl} for catalog; legacy imports use this snapshot.
+ * Always resolve at request time — never snapshot at module load (OTA may change embed).
  */
-export const BASE_URL = getApiBaseUrl();
+export function getBaseUrl() {
+  return resolveApiBaseUrl();
+}
+
+/** @deprecated Use {@link getBaseUrl} or {@link resolveApiBaseUrl} at request time. */
+export function getLegacyBaseUrlSnapshot() {
+  return resolveApiBaseUrl();
+}
 
 async function fetchChannelsFromNetwork() {
   const body = await fetchAdminApiJson('/api/channels', { tag: 'catalog-channels' });

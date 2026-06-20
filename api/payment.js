@@ -6,7 +6,7 @@ import { fetchAdminApiJson, fetchAdminApiResponse } from '../lib/catalogApiFetch
 
 /**
  * Payment + subscription HTTP API (ZenoPay STK push).
- * Uses {@link fetchAdminApiResponse} with Contabo primary + Render HTTPS transport fallback.
+ * Uses {@link fetchAdminApiResponse} — VPS builds never fall back to Render.
  */
 
 function apiPrefix() {

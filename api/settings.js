@@ -1,4 +1,4 @@
-import { BASE_URL } from '../api';
+import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 
 async function parseJson(res) {
   const text = await res.text();
@@ -131,7 +131,7 @@ export function parseAppSettingsRealtimePatch(payload) {
  * GET /api/settings — may require admin session on hardened APIs.
  */
 export async function getSettings() {
-  const res = await fetch(`${BASE_URL}/api/settings`);
+  const res = await fetch(`${resolveApiBaseUrl()}/api/settings`);
   const body = await parseJson(res);
   if (!res.ok) {
     const err = body && typeof body === 'object' && body.error != null ? String(body.error) : '';
@@ -156,7 +156,7 @@ export async function tryGetViewerAppSettings() {
   ];
   for (const path of paths) {
     try {
-      const res = await fetch(`${BASE_URL}${path}`);
+      const res = await fetch(`${resolveApiBaseUrl()}${path}`);
       const body = await parseJson(res);
       if (!res.ok) continue;
       const patch = parseAppSettingsRealtimePatch(body);
