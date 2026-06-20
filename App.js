@@ -76,8 +76,7 @@ import { channelIsFreeAccess } from './lib/trialWatchAccess';
 import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
 import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
-import { useStartupSplash, hideStartupSplashWhenReady } from './hooks/useStartupSplash';
-import StartupInstantShell from './components/StartupInstantShell';
+import { useStartupSplash } from './hooks/useStartupSplash';
 import { logStartupPaint } from './lib/startupPaintDiagnostics';
 import EmbeddedOtaBootGate from './components/EmbeddedOtaBootGate';
 import StartupErrorBoundary from './components/StartupErrorBoundary';
@@ -1440,7 +1439,6 @@ export default function App() {
 function AppShell({ navigationRevision, setNavigationRevision }) {
   useStartupSplash();
   useGlobalSecureScreen();
-  const [navReady, setNavReady] = useState(false);
   const stopExpoUpdatesRef = useRef(null);
   const stopOneSignalRef = useRef(null);
 
@@ -1483,44 +1481,35 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
         <DeviceIntelligenceProvider>
           <SecurityProvider>
             <ModalSheetCoordinatorProvider>
-            <View style={styles.navShell}>
-              <NavigationContainer
-                ref={navigationRef}
-                linking={osmaniLinking}
-                theme={{
-                  ...DarkTheme,
-                  colors: {
-                    ...DarkTheme.colors,
-                    background: COLORS.background,
-                    card: COLORS.card,
-                    border: 'rgba(255,255,255,0.06)',
-                  },
-                }}
-                onReady={() => {
-                  logStartupPaint('navigation_ready');
-                  setNavReady(true);
-                  hideStartupSplashWhenReady('navigation_ready');
-                  setNavigationRevision((n) => n + 1);
-                  const pending = pendingOsmaniUrlRef.current;
-                  if (pending) {
-                    pendingOsmaniUrlRef.current = null;
-                    dispatchOsmaniDeepLink(pending);
-                  }
-                }}
-                onStateChange={() => setNavigationRevision((n) => n + 1)}
-              >
-                <RootNavigator />
-                <OsmaniDeepLinkGate
-                  navigationRef={navigationRef}
-                  pendingUrlRef={pendingOsmaniUrlRef}
-                />
-              </NavigationContainer>
-              {!navReady ? (
-                <View style={styles.startupShellOverlay} pointerEvents="none">
-                  <StartupInstantShell />
-                </View>
-              ) : null}
-            </View>
+            <NavigationContainer
+              ref={navigationRef}
+              linking={osmaniLinking}
+              theme={{
+                ...DarkTheme,
+                colors: {
+                  ...DarkTheme.colors,
+                  background: COLORS.background,
+                  card: COLORS.card,
+                  border: 'rgba(255,255,255,0.06)',
+                },
+              }}
+              onReady={() => {
+                logStartupPaint('navigation_ready');
+                setNavigationRevision((n) => n + 1);
+                const pending = pendingOsmaniUrlRef.current;
+                if (pending) {
+                  pendingOsmaniUrlRef.current = null;
+                  dispatchOsmaniDeepLink(pending);
+                }
+              }}
+              onStateChange={() => setNavigationRevision((n) => n + 1)}
+            >
+              <RootNavigator />
+              <OsmaniDeepLinkGate
+                navigationRef={navigationRef}
+                pendingUrlRef={pendingOsmaniUrlRef}
+              />
+            </NavigationContainer>
             <DeferredMount>
               <GlobalEmergencyGate />
               <DeviceIntelligenceGate navigationRef={navigationRef} />
@@ -1617,15 +1606,6 @@ const styles = StyleSheet.create({
   appRoot: {
     flex: 1,
     backgroundColor: '#0C0608',
-  },
-  navShell: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  startupShellOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: COLORS.background,
-    zIndex: 20,
   },
   listContent: {
     paddingHorizontal: HORIZONTAL_PADDING,

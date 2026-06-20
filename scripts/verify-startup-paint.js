@@ -32,24 +32,21 @@ const defer = read('lib/deferStartupTask.js');
 const context = read('context/OsmaniAppContext.jsx');
 const deferred = read('components/DeferredMount.js');
 
-if (!app.includes('StartupInstantShell')) fail('App shows StartupInstantShell before nav ready');
-else pass('instant startup shell');
+if (app.includes('navReady') || app.includes('startupShellOverlay')) {
+  fail('App must not block on navReady overlay');
+} else pass('no navReady overlay gate');
 
-if (!app.includes('hideStartupSplashWhenReady')) fail('splash hides on navigation ready');
-else pass('splash tied to navigation ready');
+if (!splash.includes('requestAnimationFrame')) fail('splash must hide on first paint');
+else pass('splash first-paint hide');
 
-if (!app.includes('startupShellOverlay')) fail('startup shell overlay');
-else pass('startup shell overlay');
+if (!policy.includes('isNativeVpsPlayRelease')) fail('native VPS skip in OTA policy');
+else pass('native VPS OTA gate skip');
 
 if (!policy.includes('isRunningDownloadedOtaBundle')) fail('OTA bundle skip policy');
 else pass('skip OTA gate when downloaded bundle active');
 
 if (!gate.includes('OTA_GATE_MAX_BLOCK_MS')) fail('embedded gate max timeout');
 else pass('embedded gate max timeout');
-
-if (splash.includes('requestAnimationFrame') && splash.includes('STARTUP_SPLASH_MIN_MS')) {
-  fail('useStartupSplash must not hide splash on rAF/min timer');
-} else pass('no early splash hide');
 
 if (/import\s*\{[^}]*InteractionManager/.test(defer)) {
   fail('deferStartupTask must not use InteractionManager');
@@ -60,10 +57,8 @@ if (/import\s*\{[^}]*InteractionManager/.test(deferred)) {
 } else pass('DeferredMount uses setTimeout');
 
 if (!context.includes('deferStartupTask(\'catalog-cache-hydrate\'')) {
-  pass('catalog cache hydrate is immediate (not deferred)');
-} else {
-  fail('catalog cache hydrate must be immediate for first paint');
-}
+  pass('catalog cache hydrate immediate');
+} else fail('catalog cache hydrate must not be deferred');
 
 if (!read('lib/startupPaintDiagnostics.js').includes('[startup-paint]')) {
   fail('startup paint diagnostics');
