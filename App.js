@@ -62,7 +62,7 @@ import { startPresence, stopPresence } from './lib/presenceTracker';
 import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startExpoUpdatesClient } from './lib/expoUpdatesClient';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
-import { safeStartupRun } from './lib/safeStartupRun';
+import { deferStartupTask } from './lib/deferStartupTask';
 import { setupOneSignal } from './lib/oneSignal';
 import { dispatchOsmaniDeepLink } from './lib/osmaniDeepLinkDispatch';
 import OsmaniDeepLinkGate from './components/OsmaniDeepLinkGate';
@@ -79,6 +79,7 @@ import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
 import { useStartupSplash } from './hooks/useStartupSplash';
 import EmbeddedOtaBootGate from './components/EmbeddedOtaBootGate';
 import StartupErrorBoundary from './components/StartupErrorBoundary';
+import DeferredMount from './components/DeferredMount';
 import { logFirstLaunchBootDiagnostics } from './lib/firstLaunchBootDiagnostics';
 import {
   clearPendingManualGiftKey,
@@ -1432,31 +1433,39 @@ export default function App() {
 function AppShell({ navigationRevision, setNavigationRevision }) {
   useStartupSplash();
   useGlobalSecureScreen();
+  const stopExpoUpdatesRef = useRef(null);
+  const stopOneSignalRef = useRef(null);
 
   useEffect(() => {
     logFirstLaunchBootDiagnostics('app_boot_ready');
-    void trackInstallOnce();
-    void startPresence();
-    startRealtimeSync();
-    safeStartupRun('start-update-client', () => startUpdateClient());
-    const stopExpoUpdates = startExpoUpdatesClient();
-    const stopOneSignal = setupOneSignal({
-      onOpenUrl: dispatchOsmaniDeepLink,
+    deferStartupTask('analytics-install', () => trackInstallOnce());
+    deferStartupTask('presence-tracker', () => startPresence());
+    deferStartupTask('realtime-sync', () => startRealtimeSync());
+    deferStartupTask('update-client', () => startUpdateClient());
+    deferStartupTask('expo-updates-client', () => {
+      stopExpoUpdatesRef.current = startExpoUpdatesClient();
+    });
+    deferStartupTask('onesignal', () => {
+      stopOneSignalRef.current = setupOneSignal({
+        onOpenUrl: dispatchOsmaniDeepLink,
+      });
     });
     return () => {
       void stopPresence();
       stopRealtimeSync();
       stopUpdateClient();
       try {
-        stopExpoUpdates();
+        stopExpoUpdatesRef.current?.();
       } catch {
         /* ignore */
       }
       try {
-        stopOneSignal();
+        stopOneSignalRef.current?.();
       } catch {
         /* ignore */
       }
+      stopExpoUpdatesRef.current = null;
+      stopOneSignalRef.current = null;
     };
   }, []);
 
@@ -1493,18 +1502,20 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
                 pendingUrlRef={pendingOsmaniUrlRef}
               />
             </NavigationContainer>
-            <GlobalEmergencyGate />
-            <DeviceIntelligenceGate navigationRef={navigationRef} />
-            <NotificationPermissionReminderGate />
+            <DeferredMount>
+              <GlobalEmergencyGate />
+              <DeviceIntelligenceGate navigationRef={navigationRef} />
+              <NotificationPermissionReminderGate />
+              <PopupSettingsModal />
+              <UpdateOverlay />
+              <OtaDebugOverlay />
+              <SubscriptionLifecycleGates />
+              <GlobalPaymentModalGate />
+            </DeferredMount>
             <WhatsAppFloatingButtonGate
               navigationRef={navigationRef}
               navigationRevision={navigationRevision}
             />
-            <PopupSettingsModal />
-            <UpdateOverlay />
-            <OtaDebugOverlay />
-            <SubscriptionLifecycleGates />
-            <GlobalPaymentModalGate />
             </ModalSheetCoordinatorProvider>
           </SecurityProvider>
         </DeviceIntelligenceProvider>

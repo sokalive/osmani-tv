@@ -43,6 +43,7 @@ import {
   subscriptionCacheWritePayload,
   subscriptionDetailsFromCache,
 } from '../lib/subscriptionCacheHydrate';
+import { deferStartupTask } from '../lib/deferStartupTask';
 import { safeStartupRun } from '../lib/safeStartupRun';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
@@ -510,18 +511,22 @@ export function OsmaniAppProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      await dropLegacyBannersCache();
-      const cachedChannels = await readChannelsCache();
-      if (!cancelled && cachedChannels?.channels?.length) {
-        setRawChannels(sortChannelsByAdminOrder(cachedChannels.channels));
+    deferStartupTask('catalog-cache-hydrate', async () => {
+      try {
+        await dropLegacyBannersCache();
+        const cachedChannels = await readChannelsCache();
+        if (!cancelled && cachedChannels?.channels?.length) {
+          setRawChannels(sortChannelsByAdminOrder(cachedChannels.channels));
+        }
+        const cached = await readBannersCache();
+        if (cancelled || !cached?.banners?.length) return;
+        const enriched = enrichBannersForViewer(cached.banners);
+        setRawBanners(enriched);
+        logBannerRuntimeDiagnostics(enriched);
+      } catch (e) {
+        console.log('[catalog-cache-hydrate]', e?.message ?? e, e?.stack ?? '');
       }
-      const cached = await readBannersCache();
-      if (cancelled || !cached?.banners?.length) return;
-      const enriched = enrichBannersForViewer(cached.banners);
-      setRawBanners(enriched);
-      logBannerRuntimeDiagnostics(enriched);
-    })();
+    });
     return () => {
       cancelled = true;
     };
@@ -728,32 +733,45 @@ export function OsmaniAppProvider({ children }) {
   );
 
   useEffect(() => {
-    safeStartupRun('trial-watch-bootstrap', () => refreshTrialWatchSettings('bootstrap'));
-    safeStartupRun('payment-catalog-warm', async () => {
+    deferStartupTask('trial-watch-bootstrap', () => refreshTrialWatchSettings('bootstrap'));
+    deferStartupTask('payment-catalog-warm', async () => {
       const { warmPaymentCatalogCache } = await import('../api/payment');
       await warmPaymentCatalogCache();
     });
   }, [refreshTrialWatchSettings]);
 
   useEffect(() => {
-    console.log(
-      '[catalog-bootstrap]',
-      JSON.stringify({
-        apiBaseUrl: getApiBaseUrl(),
-        ...probeApiHostRouting(getApiBaseUrl()),
-      }),
-    );
-    void refresh({ showGlobalLoading: false, preserveDataOnError: true, forceNetwork: true });
+    deferStartupTask('catalog-bootstrap', async () => {
+      try {
+        console.log(
+          '[catalog-bootstrap]',
+          JSON.stringify({
+            apiBaseUrl: getApiBaseUrl(),
+            ...probeApiHostRouting(getApiBaseUrl()),
+          }),
+        );
+        await refresh({ showGlobalLoading: false, preserveDataOnError: true, forceNetwork: false });
+        void refresh({
+          showGlobalLoading: false,
+          preserveDataOnError: true,
+          forceNetwork: true,
+        }).catch((e) => {
+          console.log('[catalog-bootstrap]', 'network_refresh_error', e?.message ?? e);
+        });
+      } catch (e) {
+        console.log('[catalog-bootstrap]', e?.message ?? e, e?.stack ?? '');
+      }
+    });
   }, [refresh]);
 
-  // Cold-start: hydrate cache immediately, then recover+verify in background.
+  // Cold-start: hydrate cache in background; never block Home render.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    deferStartupTask('subscription-cache-hydrate', async () => {
       try {
         await hydrateSubscriptionFromCache('cold-start-cache');
       } catch (e) {
-        console.log('[SUBSCRIPTION_COLD_START]', 'cache_hydrate_error', e?.message ?? e);
+        console.log('[SUBSCRIPTION_COLD_START]', 'cache_hydrate_error', e?.message ?? e, e?.stack ?? '');
       }
       if (!cancelled) {
         setSubscriptionSyncLoaded(true);
@@ -769,9 +787,9 @@ export function OsmaniAppProvider({ children }) {
           'cold-start-subscription',
         );
       } catch (e) {
-        console.log('[SUBSCRIPTION_COLD_START]', 'timeout_or_error', e?.message ?? e);
+        console.log('[SUBSCRIPTION_COLD_START]', 'timeout_or_error', e?.message ?? e, e?.stack ?? '');
       }
-    })();
+    });
     return () => {
       cancelled = true;
     };
@@ -806,7 +824,7 @@ export function OsmaniAppProvider({ children }) {
   const premiumPlaybackReady = subscriptionSyncLoaded && trialWatchSettingsLoaded;
 
   useEffect(() => {
-    void refreshServerHealth('initial');
+    deferStartupTask('server-health-bootstrap', () => refreshServerHealth('initial'));
     const unsubscribe = subscribeRealtimeEvent('server_health_changed', (payload) => {
       devLog('[SERVER_HEALTH_UPDATE]', 'sse', payload);
       if (payload && typeof payload === 'object') {
