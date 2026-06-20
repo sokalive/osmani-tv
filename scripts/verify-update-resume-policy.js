@@ -28,9 +28,13 @@ if (!updateClient.includes("scheduleCheck('app-resume', 0)")) {
   fail('app-resume must schedule immediate update-check');
 } else pass('app-resume schedules immediate check');
 
-if (!updateClient.includes('reassertSoftOverlayVisibility')) {
-  fail('resume must reassert soft overlay visibility');
-} else pass('resume reasserts soft overlay');
+if (!updateClient.includes('PLAY_OTA_MIN_VERSION_CODE - 1')) {
+  fail('v15-only resume reassert required');
+} else pass('v15-only resume reassert');
+
+if (!updateClient.includes('softUpdateDismissed')) {
+  fail('v16+ soft dismiss until relaunch required');
+} else pass('v16+ soft dismiss until relaunch');
 
 if (!updateClient.includes('IMMEDIATE_CHECK_REASONS')) {
   fail('launch/resume must bypass recheck debounce');

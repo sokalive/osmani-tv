@@ -25,7 +25,7 @@ import {
 } from '../lib/bannersCache';
 import { readChannelsCache, writeChannelsCache } from '../lib/channelsCache';
 import { isNetworkTransportError } from '../lib/catalogApiFetch';
-import { shouldMarkCatalogOffline } from '../lib/catalogConnectivity';
+import { shouldMarkCatalogOffline, isTransientServerError } from '../lib/catalogConnectivity';
 import { getApiBaseUrl } from '../lib/apiBaseUrl';
 import { probeApiHostRouting } from '../lib/playVpsApiHost';
 import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
@@ -55,6 +55,7 @@ const LIVE_SYNC_MAX_MS = 120000;
 const SETTINGS_POLL_MS = 10000;
 
 function isLikelyOfflineError(errorLike) {
+  if (isTransientServerError(errorLike)) return false;
   return isNetworkTransportError(errorLike);
 }
 

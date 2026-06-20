@@ -20,6 +20,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
+import { resolveAnalyticsChannelId } from '../lib/analyticsChannelId';
 import { clearActiveChannel, setActiveChannel } from '../lib/presenceTracker';
 import { subscriptionTransferSseRole } from '../lib/subscriptionSseGuard';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
@@ -1081,19 +1082,23 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   // ANALYTICS: start session + heartbeat + stop on exit
   useEffect(() => {
     let cancelled = false;
-    const channelId = channel?.id ?? channel?.channel_id ?? channel?.name ?? 'unknown';
+    const channelId = resolveAnalyticsChannelId(channel);
     const channelName = channel?.name ?? '';
-    sessionChannelIdRef.current = String(channelId);
+    sessionChannelIdRef.current = channelId;
     sessionChannelNameRef.current = channelName;
     console.log('[player][analytics] mounting session with channel:', {
-      channel_id: sessionChannelIdRef.current,
+      channel_id: channelId || '(missing)',
       channel_name: channelName,
     });
-    // App-level presence: attach the channel to the live session so the
-    // admin Live User Locations watcher count updates immediately.
-    setActiveChannel(channelId, channelName);
+    if (channelId) {
+      setActiveChannel(channelId, channelName);
+    }
 
     (async () => {
+      if (!channelId) {
+        console.warn('[player][analytics] skip session — missing channel_id');
+        return;
+      }
       const deviceId = await startLiveSession(channelId, channelName);
       if (cancelled) return;
       sessionDeviceIdRef.current = deviceId;

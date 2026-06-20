@@ -29,8 +29,11 @@ function read(rel) {
 }
 
 const connectivity = read('lib/catalogConnectivity.js');
-if (!connectivity.includes('shouldMarkCatalogOffline')) fail('missing shouldMarkCatalogOffline');
-else pass('catalog connectivity helper');
+if (!connectivity.includes('isTransientServerError')) fail('missing isTransientServerError');
+else pass('transient server error helper');
+
+if (!connectivity.includes('isApiMisconfigurationError')) fail('missing isApiMisconfigurationError');
+else pass('api misconfiguration error helper');
 
 const ctx = read('context/OsmaniAppContext.jsx');
 if (!ctx.includes('shouldMarkCatalogOffline')) fail('OsmaniAppContext must use shouldMarkCatalogOffline');
