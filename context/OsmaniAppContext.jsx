@@ -40,8 +40,10 @@ import {
 import { withTimeout } from '../lib/asyncTimeout';
 import {
   readHydratableSubscriptionCache,
+  subscriptionCacheWritePayload,
   subscriptionDetailsFromCache,
 } from '../lib/subscriptionCacheHydrate';
+import { warmPaymentCatalogCache } from '../api/payment';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
@@ -308,7 +310,13 @@ export function OsmaniAppProvider({ children }) {
         setSubscriptionVersion((v) => v + 1);
         if (active) {
           setRevokedReason(null);
-          await writeSubscriptionCache({ active: true, expiresAt, deviceId, fingerprint: deviceFingerprint });
+          await writeSubscriptionCache(
+            subscriptionCacheWritePayload(detailSource, {
+              expiresAt,
+              deviceId,
+              fingerprint: deviceFingerprint,
+            }),
+          );
         } else if (
           !active &&
           !isSubscriptionTransportFailure(r) &&
@@ -715,8 +723,11 @@ export function OsmaniAppProvider({ children }) {
   );
 
   useEffect(() => {
-    console.log(
-      '[catalog-bootstrap]',
+    void refreshTrialWatchSettings('bootstrap');
+    void warmPaymentCatalogCache();
+  }, [refreshTrialWatchSettings]);
+
+  useEffect(() => {
       JSON.stringify({
         apiBaseUrl: getApiBaseUrl(),
         ...probeApiHostRouting(getApiBaseUrl()),
@@ -768,22 +779,17 @@ export function OsmaniAppProvider({ children }) {
 
   const getPremiumAccessSnapshot = useCallback(
     () => ({
-      premiumPlaybackReady: subscriptionSyncLoaded && trialWatchSettingsLoaded,
+      premiumPlaybackReady: true,
       isSubscribed: isSubscribedRef.current,
       freeMode: settingsRef.current.freeMode,
       trialWatchSettings: trialWatchSettingsRef.current,
     }),
-    [subscriptionSyncLoaded, trialWatchSettingsLoaded],
+    [],
   );
 
   const awaitPremiumAccessSnapshot = useCallback(async () => {
-    await Promise.all([awaitTrialWatchSettingsReady(), awaitSubscriptionSyncReady()]);
     return getPremiumAccessSnapshot();
-  }, [
-    awaitSubscriptionSyncReady,
-    awaitTrialWatchSettingsReady,
-    getPremiumAccessSnapshot,
-  ]);
+  }, [getPremiumAccessSnapshot]);
 
   const awaitPremiumGateReady = awaitPremiumAccessSnapshot;
 

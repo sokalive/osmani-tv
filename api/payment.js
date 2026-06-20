@@ -3,6 +3,15 @@ import { formatCheckoutPaymentError, extractPaymentBackendReason, logPaymentChec
 import { resolveMediaAssetUrl } from '../lib/mediaDelivery';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { fetchAdminApiJson, fetchAdminApiResponse } from '../lib/catalogApiFetch';
+import { withTimeout } from '../lib/asyncTimeout';
+import {
+  readCachedCheckoutProviders,
+  readCachedPaymentPlans,
+  readCachedPaymentProviders,
+  writeCachedCheckoutProviders,
+  writeCachedPaymentPlans,
+  writeCachedPaymentProviders,
+} from '../lib/paymentCatalogCache';
 
 /**
  * Payment + subscription HTTP API (ZenoPay STK push).
@@ -105,15 +114,36 @@ function isExpiryValid(expiresAt) {
   return Number.isFinite(t) && t > Date.now();
 }
 
-/**
- * @returns {Promise<unknown[]>}
- */
-export async function getPlans() {
-  const body = await fetchAdminApiJson('/api/plans', { tag: 'payment-plans' });
+const CHECKOUT_PROVIDER_TIMEOUT_MS = 12_000;
+
+function normalizePlansBody(body) {
   if (Array.isArray(body)) return body;
   if (body && Array.isArray(body.plans)) return body.plans;
   if (body && Array.isArray(body.data)) return body.data;
-  throw new Error('Invalid plans response');
+  return null;
+}
+
+/**
+ * @returns {Promise<unknown[]>}
+ */
+export async function getPlans(opts = {}) {
+  if (!opts.force) {
+    const cached = await readCachedPaymentPlans();
+    if (Array.isArray(cached) && cached.length > 0) return cached;
+  }
+  const body = await fetchAdminApiJson('/api/plans', { tag: 'payment-plans' });
+  const list = normalizePlansBody(body);
+  if (!list) throw new Error('Invalid plans response');
+  await writeCachedPaymentPlans(list);
+  return list;
+}
+
+/** Return cached plans immediately when available; refresh in background. */
+export async function getPlansCachedFirst() {
+  const cached = await readCachedPaymentPlans();
+  void getPlans({ force: true }).catch(() => null);
+  if (Array.isArray(cached) && cached.length > 0) return cached;
+  return getPlans();
 }
 
 function pickProviderLogoUrl(raw) {
@@ -164,36 +194,82 @@ function normalizeProviderRow(raw) {
 /**
  * @returns {Promise<{ id: string; name: string; logoUrl: string|null; active: boolean }[]>}
  */
-export async function getPaymentProviders() {
+export async function getPaymentProviders(opts = {}) {
+  if (!opts.force) {
+    const cached = await readCachedPaymentProviders();
+    if (Array.isArray(cached) && cached.length > 0) return cached;
+  }
   const body = await fetchAdminApiJson('/api/payment-providers', { tag: 'payment-providers' });
   let raw = [];
   if (Array.isArray(body)) raw = body;
   else if (body && Array.isArray(body.providers)) raw = body.providers;
   else if (body && Array.isArray(body.data)) raw = body.data;
-  return raw
+  const list = raw
     .map(normalizeProviderRow)
     .filter((p) => p && p.active === true);
+  if (list.length > 0) await writeCachedPaymentProviders(list);
+  return list;
+}
+
+export async function getPaymentProvidersCachedFirst() {
+  const cached = await readCachedPaymentProviders();
+  void getPaymentProviders({ force: true }).catch(() => null);
+  if (Array.isArray(cached) && cached.length > 0) return cached;
+  return getPaymentProviders();
 }
 
 /**
  * GET /api/payments/checkout-providers
  */
-export async function getCheckoutPaymentProviders() {
-  const body = await fetchAdminApiJson('/api/payments/checkout-providers', {
-    tag: 'payment-checkout-providers',
-  });
-  const cfg = parseCheckoutProvidersResponse(body);
-  console.log(
-    '[payment-checkout-providers]',
-    JSON.stringify({
-      payment_provider: cfg.payment_provider,
-      auraxpay: cfg.auraxpay,
-      auraxpay_test: cfg.auraxpay_test,
-      sonicpesa: cfg.sonicpesa,
-      zenopay: cfg.zenopay,
-    }),
-  );
-  return cfg;
+export async function getCheckoutPaymentProviders(opts = {}) {
+  if (!opts.force) {
+    const cached = await readCachedCheckoutProviders();
+    if (cached && typeof cached === 'object' && cached.payment_provider) return cached;
+  }
+  try {
+    const body = await withTimeout(
+      fetchAdminApiJson('/api/payments/checkout-providers', {
+        tag: 'payment-checkout-providers',
+      }),
+      CHECKOUT_PROVIDER_TIMEOUT_MS,
+      'payment-checkout-providers',
+    );
+    const cfg = parseCheckoutProvidersResponse(body);
+    await writeCachedCheckoutProviders(cfg);
+    console.log(
+      '[payment-checkout-providers]',
+      JSON.stringify({
+        payment_provider: cfg.payment_provider,
+        auraxpay: cfg.auraxpay,
+        auraxpay_test: cfg.auraxpay_test,
+        sonicpesa: cfg.sonicpesa,
+        zenopay: cfg.zenopay,
+      }),
+    );
+    return cfg;
+  } catch (e) {
+    const cached = await readCachedCheckoutProviders();
+    if (cached && typeof cached === 'object' && cached.payment_provider) {
+      console.log('[payment-checkout-providers]', 'cache_fallback', e?.message ?? e);
+      return cached;
+    }
+    throw e;
+  }
+}
+
+export async function getCheckoutPaymentProvidersCachedFirst() {
+  const cached = await readCachedCheckoutProviders();
+  void getCheckoutPaymentProviders({ force: true }).catch(() => null);
+  if (cached && typeof cached === 'object' && cached.payment_provider) return cached;
+  return getCheckoutPaymentProviders();
+}
+
+export async function warmPaymentCatalogCache() {
+  await Promise.allSettled([
+    getPlansCachedFirst(),
+    getCheckoutPaymentProvidersCachedFirst(),
+    getPaymentProvidersCachedFirst(),
+  ]);
 }
 
 function buildCreateOrderPayload(payload) {

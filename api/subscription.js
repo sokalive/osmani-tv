@@ -36,6 +36,13 @@ export const SUB_CACHE_KEYS = Object.freeze({
   deviceId: 'osmani:sub:device_id',
   fingerprint: 'osmani:sub:fingerprint',
   revokedAt: 'osmani:sub:revoked_at',
+  amount: 'osmani:sub:amount',
+  currency: 'osmani:sub:currency',
+  planName: 'osmani:sub:plan_name',
+  planId: 'osmani:sub:plan_id',
+  planDurationDays: 'osmani:sub:plan_duration_days',
+  startedAt: 'osmani:sub:started_at',
+  serverTime: 'osmani:sub:server_time',
 });
 
 async function readJson(res) {
@@ -1388,12 +1395,32 @@ export async function getTransferStatus(code) {
 
 export async function readSubscriptionCache() {
   try {
-    const [active, expiresAt, deviceId, fingerprint, revokedAt] = await Promise.all([
+    const [
+      active,
+      expiresAt,
+      deviceId,
+      fingerprint,
+      revokedAt,
+      amount,
+      currency,
+      planName,
+      planId,
+      planDurationDays,
+      startedAt,
+      serverTime,
+    ] = await Promise.all([
       AsyncStorage.getItem(SUB_CACHE_KEYS.active),
       AsyncStorage.getItem(SUB_CACHE_KEYS.expiresAt),
       AsyncStorage.getItem(SUB_CACHE_KEYS.deviceId),
       AsyncStorage.getItem(SUB_CACHE_KEYS.fingerprint),
       AsyncStorage.getItem(SUB_CACHE_KEYS.revokedAt),
+      AsyncStorage.getItem(SUB_CACHE_KEYS.amount),
+      AsyncStorage.getItem(SUB_CACHE_KEYS.currency),
+      AsyncStorage.getItem(SUB_CACHE_KEYS.planName),
+      AsyncStorage.getItem(SUB_CACHE_KEYS.planId),
+      AsyncStorage.getItem(SUB_CACHE_KEYS.planDurationDays),
+      AsyncStorage.getItem(SUB_CACHE_KEYS.startedAt),
+      AsyncStorage.getItem(SUB_CACHE_KEYS.serverTime),
     ]);
     return {
       active: active === '1',
@@ -1401,19 +1428,58 @@ export async function readSubscriptionCache() {
       deviceId: deviceId || null,
       fingerprint: fingerprint || null,
       revokedAt: revokedAt || null,
+      amount: amount || null,
+      currency: currency || null,
+      planName: planName || null,
+      planId: planId || null,
+      planDurationDays: planDurationDays || null,
+      startedAt: startedAt || null,
+      serverTime: serverTime || null,
     };
   } catch {
-    return { active: false, expiresAt: null, deviceId: null, fingerprint: null, revokedAt: null };
+    return {
+      active: false,
+      expiresAt: null,
+      deviceId: null,
+      fingerprint: null,
+      revokedAt: null,
+      amount: null,
+      currency: null,
+      planName: null,
+      planId: null,
+      planDurationDays: null,
+      startedAt: null,
+      serverTime: null,
+    };
   }
 }
 
-export async function writeSubscriptionCache({ active, expiresAt, deviceId, fingerprint }) {
+export async function writeSubscriptionCache({
+  active,
+  expiresAt,
+  deviceId,
+  fingerprint,
+  amount = null,
+  currency = null,
+  planName = null,
+  planId = null,
+  planDurationDays = null,
+  startedAt = null,
+  serverTime = null,
+}) {
   try {
     await AsyncStorage.multiSet([
       [SUB_CACHE_KEYS.active, active ? '1' : '0'],
       [SUB_CACHE_KEYS.expiresAt, expiresAt ? String(expiresAt) : ''],
       [SUB_CACHE_KEYS.deviceId, deviceId ? String(deviceId) : ''],
       [SUB_CACHE_KEYS.fingerprint, fingerprint ? String(fingerprint) : ''],
+      [SUB_CACHE_KEYS.amount, amount != null ? String(amount) : ''],
+      [SUB_CACHE_KEYS.currency, currency ? String(currency) : ''],
+      [SUB_CACHE_KEYS.planName, planName ? String(planName) : ''],
+      [SUB_CACHE_KEYS.planId, planId ? String(planId) : ''],
+      [SUB_CACHE_KEYS.planDurationDays, planDurationDays != null ? String(planDurationDays) : ''],
+      [SUB_CACHE_KEYS.startedAt, startedAt ? String(startedAt) : ''],
+      [SUB_CACHE_KEYS.serverTime, serverTime ? String(serverTime) : ''],
     ]);
   } catch {}
 }
@@ -1425,6 +1491,13 @@ export async function clearSubscriptionCache(reason = 'unknown') {
       SUB_CACHE_KEYS.expiresAt,
       SUB_CACHE_KEYS.deviceId,
       SUB_CACHE_KEYS.fingerprint,
+      SUB_CACHE_KEYS.amount,
+      SUB_CACHE_KEYS.currency,
+      SUB_CACHE_KEYS.planName,
+      SUB_CACHE_KEYS.planId,
+      SUB_CACHE_KEYS.planDurationDays,
+      SUB_CACHE_KEYS.startedAt,
+      SUB_CACHE_KEYS.serverTime,
     ]);
     await AsyncStorage.setItem(SUB_CACHE_KEYS.revokedAt, new Date().toISOString());
     console.log('[SUBSCRIPTION_CACHE]', 'cleared', { reason });
