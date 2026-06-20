@@ -23,12 +23,13 @@ import { Ionicons } from '@expo/vector-icons';
 import EventSource from 'react-native-sse';
 import {
   fetchSubscription,
-  getCheckoutPaymentProviders,
-  getPaymentProviders,
+  getCheckoutPaymentProvidersCachedFirst,
+  getPaymentProvidersCachedFirst,
   getPaymentStatus,
-  getPlans,
+  getPlansCachedFirst,
   resolveCheckoutStartPayment,
 } from '../api/payment';
+import { readCachedPaymentPlans } from '../lib/paymentCatalogCache';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { formatCheckoutPaymentError } from '../lib/paymentCheckoutErrors';
 import { verifySubscription } from '../api/subscription';
@@ -223,9 +224,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     clearTimers();
     doneRef.current = false;
     setStep(1);
-    setPlans([]);
     setPlansError('');
-    setSelectedPlan(null);
     setPhoneNumber('');
     setRemainingSeconds(0);
     setOrderId(null);
@@ -268,21 +267,42 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     return () => loop.stop();
   }, [step, ringRotate]);
 
+  /** When modal opens, refresh subscription in background (never block UI). */
+  useEffect(() => {
+    if (!visible) return undefined;
+    void refreshSubscription();
+  }, [visible, refreshSubscription]);
+
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
     (async () => {
-      setPlansLoading(true);
       setPlansError('');
+      const cached = await readCachedPaymentPlans();
+      if (cancelled) return;
+      if (Array.isArray(cached) && cached.length > 0) {
+        const cachedList = cached.map(normalizePlanRow).filter((p) => p.isActive === true);
+        if (cachedList.length > 0) {
+          setPlans(cachedList);
+          setSelectedPlan((prev) => {
+            if (prev && cachedList.some((x) => x.id === prev.id)) return prev;
+            return cachedList[0] ?? null;
+          });
+        }
+      } else {
+        setPlansLoading(true);
+      }
       try {
-        const raw = await getPlans();
+        const raw = await getPlansCachedFirst();
         if (cancelled) return;
         const list = Array.isArray(raw) ? raw.map(normalizePlanRow).filter((p) => p.isActive === true) : [];
-        setPlans(list);
-        setSelectedPlan((prev) => {
-          if (prev && list.some((x) => x.id === prev.id)) return prev;
-          return list[0] ?? null;
-        });
+        if (list.length > 0) {
+          setPlans(list);
+          setSelectedPlan((prev) => {
+            if (prev && list.some((x) => x.id === prev.id)) return prev;
+            return list[0] ?? null;
+          });
+        }
       } catch (e) {
         if (!cancelled) setPlansError(e?.message ?? 'Imeshindwa kupakia mipango');
       } finally {
@@ -294,13 +314,13 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
-  /** Load active checkout gateway (zenopay | sonicpesa | auraxpay) when modal opens. */
+  /** Load active checkout gateway when modal opens (cache-first). */
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
     (async () => {
       try {
-        const cfg = await getCheckoutPaymentProviders();
+        const cfg = await getCheckoutPaymentProvidersCachedFirst();
         if (cancelled) return;
         setCheckoutProvider(cfg.payment_provider);
         setCheckoutTestMode(cfg.auraxpay_test === true);
@@ -317,29 +337,22 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
-  /** When modal opens, always sync subscription from server (do not trust stale context). */
-  useEffect(() => {
-    if (!visible) return undefined;
-    void refreshSubscription();
-  }, [visible, refreshSubscription]);
-
   /**
-   * Fetch admin-managed payment providers when the modal opens.
-   * On failure or empty list, the local FALLBACK_NETWORKS stays in place.
+   * Fetch admin-managed payment providers when the modal opens (cache-first).
    */
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
     (async () => {
       try {
-        const list = await getPaymentProviders();
+        const list = await getPaymentProvidersCachedFirst();
         if (cancelled) return;
         if (Array.isArray(list) && list.length > 0) {
           setProviders(list);
           setLogoErrors({});
         }
       } catch {
-        // keep fallback providers; do not surface to user
+        // keep FALLBACK_NETWORKS; do not surface to user
       }
     })();
     return () => {
@@ -942,8 +955,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                 >
                   {step === 1 ? (
                     <Pressable
-                      style={[styles.ctaWrap, styles.ctaDockBtn, (!selectedPlan || plansLoading) && styles.ctaDisabled]}
-                      disabled={!selectedPlan || plansLoading}
+                      style={[styles.ctaWrap, styles.ctaDockBtn, !selectedPlan && styles.ctaDisabled]}
+                      disabled={!selectedPlan}
                       onPress={goStep2}
                     >
                       <LinearGradient

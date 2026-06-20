@@ -366,7 +366,6 @@ function ChannelCatalogScreen({
     if (route?.params?.openPremiumAfterExpiry === true) {
       void (async () => {
         if (guardDeviceIntelligence().ok === false) return;
-        await awaitPremiumAccessSnapshot?.();
         setPremiumModalVisible(true);
       })();
       navigation.setParams({ openPremiumAfterExpiry: false });
@@ -742,12 +741,15 @@ function ChannelCatalogScreen({
         return;
       }
       const isFree = freeMode || channelIsFreeAccess(playerChannel, { freeMode });
+      const quickSnapshot = getPremiumAccessSnapshot();
+      /** Unpaid premium taps open payment UI immediately — never block on subscription verify. */
+      const unpaidPremiumTap = isPremium && !isFree && !quickSnapshot.isSubscribed;
       const snapshot =
-        premiumPlaybackReady || isFree
-          ? getPremiumAccessSnapshot()
+        premiumPlaybackReady || isFree || unpaidPremiumTap
+          ? quickSnapshot
           : await awaitPremiumAccessSnapshot();
       logChannelCardTap(
-        premiumPlaybackReady || isFree ? 'snapshot_sync' : 'snapshot_ready',
+        premiumPlaybackReady || isFree || unpaidPremiumTap ? 'snapshot_sync' : 'snapshot_ready',
         {
           channelKey,
           isFree,
@@ -1012,6 +1014,7 @@ function ChannelCatalogScreen({
             onPremiumRequired={onBannerPremiumRequired}
             verifySubscriptionBeforePlay={verifySubscriptionBeforePlay}
             awaitPremiumAccessSnapshot={awaitPremiumAccessSnapshot}
+            getPremiumAccessSnapshot={getPremiumAccessSnapshot}
             premiumPlaybackReady={premiumPlaybackReady}
             openPaymentModal={openPremiumModal}
           />

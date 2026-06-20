@@ -32,6 +32,7 @@ import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
+import { warmPaymentCatalogCache } from '../api/payment';
 import {
   isConfirmedSubscriptionLoss,
   subscriptionTransferSseRole,
@@ -632,6 +633,7 @@ export function OsmaniAppProvider({ children }) {
       }),
     );
     void refresh({ showGlobalLoading: false, preserveDataOnError: true, forceNetwork: true });
+    void warmPaymentCatalogCache();
   }, [refresh]);
 
   // Cold-start: recover (in case of reinstall) and verify — background, never blocks splash.
