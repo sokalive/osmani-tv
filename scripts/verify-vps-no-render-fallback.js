@@ -42,13 +42,13 @@ if (!catalogFetch.includes('isVpsApiTarget')) {
 }
 
 const apiBase = read('lib/apiBaseUrl.js');
-if (!apiBase.includes('forcedPlayVpsApiBaseUrl') || !apiBase.includes('isPlayStoreVpsBuild')) {
-  fail('apiBaseUrl must force VPS from native versionCode >= 23');
+const playVps = read('lib/playVpsApiHost.js');
+if (!apiBase.includes('forcedPlayVpsApiBaseUrl') || !playVps.includes('PLAY_OTA_MIN_VERSION_CODE = 16')) {
+  fail('apiBaseUrl must force VPS from native versionCode >= 16 (OTA migration)');
 } else {
-  pass('apiBaseUrl forces VPS for Play versionCode >= 23');
+  pass('apiBaseUrl forces VPS for Play versionCode >= 16');
 }
 
-const playVps = read('lib/playVpsApiHost.js');
 if (!playVps.includes('nativeBuildVersion')) {
   fail('playVpsApiHost must read Application.nativeBuildVersion');
 } else {
