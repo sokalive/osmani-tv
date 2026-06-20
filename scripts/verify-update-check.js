@@ -16,7 +16,7 @@ const {
 } = require('../lib/parseUpdateCheckResponse');
 
 const BASE =
-  (process.env.EXPO_PUBLIC_API_URL || 'http://144.91.117.90:10001').replace(/\/+$/, '');
+  (process.env.EXPO_PUBLIC_API_URL || 'https://api.osmanitv.com').replace(/\/+$/, '');
 
 function arg(name, fallback) {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -107,6 +107,53 @@ function unitTests() {
     { installedVersionCode: 16 },
   );
   assert('prod shape v16 → NONE', prodV16?.decision === 'NONE');
+
+  const adminOffPlay = parseUpdateCheckResponse(
+    {
+      decision: 'NONE',
+      source: 'play',
+      soft_update: false,
+      force_update: false,
+      latest_version_code: 24,
+      playstore_url: 'https://play.google.com/store/apps/details?id=com.burudanitv.app',
+    },
+    { installedVersionCode: 19 },
+  );
+  assert('admin OFF + play metadata → NONE (no silent popup)', adminOffPlay?.decision === 'NONE');
+
+  const adminOnPlay = parseUpdateCheckResponse(
+    {
+      decision: 'SOFT',
+      source: 'play',
+      soft_update: true,
+      latest_version_code: 24,
+      playstore_url: 'https://play.google.com/store/apps/details?id=com.burudanitv.app',
+    },
+    { installedVersionCode: 19 },
+  );
+  assert('admin ON soft v19 → SOFT', adminOnPlay?.decision === 'SOFT');
+
+  const v24Gate = parseUpdateCheckResponse(
+    {
+      decision: 'SOFT',
+      soft_update: true,
+      latest_version_code: 24,
+      playstore_url: 'https://play.google.com/store/apps/details?id=com.burudanitv.app',
+    },
+    { installedVersionCode: 24 },
+  );
+  assert('v24 hard gate → NONE even if admin SOFT', v24Gate?.decision === 'NONE');
+
+  const v23Gate = parseUpdateCheckResponse(
+    {
+      decision: 'SOFT',
+      soft_update: true,
+      latest_version_code: 24,
+      playstore_url: 'https://play.google.com/store/apps/details?id=com.burudanitv.app',
+    },
+    { installedVersionCode: 23 },
+  );
+  assert('v23 below 24 → SOFT', v23Gate?.decision === 'SOFT');
 }
 
 async function fetchUpdateCheck(installed, pkg) {
