@@ -4,7 +4,7 @@
 /** Publish remaining runtimes after 1.6.0 (already published). */
 const { spawnSync } = require('child_process');
 
-const RUNTIMES = ['1.7.0', '1.7.1', '1.7.2', '1.8.0', '1.8.1', '1.8.2'];
+const RUNTIMES = ['1.7.0', '1.7.1', '1.7.2', '1.8.0', '1.8.1'];
 const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 
 for (const runtime of RUNTIMES) {
