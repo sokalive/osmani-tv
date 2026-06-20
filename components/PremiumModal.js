@@ -26,10 +26,19 @@ import {
   getCheckoutPaymentProvidersCachedFirst,
   getPaymentProvidersCachedFirst,
   getPaymentStatus,
+  getPlans,
   getPlansCachedFirst,
+  refreshPlansInBackground,
   resolveCheckoutStartPayment,
 } from '../api/payment';
 import { readCachedPaymentPlans } from '../lib/paymentCatalogCache';
+import {
+  DEFAULT_FALLBACK_PLANS,
+  formatPlansLoadError,
+  mergeWithFallbackPlans,
+  parsePlansFromRaw,
+  resolvePlanPrice,
+} from '../lib/paymentPlansDisplay';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { formatCheckoutPaymentError } from '../lib/paymentCheckoutErrors';
 import { verifySubscription } from '../api/subscription';
@@ -125,27 +134,9 @@ function latestExpiryIso(...candidates) {
   return bestStr;
 }
 
-function normalizePlanRow(raw) {
-  const active = raw?.is_active === true || raw?.isActive === true;
-  return {
-    id: String(raw?.id ?? raw?.plan_id ?? '').trim(),
-    name: String(raw?.name ?? raw?.title ?? '').trim(),
-    price: Number(raw?.price ?? raw?.amount ?? 0),
-    duration: String(
-      raw?.duration_days ??
-        raw?.durationDays ??
-        raw?.days ??
-        raw?.validity_days ??
-        raw?.validityDays ??
-        raw?.period_days ??
-        raw?.periodDays ??
-        raw?.duration ??
-        raw?.duration_label ??
-        raw?.duration_text ??
-        '',
-    ).trim(),
-    isActive: active,
-  };
+function pickSelectedPlan(list, prev) {
+  if (prev && list.some((x) => x.id === prev.id)) return prev;
+  return list[0] ?? DEFAULT_FALLBACK_PLANS[0];
 }
 
 /**
@@ -155,10 +146,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const insets = useSafeAreaInsets();
   const { refreshSubscription, unlockChannels } = useOsmaniApp();
   const [step, setStep] = useState(1);
-  const [plans, setPlans] = useState([]);
+  const [plans, setPlans] = useState(() => [...DEFAULT_FALLBACK_PLANS]);
   const [plansLoading, setPlansLoading] = useState(false);
   const [plansError, setPlansError] = useState('');
-  const [selectedPlan, setSelectedPlan] = useState(null);
+  const [selectedPlan, setSelectedPlan] = useState(() => DEFAULT_FALLBACK_PLANS[0]);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [orderId, setOrderId] = useState(null);
@@ -225,6 +216,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     doneRef.current = false;
     setStep(1);
     setPlansError('');
+    setPlans((prev) => (prev.length > 0 ? prev : [...DEFAULT_FALLBACK_PLANS]));
+    setSelectedPlan((prev) => prev ?? DEFAULT_FALLBACK_PLANS[0]);
     setPhoneNumber('');
     setRemainingSeconds(0);
     setOrderId(null);
@@ -278,36 +271,35 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     let cancelled = false;
     (async () => {
       setPlansError('');
-      const cached = await readCachedPaymentPlans();
+      const cachedRaw = await readCachedPaymentPlans({ ignoreTtl: true });
       if (cancelled) return;
-      if (Array.isArray(cached) && cached.length > 0) {
-        const cachedList = cached.map(normalizePlanRow).filter((p) => p.isActive === true);
-        if (cachedList.length > 0) {
-          setPlans(cachedList);
-          setSelectedPlan((prev) => {
-            if (prev && cachedList.some((x) => x.id === prev.id)) return prev;
-            return cachedList[0] ?? null;
-          });
-        }
-      } else {
-        setPlansLoading(true);
-      }
+      let display = mergeWithFallbackPlans(parsePlansFromRaw(cachedRaw));
+      setPlans(display);
+      setSelectedPlan((prev) => pickSelectedPlan(display, prev));
+      setPlansLoading(false);
+
+      refreshPlansInBackground();
       try {
         const raw = await getPlansCachedFirst();
         if (cancelled) return;
-        const list = Array.isArray(raw) ? raw.map(normalizePlanRow).filter((p) => p.isActive === true) : [];
-        if (list.length > 0) {
-          setPlans(list);
-          setSelectedPlan((prev) => {
-            if (prev && list.some((x) => x.id === prev.id)) return prev;
-            return list[0] ?? null;
-          });
+        if (raw) {
+          display = mergeWithFallbackPlans(parsePlansFromRaw(raw));
+          setPlans(display);
+          setSelectedPlan((prev) => pickSelectedPlan(display, prev));
         }
       } catch (e) {
-        if (!cancelled) setPlansError(e?.message ?? 'Imeshindwa kupakia mipango');
-      } finally {
-        if (!cancelled) setPlansLoading(false);
+        const msg = formatPlansLoadError(e);
+        if (!cancelled && msg) setPlansError(msg);
       }
+
+      void getPlans({ force: true })
+        .then((raw) => {
+          if (cancelled || !raw) return;
+          const fresh = mergeWithFallbackPlans(parsePlansFromRaw(raw));
+          setPlans(fresh);
+          setSelectedPlan((prev) => pickSelectedPlan(fresh, prev));
+        })
+        .catch(() => null);
     })();
     return () => {
       cancelled = true;
@@ -558,10 +550,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const isPhoneValid =
     !!phoneNumber && phoneNumber.length === 10 && phoneNumber.startsWith('0');
 
-  const selectedAmountDisplay =
-    selectedPlan && Number.isFinite(selectedPlan.price)
-      ? `TSh ${formatPriceTz(selectedPlan.price)}`
-      : 'TSh —';
+  const selectedAmountDisplay = `TSh ${formatPriceTz(resolvePlanPrice(selectedPlan))}`;
 
   const ringSpin = ringRotate.interpolate({
     inputRange: [0, 1],

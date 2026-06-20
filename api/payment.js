@@ -12,11 +12,16 @@ import {
   writeCachedPaymentPlans,
   writeCachedPaymentProviders,
 } from '../lib/paymentCatalogCache';
+import { parsePlansFromRaw } from '../lib/paymentPlansDisplay';
 
-/** Max wait for payment UI network fetches — modal shows cache/defaults first. */
-export const PLANS_FETCH_TIMEOUT_MS = 3000;
+/** UI-blocking fetch cap (modal already shows defaults/cache). */
+export const PLANS_UI_TIMEOUT_MS = 3000;
+/** Background refresh — VPS /api/plans can be slow (~10–20s). */
+export const PLANS_BACKGROUND_TIMEOUT_MS = 25000;
 export const CHECKOUT_PROVIDER_TIMEOUT_MS = 3000;
+export const CHECKOUT_PROVIDER_BACKGROUND_TIMEOUT_MS = 15000;
 export const PAYMENT_PROVIDERS_TIMEOUT_MS = 3000;
+export const PAYMENT_PROVIDERS_BACKGROUND_TIMEOUT_MS = 15000;
 
 /**
  * Payment + subscription HTTP API (ZenoPay STK push).
@@ -119,29 +124,36 @@ function isExpiryValid(expiresAt) {
   return Number.isFinite(t) && t > Date.now();
 }
 
-function normalizePlansBody(body) {
+function extractPlansArray(body) {
   if (Array.isArray(body)) return body;
   if (body && Array.isArray(body.plans)) return body.plans;
   if (body && Array.isArray(body.data)) return body.data;
   return null;
 }
 
+async function readAnyCachedPlans() {
+  const fresh = await readCachedPaymentPlans();
+  if (Array.isArray(fresh) && fresh.length > 0) return fresh;
+  return readCachedPaymentPlans({ ignoreTtl: true });
+}
+
 /**
  * @returns {Promise<unknown[]>}
  */
 export async function getPlans(opts = {}) {
+  const timeoutMs = opts.force ? PLANS_BACKGROUND_TIMEOUT_MS : PLANS_UI_TIMEOUT_MS;
   if (!opts.force) {
-    const cached = await readCachedPaymentPlans();
+    const cached = await readAnyCachedPlans();
     if (Array.isArray(cached) && cached.length > 0) return cached;
   }
   try {
     const body = await withTimeout(
       fetchAdminApiJson('/api/plans', { tag: 'payment-plans' }),
-      PLANS_FETCH_TIMEOUT_MS,
-      'payment-plans',
+      timeoutMs,
+      'plans-timeout',
     );
-    const list = normalizePlansBody(body);
-    if (!list) throw new Error('Invalid plans response');
+    const list = extractPlansArray(body);
+    if (!list || parsePlansFromRaw(list).length === 0) throw new Error('Invalid plans response');
     await writeCachedPaymentPlans(list);
     return list;
   } catch (e) {
@@ -154,12 +166,20 @@ export async function getPlans(opts = {}) {
   }
 }
 
-/** Return cached plans immediately when available; refresh in background. */
+/** Cached/stale first; network refresh never blocks UI. Returns null when only defaults apply. */
 export async function getPlansCachedFirst() {
-  const cached = await readCachedPaymentPlans();
+  const cached = await readAnyCachedPlans();
   void getPlans({ force: true }).catch(() => null);
   if (Array.isArray(cached) && cached.length > 0) return cached;
-  return getPlans();
+  try {
+    return await withTimeout(getPlans({ force: true }), PLANS_UI_TIMEOUT_MS, 'plans-timeout');
+  } catch {
+    return null;
+  }
+}
+
+export function refreshPlansInBackground() {
+  void getPlans({ force: true }).catch(() => null);
 }
 
 function pickProviderLogoUrl(raw) {
@@ -211,6 +231,7 @@ function normalizeProviderRow(raw) {
  * @returns {Promise<{ id: string; name: string; logoUrl: string|null; active: boolean }[]>}
  */
 export async function getPaymentProviders(opts = {}) {
+  const timeoutMs = opts.force ? PAYMENT_PROVIDERS_BACKGROUND_TIMEOUT_MS : PAYMENT_PROVIDERS_TIMEOUT_MS;
   if (!opts.force) {
     const cached = await readCachedPaymentProviders();
     if (Array.isArray(cached) && cached.length > 0) return cached;
@@ -218,8 +239,8 @@ export async function getPaymentProviders(opts = {}) {
   try {
     const body = await withTimeout(
       fetchAdminApiJson('/api/payment-providers', { tag: 'payment-providers' }),
-      PAYMENT_PROVIDERS_TIMEOUT_MS,
-      'payment-providers',
+      timeoutMs,
+      'payment-providers-timeout',
     );
     let raw = [];
     if (Array.isArray(body)) raw = body;
@@ -251,6 +272,9 @@ export async function getPaymentProvidersCachedFirst() {
  * GET /api/payments/checkout-providers
  */
 export async function getCheckoutPaymentProviders(opts = {}) {
+  const timeoutMs = opts.force
+    ? CHECKOUT_PROVIDER_BACKGROUND_TIMEOUT_MS
+    : CHECKOUT_PROVIDER_TIMEOUT_MS;
   if (!opts.force) {
     const cached = await readCachedCheckoutProviders();
     if (cached && typeof cached === 'object' && cached.payment_provider) return cached;
@@ -260,8 +284,8 @@ export async function getCheckoutPaymentProviders(opts = {}) {
       fetchAdminApiJson('/api/payments/checkout-providers', {
         tag: 'payment-checkout-providers',
       }),
-      CHECKOUT_PROVIDER_TIMEOUT_MS,
-      'payment-checkout-providers',
+      timeoutMs,
+      'checkout-providers-timeout',
     );
     const cfg = parseCheckoutProvidersResponse(body);
     await writeCachedCheckoutProviders(cfg);
