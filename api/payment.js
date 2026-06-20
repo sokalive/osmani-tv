@@ -1,5 +1,5 @@
 import { parseCheckoutProvidersResponse } from '../lib/checkoutPaymentProviders';
-import { formatCheckoutPaymentError } from '../lib/paymentCheckoutErrors';
+import { formatCheckoutPaymentError, extractPaymentBackendReason, logPaymentCheckoutFailure, CheckoutPaymentError } from '../lib/paymentCheckoutErrors';
 import { resolveMediaAssetUrl } from '../lib/mediaDelivery';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { fetchAdminApiJson, fetchAdminApiResponse } from '../lib/catalogApiFetch';
@@ -182,7 +182,18 @@ export async function getCheckoutPaymentProviders() {
   const body = await fetchAdminApiJson('/api/payments/checkout-providers', {
     tag: 'payment-checkout-providers',
   });
-  return parseCheckoutProvidersResponse(body);
+  const cfg = parseCheckoutProvidersResponse(body);
+  console.log(
+    '[payment-checkout-providers]',
+    JSON.stringify({
+      payment_provider: cfg.payment_provider,
+      auraxpay: cfg.auraxpay,
+      auraxpay_test: cfg.auraxpay_test,
+      sonicpesa: cfg.sonicpesa,
+      zenopay: cfg.zenopay,
+    }),
+  );
+  return cfg;
 }
 
 function buildCreateOrderPayload(payload) {
@@ -218,19 +229,32 @@ async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
     break;
   }
 
-  const { res, parsed: body } = last;
+  const { res, parsed: body, url } = last;
   if (!res.ok) {
-    const raw =
-      body?.error != null
-        ? String(body.error)
-        : body?.message != null
-          ? String(body.message)
-          : body?.details != null && typeof body.details === 'string'
-            ? body.details
-            : `HTTP ${res.status}`;
-    throw new Error(
-      formatCheckoutPaymentError(raw, { httpStatus: res.status, provider }),
-    );
+    const backendReason = extractPaymentBackendReason(body, res.status);
+    const providerHttpStatus = Number(body?.httpStatus ?? body?.providerHttpStatus);
+    logPaymentCheckoutFailure({
+      phase: 'create-order-failed',
+      provider,
+      path: url,
+      httpStatus: res.status,
+      providerHttpStatus: Number.isFinite(providerHttpStatus) ? providerHttpStatus : undefined,
+      backendReason,
+      apiStyle: body?.apiStyle ?? undefined,
+      orderId: body?.orderId ?? body?.order_id ?? undefined,
+    });
+    const userMessage = formatCheckoutPaymentError(backendReason, {
+      httpStatus: res.status,
+      provider,
+      body,
+    });
+    throw new CheckoutPaymentError(userMessage, {
+      backendReason,
+      httpStatus: res.status,
+      provider,
+      path: url,
+      providerHttpStatus: Number.isFinite(providerHttpStatus) ? providerHttpStatus : undefined,
+    });
   }
   const orderId = pickOrderId(body);
   if (!orderId) throw new Error('Missing order_id from server');

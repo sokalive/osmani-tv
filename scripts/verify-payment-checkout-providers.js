@@ -8,7 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { formatCheckoutPaymentError } = require('../lib/paymentCheckoutErrors');
+const { formatCheckoutPaymentError, extractPaymentBackendReason } = require('../lib/paymentCheckoutErrors');
 
 const root = path.join(__dirname, '..');
 
@@ -99,10 +99,19 @@ assert(
 );
 assert(isCheckoutGatewayEnabled('auraxpay', { auraxpay: false }) === false, 'aurax disabled when flag false');
 
-// Swahili error mapping (no raw Endpoint not found)
-const swErr = formatCheckoutPaymentError('Endpoint not found', { provider: 'auraxpay', httpStatus: 404 });
+// Swahili error mapping (no raw Endpoint not found; no misleading "haipatikani" when admin Live)
+const swErr = formatCheckoutPaymentError('Endpoint not found', {
+  provider: 'auraxpay',
+  httpStatus: 502,
+  body: { error: 'Endpoint not found', apiStyle: 'aurax', httpStatus: 404 },
+});
 assert(!/endpoint not found/i.test(swErr), 'Endpoint not found mapped to Swahili');
-assert(swErr.includes('Aurax Pay'), 'aurax-specific Swahili message');
+assert(/usanidi|seva/i.test(swErr), 'Aurax 502 gateway error mentions usanidi/seva not feature off');
+assert(
+  extractPaymentBackendReason({ providerMessage: 'Endpoint not found', error: 'Endpoint not found' }, 502) ===
+    'Endpoint not found',
+  'extractPaymentBackendReason merges provider fields',
+);
 
 // Live production shape (no auraxpay field yet)
 const legacy = parseCheckoutProvidersResponse({
@@ -135,6 +144,7 @@ assert(aurax.auraxpay === true, 'auraxpay flag true when enabled');
 
 const checkoutSrc = fs.readFileSync(path.join(root, 'lib', 'checkoutPaymentProviders.js'), 'utf8');
 assert(checkoutSrc.includes('resolveActiveCheckoutProvider'), 'resolveActiveCheckoutProvider exported');
+assert(checkoutSrc.includes('auraxpay_test'), 'auraxpay_test parsed from checkout-providers');
 
 const gateways = listEnabledCheckoutGateways(aurax);
 assert(gateways.length === 3, 'three enabled gateways when all true');
@@ -145,6 +155,8 @@ const paymentSrc = fs.readFileSync(path.join(root, 'api', 'payment.js'), 'utf8')
 assert(paymentSrc.includes('/payments/auraxpay/create-order'), 'aurax create-order endpoint');
 assert(paymentSrc.includes('/payments/auraxPay/create-order'), 'auraxPay path alias fallback');
 assert(paymentSrc.includes('formatCheckoutPaymentError'), 'payment API maps user-facing errors');
+assert(paymentSrc.includes('CheckoutPaymentError'), 'structured checkout errors with backendReason');
+assert(paymentSrc.includes('logPaymentCheckoutFailure'), 'payment API logs backend reason');
 assert(paymentSrc.includes('createAuraxpayOrder'), 'createAuraxpayOrder export');
 assert(paymentSrc.includes('resolveCheckoutStartPayment'), 'resolveCheckoutStartPayment export');
 assert(!paymentSrc.includes("provider === 'sonicpesa' ? 'sonicpesa' : 'zenopay'"), 'binary provider collapse removed');
@@ -157,6 +169,7 @@ assert(!modalSrc.includes('payButtonLabel'), 'no provider-specific pay button la
 assert(!modalSrc.includes('Njia ya malipo'), 'no visible checkout gateway cards');
 assert(!modalSrc.includes('checkoutGateways'), 'no checkout gateway card grid');
 assert(modalSrc.includes('formatCheckoutPaymentError'), 'PremiumModal maps payment failure text');
+assert(modalSrc.includes('checkoutTestMode'), 'PremiumModal tracks auraxpay_test for admin probe UI');
 
 // VersionCode / runtime backward compatibility (OTA targets)
 const appConfig = require(path.join(root, 'app.config.js'));

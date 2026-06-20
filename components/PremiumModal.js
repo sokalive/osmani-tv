@@ -169,6 +169,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [providers, setProviders] = useState(FALLBACK_NETWORKS);
   const [logoErrors, setLogoErrors] = useState({});
   const [checkoutProvider, setCheckoutProvider] = useState('zenopay');
+  const [checkoutTestMode, setCheckoutTestMode] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -302,6 +303,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         const cfg = await getCheckoutPaymentProviders();
         if (cancelled) return;
         setCheckoutProvider(cfg.payment_provider);
+        setCheckoutTestMode(cfg.auraxpay_test === true);
+        console.log('[PremiumModal]', 'checkout_provider', cfg.payment_provider, {
+          auraxpay: cfg.auraxpay,
+          auraxpay_test: cfg.auraxpay_test,
+        });
       } catch {
         if (!cancelled) setCheckoutProvider('zenopay');
       }
@@ -423,6 +429,13 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           provider: checkoutProvider,
         }) || 'Malipo hayajafanikiwa',
       );
+      if (reason) {
+        console.log(
+          '[PremiumModal]',
+          'payment_poll_failed',
+          JSON.stringify({ provider: checkoutProvider, backendReason: reason }),
+        );
+      }
       setStep(5);
     },
     [clearTimers, checkoutProvider],
@@ -575,7 +588,25 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       setRemainingSeconds(wait);
       setStep(3);
     } catch (e) {
-      Alert.alert('Malipo', e?.message ?? 'Imeshindwa kuanzisha malipo');
+      const userMsg = e?.userMessage ?? e?.message ?? 'Imeshindwa kuanzisha malipo';
+      if (e?.backendReason) {
+        console.log(
+          '[PremiumModal]',
+          'payment_start_failed',
+          JSON.stringify({
+            provider: checkoutProvider,
+            backendReason: e.backendReason,
+            httpStatus: e.httpStatus,
+            path: e.path,
+            userMsg,
+          }),
+        );
+      }
+      let alertMsg = userMsg;
+      if (checkoutTestMode && e?.backendReason) {
+        alertMsg = `${userMsg}\n\n[Jaribio] ${e.backendReason}`;
+      }
+      Alert.alert('Malipo', alertMsg);
     } finally {
       setSubmitting(false);
     }
