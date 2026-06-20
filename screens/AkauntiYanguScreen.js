@@ -235,12 +235,11 @@ export default function AkauntiYanguScreen() {
   }, [isSubscribed, subscriptionDetails]);
 
   // Card 5 (status)
-  const statusLabel =
-    isSubscribed || subscriptionSyncLoaded
-      ? isSubscribed
-        ? 'ACTIVE'
-        : 'HUNA USAJILI'
-      : 'INAPAKIA…';
+  const statusLabel = !subscriptionSyncLoaded
+    ? 'INAPAKIA…'
+    : isSubscribed
+      ? 'ACTIVE'
+      : 'HUNA USAJILI';
 
   const syncCooldownFromStorage = useCallback(async () => {
     const end = await readOfferCodeCooldownEndMs();

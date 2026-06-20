@@ -23,13 +23,12 @@ import { Ionicons } from '@expo/vector-icons';
 import EventSource from 'react-native-sse';
 import {
   fetchSubscription,
-  getCheckoutPaymentProvidersCachedFirst,
-  getPaymentProvidersCachedFirst,
+  getCheckoutPaymentProviders,
+  getPaymentProviders,
   getPaymentStatus,
-  getPlansCachedFirst,
+  getPlans,
   resolveCheckoutStartPayment,
 } from '../api/payment';
-import { readCachedPaymentPlans } from '../lib/paymentCatalogCache';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { formatCheckoutPaymentError } from '../lib/paymentCheckoutErrors';
 import { verifySubscription } from '../api/subscription';
@@ -269,33 +268,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     return () => loop.stop();
   }, [step, ringRotate]);
 
-  /** When modal opens, refresh subscription in background (never block UI). */
-  useEffect(() => {
-    if (!visible) return undefined;
-    void refreshSubscription();
-  }, [visible, refreshSubscription]);
-
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
     (async () => {
+      setPlansLoading(true);
       setPlansError('');
-      const cached = await readCachedPaymentPlans();
-      if (cancelled) return;
-      if (Array.isArray(cached) && cached.length > 0) {
-        const cachedList = cached.map(normalizePlanRow).filter((p) => p.isActive === true);
-        if (cachedList.length > 0) {
-          setPlans(cachedList);
-          setSelectedPlan((prev) => {
-            if (prev && cachedList.some((x) => x.id === prev.id)) return prev;
-            return cachedList[0] ?? null;
-          });
-        }
-      } else {
-        setPlansLoading(true);
-      }
       try {
-        const raw = await getPlansCachedFirst();
+        const raw = await getPlans();
         if (cancelled) return;
         const list = Array.isArray(raw) ? raw.map(normalizePlanRow).filter((p) => p.isActive === true) : [];
         setPlans(list);
@@ -314,13 +294,13 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
-  /** Load active checkout gateway when modal opens (cache-first). */
+  /** Load active checkout gateway (zenopay | sonicpesa | auraxpay) when modal opens. */
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
     (async () => {
       try {
-        const cfg = await getCheckoutPaymentProvidersCachedFirst();
+        const cfg = await getCheckoutPaymentProviders();
         if (cancelled) return;
         setCheckoutProvider(cfg.payment_provider);
         setCheckoutTestMode(cfg.auraxpay_test === true);
@@ -337,15 +317,22 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
+  /** When modal opens, always sync subscription from server (do not trust stale context). */
+  useEffect(() => {
+    if (!visible) return undefined;
+    void refreshSubscription();
+  }, [visible, refreshSubscription]);
+
   /**
-   * Fetch admin-managed payment providers when the modal opens (cache-first).
+   * Fetch admin-managed payment providers when the modal opens.
+   * On failure or empty list, the local FALLBACK_NETWORKS stays in place.
    */
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
     (async () => {
       try {
-        const list = await getPaymentProvidersCachedFirst();
+        const list = await getPaymentProviders();
         if (cancelled) return;
         if (Array.isArray(list) && list.length > 0) {
           setProviders(list);

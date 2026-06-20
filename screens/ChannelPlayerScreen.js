@@ -172,10 +172,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       ? routeTrialBootstrap
       : null;
   const [accessChecked, setAccessChecked] = useState(
-    () => !channelIsPremium || freeMode || viaTrialPlayback || isSubscribed,
+    () => !channelIsPremium || freeMode || viaTrialPlayback,
   );
   const [accessAllowed, setAccessAllowed] = useState(
-    () => !channelIsPremium || freeMode || viaTrialPlayback || isSubscribed,
+    () => !channelIsPremium || freeMode || viaTrialPlayback,
   );
 
   const streams = [
@@ -652,14 +652,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return undefined;
     }
 
-    if (isSubscribed) {
-      setAccessChecked(true);
-      setAccessAllowed(true);
-      premiumGateSessionRef.current = { channelKey, granted: true };
-      void gateForPlayback('player-mount');
-      return undefined;
-    }
-
     if (
       premiumGateSessionRef.current.granted &&
       premiumGateSessionRef.current.channelKey === channelKey
@@ -697,7 +689,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     channelIsPremium,
     freeMode,
     viaTrialPlayback,
-    isSubscribed,
     gateForPlayback,
     navigation,
   ]);
