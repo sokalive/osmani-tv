@@ -18,30 +18,27 @@ for (const runtime of RUNTIMES) {
     console.log(`[dry-run] OTA_RUNTIME_TARGET=${runtime} eas update --channel production`);
     continue;
   }
-  const result = spawnSync(
-    'npx',
-    [
-      'eas-cli',
-      'update',
-      '--channel',
-      'production',
-      '--environment',
-      'production',
-      '--message',
-      msg,
-      '--non-interactive',
-    ],
-    {
-      stdio: 'inherit',
-      shell: true,
-      env: {
-        ...process.env,
-        CI: '1',
-        OTA_RUNTIME_TARGET: runtime,
-        EXPO_PUBLIC_API_URL: 'https://api.osmanitv.com',
-      },
+  const args = [
+    'eas-cli',
+    'update',
+    '--channel',
+    'production',
+    '--environment',
+    'production',
+    '--message',
+    msg,
+    '--non-interactive',
+  ];
+  const result = spawnSync('npx', args, {
+    stdio: 'inherit',
+    shell: false,
+    env: {
+      ...process.env,
+      CI: '1',
+      OTA_RUNTIME_TARGET: runtime,
+      EXPO_PUBLIC_API_URL: 'https://api.osmanitv.com',
     },
-  );
+  });
   if (result.status !== 0) {
     console.error(`FAILED runtime ${runtime} exit ${result.status}`);
     process.exit(result.status ?? 1);
