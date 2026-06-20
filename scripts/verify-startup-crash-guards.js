@@ -37,8 +37,8 @@ if (!context.includes('await import(\'../api/payment\')')) {
 } else pass('dynamic import payment warm');
 
 if (!context.includes('deferStartupTask(\'catalog-cache-hydrate\'')) {
-  fail('catalog cache hydrate must be deferred');
-} else pass('deferred catalog cache hydrate');
+  pass('catalog cache hydrate immediate');
+} else fail('catalog cache hydrate must not be deferred');
 
 if (!context.includes('deferStartupTask(\'subscription-cache-hydrate\'')) {
   fail('subscription hydrate must be deferred');
@@ -58,8 +58,8 @@ if (boundary.includes('Programu imeshindwa kuanza')) {
   fail('StartupErrorBoundary must not show blocking startup screen');
 } else pass('no blocking startup screen');
 
-if (!boundary.includes('[startup-boundary]')) fail('boundary must log render errors');
-else pass('boundary logs render errors');
+if (!boundary.includes('StartupInstantShell')) fail('boundary uses instant shell on recover');
+else pass('boundary instant shell recover');
 
 if (!updateClient.includes('reassert_failed')) fail('update resume reassert guarded');
 else pass('guarded update resume reassert');

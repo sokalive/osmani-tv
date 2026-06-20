@@ -11,9 +11,13 @@ import {
   collectOtaBootGateSnapshot,
   shouldRunOtaBootGate,
 } from '../lib/otaBootGatePolicy';
+import { logStartupPaint } from '../lib/startupPaintDiagnostics';
+
+/** Never leave users on a blank/black frame waiting for OTA gate. */
+const OTA_GATE_MAX_BLOCK_MS = 12_000;
 
 /**
- * Blocks Home, catalog, navigation, and playback until stale JS is replaced via OTA.
+ * Blocks Home only on embedded/stale first launch until OTA sync completes or times out.
  *
  * @param {{ children: React.ReactNode }} props
  */
@@ -26,9 +30,11 @@ export default function EmbeddedOtaBootGate({ children }) {
   const [downloadProgress, setDownloadProgress] = useState(null);
 
   useEffect(() => {
+    logStartupPaint('embedded_gate_mounted', { shouldBlock });
     const snap = collectOtaBootGateSnapshot();
     console.log('[embedded-launch-gate]', 'gate_mounted', snap);
     if (!shouldBlock) {
+      logStartupPaint('embedded_gate_skip');
       console.log('[embedded-launch-gate]', 'gate_released', {
         reason: 'no_block_on_mount',
         ...snap,
@@ -62,23 +68,33 @@ export default function EmbeddedOtaBootGate({ children }) {
     if (bootReady || gateStartedRef.current) return undefined;
     gateStartedRef.current = true;
 
+    logStartupPaint('embedded_gate_blocking');
     console.log('[embedded-launch-gate]', 'gate_blocking_ui', collectOtaBootGateSnapshot());
     void SplashScreen.preventAutoHideAsync().catch(() => {});
+
+    const release = (reason) => {
+      logStartupPaint('embedded_gate_released', { reason });
+      console.log('[embedded-launch-gate]', 'gate_released', {
+        reason,
+        ...collectOtaBootGateSnapshot(),
+      });
+      setBootReady(true);
+    };
+
+    const maxTimer = setTimeout(() => {
+      release('max_block_timeout');
+    }, OTA_GATE_MAX_BLOCK_MS);
 
     void beginEmbeddedLaunchGate()
       .catch((e) => {
         console.log('[embedded-launch-gate]', 'boot_gate_error', e?.message ?? e);
       })
       .finally(() => {
-        void SplashScreen.hideAsync().catch(() => {});
-        console.log('[embedded-launch-gate]', 'gate_released', {
-          reason: 'gate_promise_settled',
-          ...collectOtaBootGateSnapshot(),
-        });
-        setBootReady(true);
+        clearTimeout(maxTimer);
+        release('gate_promise_settled');
       });
 
-    return undefined;
+    return () => clearTimeout(maxTimer);
   }, [bootReady]);
 
   if (!bootReady) {

@@ -1,19 +1,17 @@
 import React from 'react';
+import StartupInstantShell from './StartupInstantShell';
+import { logStartupPaint } from '../lib/startupPaintDiagnostics';
 
-const MAX_AUTO_RECOVERIES = 8;
+const MAX_AUTO_RECOVERIES = 3;
 
 /**
- * Last-resort guard: log render errors with full stack, auto-remount children.
- * Never shows a blocking startup screen during normal operation.
+ * Log render errors; recover with visible shell (never blank black / blocking retry UI).
  */
 export default class StartupErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { remountKey: 0, recoveries: 0 };
-  }
-
-  static getDerivedStateFromError(error) {
-    return { pendingError: error };
+    this.state = { remountKey: 0, recoveries: 0, recovering: false };
+    this.recoverTimer = null;
   }
 
   componentDidCatch(error, info) {
@@ -21,6 +19,7 @@ export default class StartupErrorBoundary extends React.Component {
     const stack = error?.stack ?? '';
     const componentStack = info?.componentStack ?? '';
     try {
+      logStartupPaint('boundary_render_error', { message });
       console.log('[startup-boundary]', 'render_error', {
         message,
         stack,
@@ -30,24 +29,29 @@ export default class StartupErrorBoundary extends React.Component {
       /* ignore */
     }
 
+    if (this.recoverTimer) clearTimeout(this.recoverTimer);
+
     this.setState((prev) => {
       const recoveries = prev.recoveries + 1;
-      if (recoveries > MAX_AUTO_RECOVERIES) {
-        try {
-          console.log('[startup-boundary]', 'max_recoveries_reached', recoveries);
-        } catch {
-          /* ignore */
-        }
-      }
-      return {
-        pendingError: null,
-        remountKey: prev.remountKey + 1,
-        recoveries,
-      };
+      return { recovering: true, recoveries };
     });
+
+    this.recoverTimer = setTimeout(() => {
+      this.setState((prev) => ({
+        recovering: false,
+        remountKey: prev.remountKey + 1,
+      }));
+    }, 80);
+  }
+
+  componentWillUnmount() {
+    if (this.recoverTimer) clearTimeout(this.recoverTimer);
   }
 
   render() {
+    if (this.state.recovering) {
+      return <StartupInstantShell subtitle="Inaendelea…" />;
+    }
     return <React.Fragment key={this.state.remountKey}>{this.props.children}</React.Fragment>;
   }
 }

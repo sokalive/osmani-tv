@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { InteractionManager } from 'react-native';
 
 /**
- * Mount children only after the first frame so Home can render with cached data.
+ * Mount children on the next frame — does not wait for InteractionManager.
  * @param {{ children: React.ReactNode; delayMs?: number }} props
  */
-export default function DeferredMount({ children, delayMs = 0 }) {
+export default function DeferredMount({ children, delayMs = 16 }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -16,18 +15,11 @@ export default function DeferredMount({ children, delayMs = 0 }) {
       if (!cancelled) setReady(true);
     };
 
-    const handle = InteractionManager.runAfterInteractions(() => {
-      if (delayMs > 0) {
-        timer = setTimeout(finish, delayMs);
-      } else {
-        finish();
-      }
-    });
+    timer = setTimeout(finish, Math.max(0, delayMs));
 
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
-      if (handle && typeof handle.cancel === 'function') handle.cancel();
     };
   }, [delayMs]);
 

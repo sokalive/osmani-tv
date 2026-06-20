@@ -134,7 +134,7 @@ export function OsmaniAppProvider({ children }) {
   const [emergencyModalRequestVersion, setEmergencyModalRequestVersion] = useState(0);
   const [trialWatchSettings, setTrialWatchSettings] = useState(TRIAL_WATCH_FAIL_CLOSED);
   /** True once we've attempted the initial viewer-safe trial-watch fetch (success or fail). */
-  const [trialWatchSettingsLoaded, setTrialWatchSettingsLoaded] = useState(false);
+  const [trialWatchSettingsLoaded, setTrialWatchSettingsLoaded] = useState(true);
   const trialWatchReadyResolveRef = useRef(null);
   const trialWatchReadyPromiseRef = useRef(null);
   if (!trialWatchReadyPromiseRef.current) {
@@ -144,7 +144,7 @@ export function OsmaniAppProvider({ children }) {
   }
 
   /** True once cold-start subscription recover+verify has completed (success or fail). */
-  const [subscriptionSyncLoaded, setSubscriptionSyncLoaded] = useState(false);
+  const [subscriptionSyncLoaded, setSubscriptionSyncLoaded] = useState(true);
   const subscriptionReadyResolveRef = useRef(null);
   const subscriptionReadyPromiseRef = useRef(null);
   if (!subscriptionReadyPromiseRef.current) {
@@ -511,7 +511,7 @@ export function OsmaniAppProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false;
-    deferStartupTask('catalog-cache-hydrate', async () => {
+    (async () => {
       try {
         await dropLegacyBannersCache();
         const cachedChannels = await readChannelsCache();
@@ -519,14 +519,15 @@ export function OsmaniAppProvider({ children }) {
           setRawChannels(sortChannelsByAdminOrder(cachedChannels.channels));
         }
         const cached = await readBannersCache();
-        if (cancelled || !cached?.banners?.length) return;
-        const enriched = enrichBannersForViewer(cached.banners);
-        setRawBanners(enriched);
-        logBannerRuntimeDiagnostics(enriched);
+        if (!cancelled && cached?.banners?.length) {
+          const enriched = enrichBannersForViewer(cached.banners);
+          setRawBanners(enriched);
+          logBannerRuntimeDiagnostics(enriched);
+        }
       } catch (e) {
         console.log('[catalog-cache-hydrate]', e?.message ?? e, e?.stack ?? '');
       }
-    });
+    })();
     return () => {
       cancelled = true;
     };

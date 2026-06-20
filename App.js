@@ -76,7 +76,9 @@ import { channelIsFreeAccess } from './lib/trialWatchAccess';
 import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
 import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
-import { useStartupSplash } from './hooks/useStartupSplash';
+import { useStartupSplash, hideStartupSplashWhenReady } from './hooks/useStartupSplash';
+import StartupInstantShell from './components/StartupInstantShell';
+import { logStartupPaint } from './lib/startupPaintDiagnostics';
 import EmbeddedOtaBootGate from './components/EmbeddedOtaBootGate';
 import StartupErrorBoundary from './components/StartupErrorBoundary';
 import DeferredMount from './components/DeferredMount';
@@ -311,6 +313,11 @@ function ChannelCatalogScreen({
 
   /** Once per mount: log real API shape + derived section (production-safe diagnostic). */
   const catalogShapeLoggedRef = useRef(false);
+  useEffect(() => {
+    logStartupPaint('home_screen_mounted', {
+      channelCount: Array.isArray(rawChannels) ? rawChannels.length : 0,
+    });
+  }, []);
   useEffect(() => {
     if (catalogShapeLoggedRef.current || !Array.isArray(rawChannels) || rawChannels.length === 0) return;
     catalogShapeLoggedRef.current = true;
@@ -1433,10 +1440,12 @@ export default function App() {
 function AppShell({ navigationRevision, setNavigationRevision }) {
   useStartupSplash();
   useGlobalSecureScreen();
+  const [navReady, setNavReady] = useState(false);
   const stopExpoUpdatesRef = useRef(null);
   const stopOneSignalRef = useRef(null);
 
   useEffect(() => {
+    logStartupPaint('app_shell_mounted');
     logFirstLaunchBootDiagnostics('app_boot_ready');
     deferStartupTask('analytics-install', () => trackInstallOnce());
     deferStartupTask('presence-tracker', () => startPresence());
@@ -1474,34 +1483,44 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
         <DeviceIntelligenceProvider>
           <SecurityProvider>
             <ModalSheetCoordinatorProvider>
-            <NavigationContainer
-              ref={navigationRef}
-              linking={osmaniLinking}
-              theme={{
-                ...DarkTheme,
-                colors: {
-                  ...DarkTheme.colors,
-                  background: COLORS.background,
-                  card: COLORS.card,
-                  border: 'rgba(255,255,255,0.06)',
-                },
-              }}
-              onReady={() => {
-                setNavigationRevision((n) => n + 1);
-                const pending = pendingOsmaniUrlRef.current;
-                if (pending) {
-                  pendingOsmaniUrlRef.current = null;
-                  dispatchOsmaniDeepLink(pending);
-                }
-              }}
-              onStateChange={() => setNavigationRevision((n) => n + 1)}
-            >
-              <RootNavigator />
-              <OsmaniDeepLinkGate
-                navigationRef={navigationRef}
-                pendingUrlRef={pendingOsmaniUrlRef}
-              />
-            </NavigationContainer>
+            <View style={styles.navShell}>
+              <NavigationContainer
+                ref={navigationRef}
+                linking={osmaniLinking}
+                theme={{
+                  ...DarkTheme,
+                  colors: {
+                    ...DarkTheme.colors,
+                    background: COLORS.background,
+                    card: COLORS.card,
+                    border: 'rgba(255,255,255,0.06)',
+                  },
+                }}
+                onReady={() => {
+                  logStartupPaint('navigation_ready');
+                  setNavReady(true);
+                  hideStartupSplashWhenReady('navigation_ready');
+                  setNavigationRevision((n) => n + 1);
+                  const pending = pendingOsmaniUrlRef.current;
+                  if (pending) {
+                    pendingOsmaniUrlRef.current = null;
+                    dispatchOsmaniDeepLink(pending);
+                  }
+                }}
+                onStateChange={() => setNavigationRevision((n) => n + 1)}
+              >
+                <RootNavigator />
+                <OsmaniDeepLinkGate
+                  navigationRef={navigationRef}
+                  pendingUrlRef={pendingOsmaniUrlRef}
+                />
+              </NavigationContainer>
+              {!navReady ? (
+                <View style={styles.startupShellOverlay} pointerEvents="none">
+                  <StartupInstantShell />
+                </View>
+              ) : null}
+            </View>
             <DeferredMount>
               <GlobalEmergencyGate />
               <DeviceIntelligenceGate navigationRef={navigationRef} />
@@ -1597,7 +1616,16 @@ function SubscriptionLifecycleGates() {
 const styles = StyleSheet.create({
   appRoot: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#0C0608',
+  },
+  navShell: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  startupShellOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: COLORS.background,
+    zIndex: 20,
   },
   listContent: {
     paddingHorizontal: HORIZONTAL_PADDING,
