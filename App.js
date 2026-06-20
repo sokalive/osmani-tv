@@ -62,6 +62,7 @@ import { startPresence, stopPresence } from './lib/presenceTracker';
 import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startExpoUpdatesClient } from './lib/expoUpdatesClient';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
+import { safeStartupRun } from './lib/safeStartupRun';
 import { setupOneSignal } from './lib/oneSignal';
 import { dispatchOsmaniDeepLink } from './lib/osmaniDeepLinkDispatch';
 import OsmaniDeepLinkGate from './components/OsmaniDeepLinkGate';
@@ -77,6 +78,7 @@ import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
 import { useStartupSplash } from './hooks/useStartupSplash';
 import EmbeddedOtaBootGate from './components/EmbeddedOtaBootGate';
+import StartupErrorBoundary from './components/StartupErrorBoundary';
 import { logFirstLaunchBootDiagnostics } from './lib/firstLaunchBootDiagnostics';
 import {
   clearPendingManualGiftKey,
@@ -1419,7 +1421,9 @@ export default function App() {
     <SafeAreaProvider style={styles.appRoot}>
       <StatusBar style="light" backgroundColor="#000000" />
       <EmbeddedOtaBootGate>
-        <AppShell navigationRevision={navigationRevision} setNavigationRevision={setNavigationRevision} />
+        <StartupErrorBoundary>
+          <AppShell navigationRevision={navigationRevision} setNavigationRevision={setNavigationRevision} />
+        </StartupErrorBoundary>
       </EmbeddedOtaBootGate>
     </SafeAreaProvider>
   );
@@ -1434,7 +1438,7 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
     void trackInstallOnce();
     void startPresence();
     startRealtimeSync();
-    startUpdateClient();
+    safeStartupRun('start-update-client', () => startUpdateClient());
     const stopExpoUpdates = startExpoUpdatesClient();
     const stopOneSignal = setupOneSignal({
       onOpenUrl: dispatchOsmaniDeepLink,

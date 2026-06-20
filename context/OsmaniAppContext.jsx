@@ -43,7 +43,7 @@ import {
   subscriptionCacheWritePayload,
   subscriptionDetailsFromCache,
 } from '../lib/subscriptionCacheHydrate';
-import { warmPaymentCatalogCache } from '../api/payment';
+import { safeStartupRun } from '../lib/safeStartupRun';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
@@ -172,17 +172,22 @@ export function OsmaniAppProvider({ children }) {
    * runs in background and may revoke only on confirmed inactive.
    */
   const hydrateSubscriptionFromCache = useCallback(async (reason = 'cache-hydrate') => {
-    const { cached } = await readHydratableSubscriptionCache();
-    if (!cached?.active) return false;
-    isSubscribedRef.current = true;
-    setIsSubscribed(true);
-    setSubscriptionExpiresAt(cached.expiresAt ?? null);
-    setSubscriptionDetails(subscriptionDetailsFromCache(cached));
-    setSubscriptionVersion((v) => v + 1);
-    console.log('[SUBSCRIPTION_CACHE]', reason, 'hydrated_active', {
-      expiresAt: cached.expiresAt ?? null,
-    });
-    return true;
+    try {
+      const { cached } = await readHydratableSubscriptionCache();
+      if (!cached?.active) return false;
+      isSubscribedRef.current = true;
+      setIsSubscribed(true);
+      setSubscriptionExpiresAt(cached.expiresAt ?? null);
+      setSubscriptionDetails(subscriptionDetailsFromCache(cached));
+      setSubscriptionVersion((v) => v + 1);
+      console.log('[SUBSCRIPTION_CACHE]', reason, 'hydrated_active', {
+        expiresAt: cached.expiresAt ?? null,
+      });
+      return true;
+    } catch (e) {
+      console.log('[SUBSCRIPTION_CACHE]', reason, 'hydrate_error', e?.message ?? e);
+      return false;
+    }
   }, []);
 
   /**
@@ -723,8 +728,11 @@ export function OsmaniAppProvider({ children }) {
   );
 
   useEffect(() => {
-    void refreshTrialWatchSettings('bootstrap');
-    void warmPaymentCatalogCache();
+    safeStartupRun('trial-watch-bootstrap', () => refreshTrialWatchSettings('bootstrap'));
+    safeStartupRun('payment-catalog-warm', async () => {
+      const { warmPaymentCatalogCache } = await import('../api/payment');
+      await warmPaymentCatalogCache();
+    });
   }, [refreshTrialWatchSettings]);
 
   useEffect(() => {
