@@ -40,6 +40,7 @@ import {
   unwrapSubscriptionSsePayload,
 } from '../lib/subscriptionSseGuard';
 import { withTimeout } from '../lib/asyncTimeout';
+import { PREMIUM_GATE_MAX_MS } from '../lib/premiumTapGate';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
@@ -138,6 +139,15 @@ export function OsmaniAppProvider({ children }) {
     });
   }
 
+  /** True once AsyncStorage subscription cache has been read (fast — never waits on network). */
+  const [subscriptionCacheReady, setSubscriptionCacheReady] = useState(false);
+  const subscriptionCacheReadyResolveRef = useRef(null);
+  const subscriptionCacheReadyPromiseRef = useRef(null);
+  if (!subscriptionCacheReadyPromiseRef.current) {
+    subscriptionCacheReadyPromiseRef.current = new Promise((resolve) => {
+      subscriptionCacheReadyResolveRef.current = resolve;
+    });
+  }
   /** True once cold-start subscription recover+verify has completed (success or fail). */
   const [subscriptionSyncLoaded, setSubscriptionSyncLoaded] = useState(false);
   const subscriptionReadyResolveRef = useRef(null);
@@ -370,16 +380,55 @@ export function OsmaniAppProvider({ children }) {
    * boolean answer is sourced from the backend, not the device clock.
    * @returns {Promise<boolean>}
    */
-  const gateForPlayback = useCallback(async (reason = 'play') => {
-    const r = await reverifySubscription(`gate:${reason}`);
-    const active = r?.active === true;
-    if (!active) {
-      console.log('[PLAYBACK_GATE]', 'denied', reason);
-      setRevokedReason((cur) => cur ?? 'expired');
-    } else {
-      console.log('[PLAYBACK_GATE]', 'allowed', reason);
+  const gateForPlayback = useCallback(async (reason = 'play', opts = {}) => {
+    const { trustCache = false, background = false } = opts;
+
+    if (trustCache && isSubscribedRef.current) {
+      if (background) {
+        void reverifySubscription(`gate-bg:${reason}`).catch(() => null);
+      }
+      console.log('[PLAYBACK_GATE]', 'allowed_cache', reason);
+      return true;
     }
-    return active;
+
+    if (background && isSubscribedRef.current) {
+      void (async () => {
+        try {
+          const r = await reverifySubscription(`gate-bg:${reason}`);
+          if (r?.active !== true) {
+            console.log('[PLAYBACK_GATE]', 'bg_denied', reason);
+            setRevokedReason((cur) => cur ?? 'expired');
+          }
+        } catch (e) {
+          console.log('[PLAYBACK_GATE]', 'bg_error', reason, e?.message ?? e);
+        }
+      })();
+      return true;
+    }
+
+    try {
+      const r = await withTimeout(
+        reverifySubscription(`gate:${reason}`),
+        PREMIUM_GATE_MAX_MS,
+        'premium-gate',
+      );
+      const active = r?.active === true;
+      if (!active) {
+        console.log('[PLAYBACK_GATE]', 'denied', reason);
+        setRevokedReason((cur) => cur ?? 'expired');
+      } else {
+        console.log('[PLAYBACK_GATE]', 'allowed', reason);
+      }
+      return active;
+    } catch (e) {
+      if (isSubscribedRef.current) {
+        console.log('[PLAYBACK_GATE]', 'timeout_cache_allowed', reason, e?.message ?? e);
+        void reverifySubscription(`gate-bg:${reason}`).catch(() => null);
+        return true;
+      }
+      console.log('[PLAYBACK_GATE]', 'timeout_denied', reason, e?.message ?? e);
+      return false;
+    }
   }, [reverifySubscription]);
 
   /** Apply the same object returned from `reverifySubscription` / API (strict `isActive`). */
@@ -409,16 +458,29 @@ export function OsmaniAppProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const identity = await getDeviceIdentity().catch(() => ({}));
-      const hydrated = await hydrateSubscriptionFromCache(identity);
-      if (cancelled || !hydrated?.active) return;
-      isSubscribedRef.current = true;
-      setIsSubscribed(true);
-      setSubscriptionExpiresAt(hydrated.expiresAt);
-      console.log('[SUBSCRIPTION_CACHE]', 'hydrate_boot', {
-        expiresAt: hydrated.expiresAt,
-        deviceId: identity.deviceId?.slice?.(0, 8),
-      });
+      try {
+        const identity = await getDeviceIdentity().catch(() => ({}));
+        const hydrated = await hydrateSubscriptionFromCache(identity);
+        if (!cancelled && hydrated?.active) {
+          isSubscribedRef.current = true;
+          setIsSubscribed(true);
+          setSubscriptionExpiresAt(hydrated.expiresAt);
+          console.log('[SUBSCRIPTION_CACHE]', 'hydrate_boot', {
+            expiresAt: hydrated.expiresAt,
+            deviceId: identity.deviceId?.slice?.(0, 8),
+          });
+        }
+      } catch (e) {
+        console.log('[SUBSCRIPTION_CACHE]', 'hydrate_boot_error', e?.message ?? e);
+      } finally {
+        if (!cancelled) {
+          setSubscriptionCacheReady(true);
+          if (subscriptionCacheReadyResolveRef.current) {
+            subscriptionCacheReadyResolveRef.current(true);
+            subscriptionCacheReadyResolveRef.current = null;
+          }
+        }
+      }
     })();
     return () => {
       cancelled = true;
@@ -691,6 +753,11 @@ export function OsmaniAppProvider({ children }) {
     return trialWatchReadyPromiseRef.current;
   }, [trialWatchSettingsLoaded]);
 
+  const awaitSubscriptionCacheReady = useCallback(async () => {
+    if (subscriptionCacheReady) return true;
+    return subscriptionCacheReadyPromiseRef.current;
+  }, [subscriptionCacheReady]);
+
   const awaitSubscriptionSyncReady = useCallback(async () => {
     if (subscriptionSyncLoaded) return true;
     return subscriptionReadyPromiseRef.current;
@@ -698,26 +765,37 @@ export function OsmaniAppProvider({ children }) {
 
   const getPremiumAccessSnapshot = useCallback(
     () => ({
-      premiumPlaybackReady: subscriptionSyncLoaded && trialWatchSettingsLoaded,
+      premiumPlaybackReady: subscriptionCacheReady && trialWatchSettingsLoaded,
       isSubscribed: isSubscribedRef.current,
       freeMode: settingsRef.current.freeMode,
       trialWatchSettings: trialWatchSettingsRef.current,
     }),
-    [subscriptionSyncLoaded, trialWatchSettingsLoaded],
+    [subscriptionCacheReady, trialWatchSettingsLoaded],
   );
 
   const awaitPremiumAccessSnapshot = useCallback(async () => {
-    await Promise.all([awaitTrialWatchSettingsReady(), awaitSubscriptionSyncReady()]);
+    try {
+      await withTimeout(
+        Promise.all([awaitTrialWatchSettingsReady(), awaitSubscriptionCacheReady()]),
+        PREMIUM_GATE_MAX_MS,
+        'premium-tap-gate',
+      );
+    } catch (e) {
+      console.log('[PREMIUM_TAP_GATE]', 'snapshot_cap', e?.message ?? e);
+    }
     return getPremiumAccessSnapshot();
   }, [
-    awaitSubscriptionSyncReady,
+    awaitSubscriptionCacheReady,
     awaitTrialWatchSettingsReady,
     getPremiumAccessSnapshot,
   ]);
 
-  const awaitPremiumGateReady = awaitPremiumAccessSnapshot;
+  const verifySubscriptionInBackground = useCallback((reason = 'tap-bg') => {
+    void reverifySubscription(`gate-bg:${reason}`).catch(() => null);
+  }, [reverifySubscription]);
 
-  const premiumPlaybackReady = subscriptionSyncLoaded && trialWatchSettingsLoaded;
+  /** Fast path for channel tap — cache read only, never blocks on recover/verify. */
+  const premiumPlaybackReady = subscriptionCacheReady && trialWatchSettingsLoaded;
 
   useEffect(() => {
     void refreshServerHealth('initial');
@@ -1087,12 +1165,15 @@ export function OsmaniAppProvider({ children }) {
       trialWatchSettings,
       trialWatchSettingsLoaded,
       subscriptionSyncLoaded,
+      subscriptionCacheReady,
       premiumPlaybackReady,
       getPremiumAccessSnapshot,
       awaitPremiumAccessSnapshot,
       awaitTrialWatchSettingsReady,
       awaitSubscriptionSyncReady,
+      awaitSubscriptionCacheReady,
       awaitPremiumGateReady,
+      verifySubscriptionInBackground,
       paymentModalRequest,
       requestPaymentModal,
     }),
@@ -1126,12 +1207,15 @@ export function OsmaniAppProvider({ children }) {
       trialWatchSettings,
       trialWatchSettingsLoaded,
       subscriptionSyncLoaded,
+      subscriptionCacheReady,
       premiumPlaybackReady,
       getPremiumAccessSnapshot,
       awaitPremiumAccessSnapshot,
       awaitTrialWatchSettingsReady,
       awaitSubscriptionSyncReady,
+      awaitSubscriptionCacheReady,
       awaitPremiumGateReady,
+      verifySubscriptionInBackground,
       paymentModalRequest,
       requestPaymentModal,
     ],

@@ -143,6 +143,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     isSubscribed,
     gateForPlayback,
     reverifySubscription,
+    reverifySubscription,
     emergencyMode,
     subscriptionDetails,
     subscriptionExpiresAt,
@@ -661,6 +662,32 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
     setAccessChecked(false);
     setAccessAllowed(false);
+
+    if (isSubscribed) {
+      setAccessChecked(true);
+      setAccessAllowed(true);
+      premiumGateSessionRef.current = { channelKey, granted: true };
+      void (async () => {
+        try {
+          const r = await reverifySubscription('player-mount-bg');
+          if (cancelled) return;
+          if (r?.active === true) return;
+          console.log('[player][gate]', 'bg_denied', { channel: channel?.name });
+          premiumGateSessionRef.current = { channelKey, granted: false };
+          if (exitPlayerRef.current) {
+            void exitPlayerRef.current('gate_denied');
+          } else {
+            try {
+              navigation.goBack();
+            } catch {}
+          }
+        } catch (e) {
+          console.log('[player][gate]', 'bg_verify_error', e?.message ?? e);
+        }
+      })();
+      return undefined;
+    }
+
     (async () => {
       const ok = await gateForPlayback('player-mount');
       if (cancelled) return;
@@ -690,6 +717,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     freeMode,
     viaTrialPlayback,
     gateForPlayback,
+    reverifySubscription,
     navigation,
   ]);
 

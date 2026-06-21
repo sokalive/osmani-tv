@@ -36,8 +36,8 @@ else pass('App.js tap logging');
 if (!app.includes('channelIsFreeAccess')) fail('App.js must use channelIsFreeAccess for sync snapshot');
 else pass('free channel sync snapshot');
 
-if (!app.includes('getPremiumAccessSnapshot()')) fail('sync snapshot path missing');
-else pass('getPremiumAccessSnapshot fast path');
+if (!app.includes('awaitPremiumSnapshotCapped')) fail('capped snapshot path missing');
+else pass('awaitPremiumSnapshotCapped fast path');
 
 if (app.includes('if (item.isPremium && !freeMode && !premiumPlaybackReady)')) {
   fail('redundant premium await in handleCardPress must be removed');

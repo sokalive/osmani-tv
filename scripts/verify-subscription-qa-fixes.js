@@ -26,9 +26,9 @@ if (!fs.existsSync(path.join(root, 'lib', 'subscriptionCacheHydrate.js'))) {
 if (!ctx.includes('hydrateSubscriptionFromCache')) fail('context hydrates subscription cache on boot');
 else pass('boot subscription cache hydrate');
 
-if (!app.includes('subscriptionSyncLoaded && !quickSnapshot.isSubscribed')) {
-  fail('unpaid tap must wait for subscription sync');
-} else pass('unpaid tap gated on subscriptionSyncLoaded');
+if (!app.includes('awaitPremiumSnapshotCapped')) {
+  fail('App.js must use capped premium snapshot (800ms)');
+} else pass('App.js capped premium tap (no subscriptionSyncLoaded block)');
 
 if (!modal.includes('optimistic: true')) fail('PremiumModal optimistic payment success');
 else pass('optimistic payment success on gateway SUCCESS');

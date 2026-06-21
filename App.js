@@ -70,6 +70,7 @@ import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBa
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
+import { awaitPremiumSnapshotCapped } from './lib/premiumTapGate';
 import { logChannelCardTap } from './lib/channelCardTapDiagnostics';
 import { channelIsFreeAccess } from './lib/trialWatchAccess';
 import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
@@ -284,6 +285,7 @@ function ChannelCatalogScreen({
     subscriptionDetails,
     subscriptionVersion,
     verifySubscriptionBeforePlay,
+    verifySubscriptionInBackground,
     requestEmergencyModal,
     trialWatchSettings,
     awaitPremiumAccessSnapshot,
@@ -741,17 +743,10 @@ function ChannelCatalogScreen({
         return;
       }
       const isFree = freeMode || channelIsFreeAccess(playerChannel, { freeMode });
-      const quickSnapshot = getPremiumAccessSnapshot();
-      /** Unpaid premium taps open payment UI immediately — only after sync confirms unpaid. */
-      const unpaidPremiumTap =
-        isPremium && !isFree && subscriptionSyncLoaded && !quickSnapshot.isSubscribed;
-      const snapshot =
-        premiumPlaybackReady || isFree || unpaidPremiumTap
-          ? quickSnapshot
-          : await awaitPremiumAccessSnapshot();
-      logChannelCardTap(
-        premiumPlaybackReady || isFree || unpaidPremiumTap ? 'snapshot_sync' : 'snapshot_ready',
-        {
+      const snapshot = isFree
+        ? getPremiumAccessSnapshot()
+        : await awaitPremiumSnapshotCapped(getPremiumAccessSnapshot, awaitPremiumAccessSnapshot);
+      logChannelCardTap(isFree || snapshot.premiumPlaybackReady ? 'snapshot_sync' : 'snapshot_ready', {
           channelKey,
           isFree,
           waitedMs: Date.now() - startedAt,
@@ -763,6 +758,7 @@ function ChannelCatalogScreen({
         navigation,
         openPaymentModal: openPremiumModal,
         verifySubscriptionBeforePlay,
+        verifySubscriptionInBackground,
         security,
         Alert,
       });
@@ -774,6 +770,7 @@ function ChannelCatalogScreen({
     [
       awaitPremiumAccessSnapshot,
       verifySubscriptionBeforePlay,
+      verifySubscriptionInBackground,
       navigation,
       security,
       openPremiumModal,
