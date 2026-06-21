@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -120,6 +120,18 @@ function resolveSubscriptionPaymentLabel(details) {
   return formatPrice(details.amount, details.currency);
 }
 
+/** Package length in days from verify payload (null when absent). */
+function resolvePlanDurationDays(details) {
+  if (!details) return null;
+  const raw =
+    details.planDurationDays ??
+    details.plan_duration_days ??
+    details.planDuration ??
+    details.duration_days;
+  const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim());
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+
 function formatOfferCooldownMmSs(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds));
   const m = Math.floor(s / 60);
@@ -148,6 +160,9 @@ export default function AkauntiYanguScreen() {
   const [cooldownEndMs, setCooldownEndMs] = useState(null);
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);
   const [deviceIdFull, setDeviceIdFull] = useState('');
+  /** Last good display values — survive sparse verify/cache refresh payloads. */
+  const lastPaymentLabelRef = useRef(null);
+  const lastDurationDaysRef = useRef(null);
   const {
     isSubscribed,
     subscriptionExpiresAt,
@@ -175,6 +190,13 @@ export default function AkauntiYanguScreen() {
     return () => clearInterval(id);
   }, [isSubscribed]);
 
+  useEffect(() => {
+    if (!isSubscribed) {
+      lastPaymentLabelRef.current = null;
+      lastDurationDaysRef.current = null;
+    }
+  }, [isSubscribed]);
+
   const deviceLabel = useMemo(() => getDeviceLabel(), []);
   const deviceShort =
     deviceIdFull.length >= 8 ? deviceIdFull.slice(0, 8).toUpperCase() : deviceIdFull || '—';
@@ -193,10 +215,15 @@ export default function AkauntiYanguScreen() {
     [subscriptionDetails, subscriptionExpiresAt, tickNowMs],
   );
 
-  // Card 1: Malipo / Kifurushi
+  // Card 1: Malipo / Kifurushi — sticky when refresh omits amount/plans (cache/transport).
   const paymentValue = useMemo(() => {
     if (!isSubscribed) return 'Hapana';
-    return resolveSubscriptionPaymentLabel(subscriptionDetails) ?? '—';
+    const fresh = resolveSubscriptionPaymentLabel(subscriptionDetails);
+    if (fresh) {
+      lastPaymentLabelRef.current = fresh;
+      return fresh;
+    }
+    return lastPaymentLabelRef.current ?? '—';
   }, [isSubscribed, subscriptionDetails]);
 
   // Card 2: Muda Uliobaki wa Kifurushi — live countdown to expiry (server-anchored).
@@ -214,24 +241,15 @@ export default function AkauntiYanguScreen() {
     return formatSubscriptionRemainingCountdown(remainingMs);
   }, [isSubscribed, subscriptionDetails, subscriptionExpiresAt, tickNowMs]);
 
-  // Card 3: Muda wa Kifurushi — package length in days from verify/plan (numeric only).
+  // Card 3: Muda wa Kifurushi — sticky when refresh omits planDurationDays.
   const durationValue = useMemo(() => {
     if (!isSubscribed) return '—';
-    const raw =
-      subscriptionDetails?.planDurationDays ??
-      subscriptionDetails?.plan_duration_days ??
-      subscriptionDetails?.planDuration ??
-      subscriptionDetails?.duration_days;
-    const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim());
-    const rendered = Number.isFinite(n) && n > 0 ? String(Math.trunc(n)) : '—';
-    if (__DEV__) {
-      console.log('[ACCOUNT_DURATION]', 'screen_render', {
-        subscriptionDetailsPlanDurationDays: subscriptionDetails?.planDurationDays,
-        subscriptionDetails_plan_duration_days: subscriptionDetails?.plan_duration_days,
-        rendered,
-      });
+    const days = resolvePlanDurationDays(subscriptionDetails);
+    if (days != null) {
+      lastDurationDaysRef.current = String(days);
+      return lastDurationDaysRef.current;
     }
-    return rendered;
+    return lastDurationDaysRef.current ?? '—';
   }, [isSubscribed, subscriptionDetails]);
 
   // Card 5 (status)

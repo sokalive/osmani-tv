@@ -38,6 +38,16 @@ assertContains(
   'details.planId',
   'account label matches by planId',
 );
+assertContains(
+  'screens/AkauntiYanguScreen.js',
+  'lastPaymentLabelRef',
+  'payment card sticky ref during sparse refresh',
+);
+assertContains(
+  'screens/AkauntiYanguScreen.js',
+  'lastDurationDaysRef',
+  'duration card sticky ref during sparse refresh',
+);
 
 const PACKAGES = [
   { name: 'Wiki 1', id: '3', price: 3000, durationDays: 7 },
