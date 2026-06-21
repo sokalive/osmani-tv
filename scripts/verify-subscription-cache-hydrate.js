@@ -52,6 +52,28 @@ if (updateClient.includes('PLAY_OTA_MIN_VERSION_CODE - 1')) {
   fail('v15-only resume reassert must be expanded to v15–v23');
 } else pass('v15-only guard removed');
 
+if (!context.includes('awaitRecoverBoot')) {
+  fail('awaitRecoverBoot required for v24 migration boot');
+} else pass('awaitRecoverBoot export');
+
+if (!context.includes('RECOVER_BOOT_TIMEOUT_MS')) {
+  fail('fast recover boot timeout required');
+} else pass('recover boot timeout');
+
+if (!context.includes('hadActiveBefore')) {
+  fail('transfer/revoke modals must require prior active subscription');
+} else pass('false transfer guard');
+
+const fetch = fs.readFileSync(path.join(root, 'lib', 'catalogApiFetch.js'), 'utf8');
+if (!fetch.includes('ADMIN_API_TIMEOUT_MS')) {
+  fail('admin API fetch timeout required');
+} else pass('admin API fetch timeout');
+
+const app = fs.readFileSync(path.join(root, 'App.js'), 'utf8');
+if (!app.includes('snapshot_immediate')) {
+  fail('channel tap must use immediate premium snapshot');
+} else pass('immediate channel tap snapshot');
+
 if (!player.includes('isSubscribed')) {
   fail('player optimistic premium gate required');
 } else pass('player optimistic premium gate');

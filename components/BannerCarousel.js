@@ -251,8 +251,8 @@ function BannerCarousel({
   onEmergency,
   onPremiumRequired,
   verifySubscriptionBeforePlay,
-  awaitPremiumAccessSnapshot,
-  premiumPlaybackReady,
+  getPremiumAccessSnapshot,
+  awaitRecoverBoot,
   openPaymentModal,
   resetKey = 0,
 }) {
@@ -353,10 +353,15 @@ function BannerCarousel({
         raw?.accessType === 'premium' ||
         Boolean(raw?.accessPremium === true || raw?.access_premium === true);
       const isPremium = freeMode ? false : isPremiumApi;
-      if (isPremium && !freeMode && !premiumPlaybackReady) {
-        await awaitPremiumAccessSnapshot?.();
+      if (isPremium && !freeMode && !isSubscribed) {
+        await awaitRecoverBoot?.();
       }
-      const snapshot = await awaitPremiumAccessSnapshot?.();
+      const snapshot = getPremiumAccessSnapshot?.() ?? {
+        premiumPlaybackReady: true,
+        isSubscribed: Boolean(isSubscribed),
+        freeMode,
+        trialWatchSettings: null,
+      };
       await openPremiumChannelFromSnapshot(snapshot, {
         playerChannel,
         cardIsPremium: isPremium,
@@ -376,8 +381,9 @@ function BannerCarousel({
       onEmergency,
       onPremiumRequired,
       verifySubscriptionBeforePlay,
-      awaitPremiumAccessSnapshot,
-      premiumPlaybackReady,
+      getPremiumAccessSnapshot,
+      awaitRecoverBoot,
+      isSubscribed,
       openPaymentModal,
       security,
     ],

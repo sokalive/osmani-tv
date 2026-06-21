@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
-import { fetchAdminApiResponse, isNetworkTransportError } from '../lib/catalogApiFetch';
+import {
+  fetchAdminApiResponse,
+  isNetworkTransportError,
+  SUBSCRIPTION_API_TIMEOUT_MS,
+} from '../lib/catalogApiFetch';
 import { LEGACY_ANDROID_PACKAGE } from '../lib/deviceIdentity';
 import { cacheSecurityPhone, getSecurityPhoneForReport, pickPhoneFromApiBody } from '../lib/security/securityPhone';
 
@@ -771,6 +775,7 @@ async function postJson(path, payload, tag = 'subscription-post') {
     method: 'POST',
     body: expandDeviceKeys(payload) ?? {},
     tag,
+    timeoutMs: SUBSCRIPTION_API_TIMEOUT_MS,
   });
   return { res, body };
 }
@@ -832,7 +837,7 @@ export async function verifySubscription(deviceId, deviceFingerprint, identityCo
 async function fetchSubscriptionStatus(deviceId) {
   const { res, body } = await fetchAdminApiResponse(
     `/api/subscription-status?device_id=${encodeURIComponent(deviceId)}`,
-    { tag: 'subscription-status-recover' },
+    { tag: 'subscription-status-recover', timeoutMs: SUBSCRIPTION_API_TIMEOUT_MS },
   );
   if (!res.ok) return null;
   return normalizeVerifyResponse(body);
@@ -877,11 +882,6 @@ async function tryResolveForDeviceId(candidateDeviceId, identity, role) {
     role === 'legacy_package_android_id' && identity.legacyDeviceFingerprint
       ? identity.legacyDeviceFingerprint
       : identity.deviceFingerprint;
-
-  const status = await fetchSubscriptionStatus(candidateDeviceId);
-  if (status?.active === true) {
-    return { ...status, resolveSource: `status:${role}`, restoreRole: role };
-  }
 
   const verified = await verifySubscription(candidateDeviceId, fingerprint, ctx);
   if (verified.active === true) {
