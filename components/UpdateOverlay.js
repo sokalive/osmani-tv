@@ -89,8 +89,13 @@ export default function UpdateOverlay() {
 
   useEffect(() => {
     if (!ui?.visible) return undefined;
+    const infoSnap = ui?.info ?? {};
+    const autoLock =
+      infoSnap.autoDownload === true &&
+      (phase === 'downloading' || phase === 'verifying');
+    const block = ui?.decision === 'FORCE' || autoLock;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (ui?.decision === 'FORCE') return true;
+      if (block) return true;
       if (phase === 'downloading' || phase === 'verifying') {
         cancelDownload();
       }
@@ -98,13 +103,17 @@ export default function UpdateOverlay() {
       return true;
     });
     return () => sub.remove();
-  }, [ui?.visible, ui?.decision, phase]);
+  }, [ui?.visible, ui?.decision, ui?.info, phase]);
 
   if (Platform.OS !== 'android' || !isNativeAvailable()) return null;
   if (!ui || !ui.visible) return null;
 
   const info = ui.info ?? {};
   const action = getUpdateAction(info);
+
+  const autoDownloadLock =
+    info.autoDownload === true && (phase === 'downloading' || phase === 'verifying');
+  const blockDismiss = isForce || autoDownloadLock;
 
   const title = String(info.title ?? '').trim() || defaultTitle(ui.decision);
   const message =
@@ -142,7 +151,7 @@ export default function UpdateOverlay() {
   };
 
   const onCancel = () => {
-    if (isForce) return;
+    if (isForce || autoDownloadLock) return;
     if (phase === 'downloading' || phase === 'verifying') {
       cancelDownload();
     }
@@ -168,7 +177,7 @@ export default function UpdateOverlay() {
     busy ||
     (phase === 'idle' && !action.canDownload && !action.canOpenStore);
 
-  const showCancel = !isForce && phase !== 'installing';
+  const showCancel = !isForce && phase !== 'installing' && !autoDownloadLock;
 
   return (
     <Modal
@@ -177,11 +186,11 @@ export default function UpdateOverlay() {
       animationType="fade"
       statusBarTranslucent
       onRequestClose={() => {
-        if (!isForce) onCancel();
+        if (!blockDismiss) onCancel();
       }}
     >
       <View style={[styles.overlay, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 12 }]}>
-        {!isForce ? (
+        {!blockDismiss ? (
           <Pressable style={StyleSheet.absoluteFill} onPress={onCancel}>
             <BlurView
               intensity={Platform.OS === 'ios' ? 38 : 50}
@@ -205,6 +214,7 @@ export default function UpdateOverlay() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               bounces={false}
+              style={styles.messageScroll}
               contentContainerStyle={styles.scrollInner}
             >
               <View style={styles.handleBar} />
@@ -247,7 +257,9 @@ export default function UpdateOverlay() {
                   Allow Osmani TV to install from this source, then tap OPEN INSTALLER again.
                 </Text>
               ) : null}
+            </ScrollView>
 
+            <View style={styles.buttonStack}>
               <Pressable
                 style={[styles.ctaWrap, primaryDisabled && styles.ctaDisabled]}
                 onPress={onPrimary}
@@ -261,12 +273,10 @@ export default function UpdateOverlay() {
 
               {showCancel ? (
                 <Pressable style={styles.secondaryBtn} onPress={onCancel}>
-                  <Text style={styles.secondaryBtnText}>
-                    {phase === 'downloading' || phase === 'verifying' ? 'CANCEL' : 'CANCEL'}
-                  </Text>
+                  <Text style={styles.secondaryBtnText}>CANCEL</Text>
                 </Pressable>
               ) : null}
-            </ScrollView>
+            </View>
           </View>
         </View>
       </View>
@@ -302,7 +312,15 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
   },
   scrollInner: {
-    paddingBottom: Platform.OS === 'ios' ? 4 : 8,
+    paddingBottom: 8,
+  },
+  messageScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  buttonStack: {
+    flexShrink: 0,
+    paddingTop: 4,
   },
   handleBar: {
     alignSelf: 'center',
