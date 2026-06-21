@@ -143,7 +143,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     isSubscribed,
     gateForPlayback,
     reverifySubscription,
-    reverifySubscription,
     emergencyMode,
     subscriptionDetails,
     subscriptionExpiresAt,
