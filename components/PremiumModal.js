@@ -23,22 +23,12 @@ import { Ionicons } from '@expo/vector-icons';
 import EventSource from 'react-native-sse';
 import {
   fetchSubscription,
-  getCheckoutPaymentProvidersCachedFirst,
-  getPaymentProvidersCachedFirst,
+  getCheckoutPaymentProviders,
+  getPaymentProviders,
   getPaymentStatus,
   getPlans,
-  getPlansCachedFirst,
-  refreshPlansInBackground,
   resolveCheckoutStartPayment,
 } from '../api/payment';
-import { readCachedPaymentPlans } from '../lib/paymentCatalogCache';
-import {
-  DEFAULT_FALLBACK_PLANS,
-  formatPlansLoadError,
-  mergeWithFallbackPlans,
-  parsePlansFromRaw,
-  resolvePlanPrice,
-} from '../lib/paymentPlansDisplay';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { formatCheckoutPaymentError } from '../lib/paymentCheckoutErrors';
 import { verifySubscription } from '../api/subscription';
@@ -66,8 +56,8 @@ const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
 
 const POLL_MS = 1500;
-const PAYMENT_ACTIVATION_RETRY_MS = 400;
-const PAYMENT_ACTIVATION_MAX_ATTEMPTS = 12;
+const PAYMENT_ACTIVATION_RETRY_MS = 750;
+const PAYMENT_ACTIVATION_MAX_ATTEMPTS = 10;
 
 /**
  * Local fallback used only when GET /api/payment-providers fails or
@@ -134,9 +124,27 @@ function latestExpiryIso(...candidates) {
   return bestStr;
 }
 
-function pickSelectedPlan(list, prev) {
-  if (prev && list.some((x) => x.id === prev.id)) return prev;
-  return list[0] ?? DEFAULT_FALLBACK_PLANS[0];
+function normalizePlanRow(raw) {
+  const active = raw?.is_active === true || raw?.isActive === true;
+  return {
+    id: String(raw?.id ?? raw?.plan_id ?? '').trim(),
+    name: String(raw?.name ?? raw?.title ?? '').trim(),
+    price: Number(raw?.price ?? raw?.amount ?? 0),
+    duration: String(
+      raw?.duration_days ??
+        raw?.durationDays ??
+        raw?.days ??
+        raw?.validity_days ??
+        raw?.validityDays ??
+        raw?.period_days ??
+        raw?.periodDays ??
+        raw?.duration ??
+        raw?.duration_label ??
+        raw?.duration_text ??
+        '',
+    ).trim(),
+    isActive: active,
+  };
 }
 
 /**
@@ -146,10 +154,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const insets = useSafeAreaInsets();
   const { refreshSubscription, unlockChannels } = useOsmaniApp();
   const [step, setStep] = useState(1);
-  const [plans, setPlans] = useState(() => [...DEFAULT_FALLBACK_PLANS]);
+  const [plans, setPlans] = useState([]);
   const [plansLoading, setPlansLoading] = useState(false);
   const [plansError, setPlansError] = useState('');
-  const [selectedPlan, setSelectedPlan] = useState(() => DEFAULT_FALLBACK_PLANS[0]);
+  const [selectedPlan, setSelectedPlan] = useState(null);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [orderId, setOrderId] = useState(null);
@@ -215,9 +223,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     clearTimers();
     doneRef.current = false;
     setStep(1);
+    setPlans([]);
     setPlansError('');
-    setPlans((prev) => (prev.length > 0 ? prev : [...DEFAULT_FALLBACK_PLANS]));
-    setSelectedPlan((prev) => prev ?? DEFAULT_FALLBACK_PLANS[0]);
+    setSelectedPlan(null);
     setPhoneNumber('');
     setRemainingSeconds(0);
     setOrderId(null);
@@ -260,59 +268,39 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     return () => loop.stop();
   }, [step, ringRotate]);
 
-  /** When modal opens, refresh subscription in background (never block UI). */
-  useEffect(() => {
-    if (!visible) return undefined;
-    void refreshSubscription();
-  }, [visible, refreshSubscription]);
-
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
     (async () => {
+      setPlansLoading(true);
       setPlansError('');
-      const cachedRaw = await readCachedPaymentPlans({ ignoreTtl: true });
-      if (cancelled) return;
-      let display = mergeWithFallbackPlans(parsePlansFromRaw(cachedRaw));
-      setPlans(display);
-      setSelectedPlan((prev) => pickSelectedPlan(display, prev));
-      setPlansLoading(false);
-
-      refreshPlansInBackground();
       try {
-        const raw = await getPlansCachedFirst();
+        const raw = await getPlans();
         if (cancelled) return;
-        if (raw) {
-          display = mergeWithFallbackPlans(parsePlansFromRaw(raw));
-          setPlans(display);
-          setSelectedPlan((prev) => pickSelectedPlan(display, prev));
-        }
+        const list = Array.isArray(raw) ? raw.map(normalizePlanRow).filter((p) => p.isActive === true) : [];
+        setPlans(list);
+        setSelectedPlan((prev) => {
+          if (prev && list.some((x) => x.id === prev.id)) return prev;
+          return list[0] ?? null;
+        });
       } catch (e) {
-        const msg = formatPlansLoadError(e);
-        if (!cancelled && msg) setPlansError(msg);
+        if (!cancelled) setPlansError(e?.message ?? 'Imeshindwa kupakia mipango');
+      } finally {
+        if (!cancelled) setPlansLoading(false);
       }
-
-      void getPlans({ force: true })
-        .then((raw) => {
-          if (cancelled || !raw) return;
-          const fresh = mergeWithFallbackPlans(parsePlansFromRaw(raw));
-          setPlans(fresh);
-          setSelectedPlan((prev) => pickSelectedPlan(fresh, prev));
-        })
-        .catch(() => null);
     })();
     return () => {
       cancelled = true;
     };
   }, [visible]);
 
-  /** Load active checkout gateway when modal opens (cache-first). */
+  /** Load active checkout gateway (zenopay | sonicpesa | auraxpay) when modal opens. */
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
     (async () => {
       try {
-        const cfg = await getCheckoutPaymentProvidersCachedFirst();
+        const cfg = await getCheckoutPaymentProviders();
         if (cancelled) return;
         setCheckoutProvider(cfg.payment_provider);
         setCheckoutTestMode(cfg.auraxpay_test === true);
@@ -329,22 +317,29 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
+  /** When modal opens, always sync subscription from server (do not trust stale context). */
+  useEffect(() => {
+    if (!visible) return undefined;
+    void refreshSubscription();
+  }, [visible, refreshSubscription]);
+
   /**
-   * Fetch admin-managed payment providers when the modal opens (cache-first).
+   * Fetch admin-managed payment providers when the modal opens.
+   * On failure or empty list, the local FALLBACK_NETWORKS stays in place.
    */
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
     (async () => {
       try {
-        const list = await getPaymentProvidersCachedFirst();
+        const list = await getPaymentProviders();
         if (cancelled) return;
         if (Array.isArray(list) && list.length > 0) {
           setProviders(list);
           setLogoErrors({});
         }
       } catch {
-        // keep FALLBACK_NETWORKS; do not surface to user
+        // keep fallback providers; do not surface to user
       }
     })();
     return () => {
@@ -352,70 +347,54 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
-  /** After payment gateway confirms success: show paid UI immediately, enrich via verify in background. */
-  const moveToSuccessStep = useCallback(
-    async ({ optimistic = false } = {}) => {
-      if (doneRef.current && !optimistic) return;
-
-      const applySuccessUi = (verified, fetchExpires) => {
+  /** After payment gateway / verify confirms active: apply context + success UI only when verify succeeds. */
+  const moveToSuccessStep = useCallback(async () => {
+    if (doneRef.current) return;
+    clearTimers();
+    closeSse();
+    let verified = null;
+    let fetchExpires = null;
+    try {
+      const { deviceId } = await getDeviceIdentity();
+      for (let attempt = 0; attempt < PAYMENT_ACTIVATION_MAX_ATTEMPTS; attempt += 1) {
+        if (doneRef.current) return;
+        verified = await refreshSubscription();
+        try {
+          const sub = await fetchSubscription(deviceId);
+          fetchExpires = sub?.expiresAt ?? fetchExpires;
+          if (sub?.active === true && !isSubscriptionActive(verified)) {
+            verified = { ...verified, active: true, isActive: true, expiresAt: sub.expiresAt ?? null };
+          }
+        } catch {
+          // optional enrichment only
+        }
+        if (verified && isSubscriptionActive(verified)) break;
+        if (attempt < PAYMENT_ACTIVATION_MAX_ATTEMPTS - 1) {
+          await new Promise((resolve) => setTimeout(resolve, PAYMENT_ACTIVATION_RETRY_MS));
+        }
+      }
+      if (verified && isSubscriptionActive(verified)) {
         doneRef.current = true;
-        clearTimers();
-        closeSse();
         const mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
         unlockChannels({
-          ...(verified && typeof verified === 'object' ? verified : {}),
+          ...verified,
           active: true,
           isActive: true,
           expiresAt: mergedExpires ?? verified?.expiresAt ?? null,
         });
-        setSuccessExpiresAt(mergedExpires ?? verified?.expiresAt ?? null);
+        const mergedForUi = latestExpiryIso(verified?.expiresAt, fetchExpires);
+        setSuccessExpiresAt(mergedForUi ?? verified?.expiresAt ?? null);
         setStep(4);
-      };
-
-      if (optimistic) {
-        applySuccessUi({ active: true, isActive: true }, null);
+        return;
       }
-
-      let verified = null;
-      let fetchExpires = null;
-      try {
-        const { deviceId } = await getDeviceIdentity();
-        for (let attempt = 0; attempt < PAYMENT_ACTIVATION_MAX_ATTEMPTS; attempt += 1) {
-          if (doneRef.current && !optimistic) return;
-          verified = await refreshSubscription();
-          try {
-            const sub = await fetchSubscription(deviceId);
-            fetchExpires = sub?.expiresAt ?? fetchExpires;
-            if (sub?.active === true && !isSubscriptionActive(verified)) {
-              verified = { ...verified, active: true, isActive: true, expiresAt: sub.expiresAt ?? null };
-            }
-          } catch {
-            // optional enrichment only
-          }
-          if (verified && isSubscriptionActive(verified)) {
-            if (optimistic) {
-              applySuccessUi(verified, fetchExpires);
-            } else {
-              applySuccessUi(verified, fetchExpires);
-            }
-            return;
-          }
-          if (attempt < PAYMENT_ACTIVATION_MAX_ATTEMPTS - 1) {
-            await new Promise((resolve) => setTimeout(resolve, PAYMENT_ACTIVATION_RETRY_MS));
-          }
-        }
-      } catch (e) {
-        console.log('[PAYMENT_SUCCESS_VERIFY]', 'refresh_failed', e?.message ?? e);
-      }
-      if (!optimistic) {
-        console.log('[PAYMENT_SUCCESS_VERIFY]', 'verify_not_active_stay_waiting', {
-          active: verified?.active,
-          isActive: verified?.isActive,
-        });
-      }
-    },
-    [clearTimers, closeSse, refreshSubscription, unlockChannels],
-  );
+    } catch (e) {
+      console.log('[PAYMENT_SUCCESS_VERIFY]', 'refresh_failed', e?.message ?? e);
+    }
+    console.log('[PAYMENT_SUCCESS_VERIFY]', 'verify_not_active_stay_waiting', {
+      active: verified?.active,
+      isActive: verified?.isActive,
+    });
+  }, [clearTimers, closeSse, refreshSubscription, unlockChannels]);
 
   /** ENDELEA: always await fresh API via context; branch only on returned object (never stale context). */
   const handleCompleted = useCallback(async () => {
@@ -482,12 +461,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         }
         if (doneRef.current) return;
         if (peek && isSubscriptionActive(peek)) {
-          await moveToSuccessStep({ optimistic: false });
+          await moveToSuccessStep();
           return;
         }
 
         if (status === 'SUCCESS') {
-          await moveToSuccessStep({ optimistic: true });
+          await moveToSuccessStep();
         }
       } catch {
         // transient network — keep polling
@@ -535,7 +514,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           const verified = await verifySubscription(deviceId, deviceFingerprint);
           if (doneRef.current) return;
           if (verified && isSubscriptionActive(verified)) {
-            void moveToSuccessStep({ optimistic: true });
+            void moveToSuccessStep();
           }
         } catch {
           // ignore malformed stream payloads / transient verify errors
@@ -566,7 +545,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const isPhoneValid =
     !!phoneNumber && phoneNumber.length === 10 && phoneNumber.startsWith('0');
 
-  const selectedAmountDisplay = `TSh ${formatPriceTz(resolvePlanPrice(selectedPlan))}`;
+  const selectedAmountDisplay =
+    selectedPlan && Number.isFinite(selectedPlan.price)
+      ? `TSh ${formatPriceTz(selectedPlan.price)}`
+      : 'TSh —';
 
   const ringSpin = ringRotate.interpolate({
     inputRange: [0, 1],
@@ -960,8 +942,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                 >
                   {step === 1 ? (
                     <Pressable
-                      style={[styles.ctaWrap, styles.ctaDockBtn, !selectedPlan && styles.ctaDisabled]}
-                      disabled={!selectedPlan}
+                      style={[styles.ctaWrap, styles.ctaDockBtn, (!selectedPlan || plansLoading) && styles.ctaDisabled]}
+                      disabled={!selectedPlan || plansLoading}
                       onPress={goStep2}
                     >
                       <LinearGradient

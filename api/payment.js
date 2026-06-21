@@ -3,25 +3,6 @@ import { formatCheckoutPaymentError, extractPaymentBackendReason, logPaymentChec
 import { resolveMediaAssetUrl } from '../lib/mediaDelivery';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { fetchAdminApiJson, fetchAdminApiResponse } from '../lib/catalogApiFetch';
-import { withTimeout } from '../lib/asyncTimeout';
-import {
-  readCachedCheckoutProviders,
-  readCachedPaymentPlans,
-  readCachedPaymentProviders,
-  writeCachedCheckoutProviders,
-  writeCachedPaymentPlans,
-  writeCachedPaymentProviders,
-} from '../lib/paymentCatalogCache';
-import { parsePlansFromRaw } from '../lib/paymentPlansDisplay';
-
-/** UI-blocking fetch cap (modal already shows defaults/cache). */
-export const PLANS_UI_TIMEOUT_MS = 3000;
-/** Background refresh — VPS /api/plans can be slow (~10–20s). */
-export const PLANS_BACKGROUND_TIMEOUT_MS = 25000;
-export const CHECKOUT_PROVIDER_TIMEOUT_MS = 3000;
-export const CHECKOUT_PROVIDER_BACKGROUND_TIMEOUT_MS = 15000;
-export const PAYMENT_PROVIDERS_TIMEOUT_MS = 3000;
-export const PAYMENT_PROVIDERS_BACKGROUND_TIMEOUT_MS = 15000;
 
 /**
  * Payment + subscription HTTP API (ZenoPay STK push).
@@ -124,62 +105,15 @@ function isExpiryValid(expiresAt) {
   return Number.isFinite(t) && t > Date.now();
 }
 
-function extractPlansArray(body) {
-  if (Array.isArray(body)) return body;
-  if (body && Array.isArray(body.plans)) return body.plans;
-  if (body && Array.isArray(body.data)) return body.data;
-  return null;
-}
-
-async function readAnyCachedPlans() {
-  const fresh = await readCachedPaymentPlans();
-  if (Array.isArray(fresh) && fresh.length > 0) return fresh;
-  return readCachedPaymentPlans({ ignoreTtl: true });
-}
-
 /**
  * @returns {Promise<unknown[]>}
  */
-export async function getPlans(opts = {}) {
-  const timeoutMs = opts.force ? PLANS_BACKGROUND_TIMEOUT_MS : PLANS_UI_TIMEOUT_MS;
-  if (!opts.force) {
-    const cached = await readAnyCachedPlans();
-    if (Array.isArray(cached) && cached.length > 0) return cached;
-  }
-  try {
-    const body = await withTimeout(
-      fetchAdminApiJson('/api/plans', { tag: 'payment-plans' }),
-      timeoutMs,
-      'plans-timeout',
-    );
-    const list = extractPlansArray(body);
-    if (!list || parsePlansFromRaw(list).length === 0) throw new Error('Invalid plans response');
-    await writeCachedPaymentPlans(list);
-    return list;
-  } catch (e) {
-    const stale = await readCachedPaymentPlans({ ignoreTtl: true });
-    if (Array.isArray(stale) && stale.length > 0) {
-      console.log('[payment-plans]', 'stale_cache_fallback', e?.message ?? e);
-      return stale;
-    }
-    throw e;
-  }
-}
-
-/** Cached/stale first; network refresh never blocks UI. Returns null when only defaults apply. */
-export async function getPlansCachedFirst() {
-  const cached = await readAnyCachedPlans();
-  void getPlans({ force: true }).catch(() => null);
-  if (Array.isArray(cached) && cached.length > 0) return cached;
-  try {
-    return await withTimeout(getPlans({ force: true }), PLANS_UI_TIMEOUT_MS, 'plans-timeout');
-  } catch {
-    return null;
-  }
-}
-
-export function refreshPlansInBackground() {
-  void getPlans({ force: true }).catch(() => null);
+export async function getPlans() {
+  const body = await fetchAdminApiJson('/api/plans', { tag: 'payment-plans' });
+  if (Array.isArray(body)) return body;
+  if (body && Array.isArray(body.plans)) return body.plans;
+  if (body && Array.isArray(body.data)) return body.data;
+  throw new Error('Invalid plans response');
 }
 
 function pickProviderLogoUrl(raw) {
@@ -230,100 +164,36 @@ function normalizeProviderRow(raw) {
 /**
  * @returns {Promise<{ id: string; name: string; logoUrl: string|null; active: boolean }[]>}
  */
-export async function getPaymentProviders(opts = {}) {
-  const timeoutMs = opts.force ? PAYMENT_PROVIDERS_BACKGROUND_TIMEOUT_MS : PAYMENT_PROVIDERS_TIMEOUT_MS;
-  if (!opts.force) {
-    const cached = await readCachedPaymentProviders();
-    if (Array.isArray(cached) && cached.length > 0) return cached;
-  }
-  try {
-    const body = await withTimeout(
-      fetchAdminApiJson('/api/payment-providers', { tag: 'payment-providers' }),
-      timeoutMs,
-      'payment-providers-timeout',
-    );
-    let raw = [];
-    if (Array.isArray(body)) raw = body;
-    else if (body && Array.isArray(body.providers)) raw = body.providers;
-    else if (body && Array.isArray(body.data)) raw = body.data;
-    const list = raw
-      .map(normalizeProviderRow)
-      .filter((p) => p && p.active === true);
-    if (list.length > 0) await writeCachedPaymentProviders(list);
-    return list;
-  } catch (e) {
-    const stale = await readCachedPaymentProviders({ ignoreTtl: true });
-    if (Array.isArray(stale) && stale.length > 0) {
-      console.log('[payment-providers]', 'stale_cache_fallback', e?.message ?? e);
-      return stale;
-    }
-    throw e;
-  }
-}
-
-export async function getPaymentProvidersCachedFirst() {
-  const cached = await readCachedPaymentProviders();
-  void getPaymentProviders({ force: true }).catch(() => null);
-  if (Array.isArray(cached) && cached.length > 0) return cached;
-  return getPaymentProviders();
+export async function getPaymentProviders() {
+  const body = await fetchAdminApiJson('/api/payment-providers', { tag: 'payment-providers' });
+  let raw = [];
+  if (Array.isArray(body)) raw = body;
+  else if (body && Array.isArray(body.providers)) raw = body.providers;
+  else if (body && Array.isArray(body.data)) raw = body.data;
+  return raw
+    .map(normalizeProviderRow)
+    .filter((p) => p && p.active === true);
 }
 
 /**
  * GET /api/payments/checkout-providers
  */
-export async function getCheckoutPaymentProviders(opts = {}) {
-  const timeoutMs = opts.force
-    ? CHECKOUT_PROVIDER_BACKGROUND_TIMEOUT_MS
-    : CHECKOUT_PROVIDER_TIMEOUT_MS;
-  if (!opts.force) {
-    const cached = await readCachedCheckoutProviders();
-    if (cached && typeof cached === 'object' && cached.payment_provider) return cached;
-  }
-  try {
-    const body = await withTimeout(
-      fetchAdminApiJson('/api/payments/checkout-providers', {
-        tag: 'payment-checkout-providers',
-      }),
-      timeoutMs,
-      'checkout-providers-timeout',
-    );
-    const cfg = parseCheckoutProvidersResponse(body);
-    await writeCachedCheckoutProviders(cfg);
-    console.log(
-      '[payment-checkout-providers]',
-      JSON.stringify({
-        payment_provider: cfg.payment_provider,
-        auraxpay: cfg.auraxpay,
-        auraxpay_test: cfg.auraxpay_test,
-        sonicpesa: cfg.sonicpesa,
-        zenopay: cfg.zenopay,
-      }),
-    );
-    return cfg;
-  } catch (e) {
-    const stale = await readCachedCheckoutProviders({ ignoreTtl: true });
-    if (stale && typeof stale === 'object' && stale.payment_provider) {
-      console.log('[payment-checkout-providers]', 'stale_cache_fallback', e?.message ?? e);
-      return stale;
-    }
-    throw e;
-  }
-}
-
-export async function getCheckoutPaymentProvidersCachedFirst() {
-  const cached = await readCachedCheckoutProviders();
-  void getCheckoutPaymentProviders({ force: true }).catch(() => null);
-  if (cached && typeof cached === 'object' && cached.payment_provider) return cached;
-  return getCheckoutPaymentProviders();
-}
-
-/** Prefetch plans + providers after startup so premium modal opens instantly. */
-export async function warmPaymentCatalogCache() {
-  await Promise.allSettled([
-    getPlansCachedFirst(),
-    getCheckoutPaymentProvidersCachedFirst(),
-    getPaymentProvidersCachedFirst(),
-  ]);
+export async function getCheckoutPaymentProviders() {
+  const body = await fetchAdminApiJson('/api/payments/checkout-providers', {
+    tag: 'payment-checkout-providers',
+  });
+  const cfg = parseCheckoutProvidersResponse(body);
+  console.log(
+    '[payment-checkout-providers]',
+    JSON.stringify({
+      payment_provider: cfg.payment_provider,
+      auraxpay: cfg.auraxpay,
+      auraxpay_test: cfg.auraxpay_test,
+      sonicpesa: cfg.sonicpesa,
+      zenopay: cfg.zenopay,
+    }),
+  );
+  return cfg;
 }
 
 function buildCreateOrderPayload(payload) {

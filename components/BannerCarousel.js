@@ -21,7 +21,6 @@ import {
   findRawChannelById,
 } from '../lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from '../lib/premiumChannelNavigation';
-import { awaitPremiumSnapshotCapped } from '../lib/premiumTapGate';
 
 const COLORS = {
   white: '#FFFFFF',
@@ -253,7 +252,6 @@ function BannerCarousel({
   onPremiumRequired,
   verifySubscriptionBeforePlay,
   awaitPremiumAccessSnapshot,
-  getPremiumAccessSnapshot,
   premiumPlaybackReady,
   openPaymentModal,
   resetKey = 0,
@@ -355,10 +353,10 @@ function BannerCarousel({
         raw?.accessType === 'premium' ||
         Boolean(raw?.accessPremium === true || raw?.access_premium === true);
       const isPremium = freeMode ? false : isPremiumApi;
-      const snapshot = await awaitPremiumSnapshotCapped(
-        getPremiumAccessSnapshot,
-        awaitPremiumAccessSnapshot,
-      );
+      if (isPremium && !freeMode && !premiumPlaybackReady) {
+        await awaitPremiumAccessSnapshot?.();
+      }
+      const snapshot = await awaitPremiumAccessSnapshot?.();
       await openPremiumChannelFromSnapshot(snapshot, {
         playerChannel,
         cardIsPremium: isPremium,
@@ -379,7 +377,6 @@ function BannerCarousel({
       onPremiumRequired,
       verifySubscriptionBeforePlay,
       awaitPremiumAccessSnapshot,
-      getPremiumAccessSnapshot,
       premiumPlaybackReady,
       openPaymentModal,
       security,

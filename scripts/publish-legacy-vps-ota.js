@@ -2,14 +2,13 @@
 'use strict';
 
 /**
- * Publish VPS migration OTA to Play runtimes v16–v23 (1.6.0–1.8.1).
- * v24 (1.8.2) is published separately — not included here.
+ * Publish VPS migration OTA to every Play runtime (16–24).
  * Usage: node scripts/publish-legacy-vps-ota.js [--dry-run]
  */
 
 const { spawnSync } = require('child_process');
 
-const RUNTIMES = ['1.6.0', '1.7.0', '1.7.1', '1.7.2', '1.8.0', '1.8.1'];
+const RUNTIMES = ['1.6.0', '1.7.0', '1.7.1', '1.7.2', '1.8.0', '1.8.1', '1.8.2'];
 const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const dryRun = process.argv.includes('--dry-run');
 

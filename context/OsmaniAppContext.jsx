@@ -32,15 +32,16 @@ import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
-import { warmPaymentCatalogCache } from '../api/payment';
-import { hydrateSubscriptionFromCache } from '../lib/subscriptionCacheHydrate';
 import {
   isConfirmedSubscriptionLoss,
   subscriptionTransferSseRole,
   unwrapSubscriptionSsePayload,
 } from '../lib/subscriptionSseGuard';
 import { withTimeout } from '../lib/asyncTimeout';
-import { PREMIUM_GATE_MAX_MS } from '../lib/premiumTapGate';
+import {
+  readHydratableSubscriptionCache,
+  subscriptionDetailsFromCache,
+} from '../lib/subscriptionCacheHydrate';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
@@ -139,15 +140,6 @@ export function OsmaniAppProvider({ children }) {
     });
   }
 
-  /** True once AsyncStorage subscription cache has been read (fast — never waits on network). */
-  const [subscriptionCacheReady, setSubscriptionCacheReady] = useState(false);
-  const subscriptionCacheReadyResolveRef = useRef(null);
-  const subscriptionCacheReadyPromiseRef = useRef(null);
-  if (!subscriptionCacheReadyPromiseRef.current) {
-    subscriptionCacheReadyPromiseRef.current = new Promise((resolve) => {
-      subscriptionCacheReadyResolveRef.current = resolve;
-    });
-  }
   /** True once cold-start subscription recover+verify has completed (success or fail). */
   const [subscriptionSyncLoaded, setSubscriptionSyncLoaded] = useState(false);
   const subscriptionReadyResolveRef = useRef(null);
@@ -172,6 +164,24 @@ export function OsmaniAppProvider({ children }) {
   const rawChannelsRef = useRef([]);
   /** Set after source POST /transfer/request succeeds; gates Kubali/Kataa popup. */
   const sourceTransferSessionRef = useRef(null);
+
+  /**
+   * Apply cached active subscription for instant UI / gates. Server verify
+   * runs in background and may revoke only on confirmed inactive.
+   */
+  const hydrateSubscriptionFromCache = useCallback(async (reason = 'cache-hydrate') => {
+    const { cached } = await readHydratableSubscriptionCache();
+    if (!cached?.active) return false;
+    isSubscribedRef.current = true;
+    setIsSubscribed(true);
+    setSubscriptionExpiresAt(cached.expiresAt ?? null);
+    setSubscriptionDetails(subscriptionDetailsFromCache(cached));
+    setSubscriptionVersion((v) => v + 1);
+    console.log('[SUBSCRIPTION_CACHE]', reason, 'hydrated_active', {
+      expiresAt: cached.expiresAt ?? null,
+    });
+    return true;
+  }, []);
 
   /**
    * Single trust path. Always hits the backend and treats `active` as the
@@ -217,6 +227,43 @@ export function OsmaniAppProvider({ children }) {
               error: r.error,
             });
           }
+        } else if (
+          !active &&
+          r.resolveSource !== 'inactive' &&
+          isSubscribedRef.current
+        ) {
+          const cached = await readSubscriptionCache();
+          const sameDevice =
+            !cached.deviceId ||
+            cached.deviceId === deviceId ||
+            (identity.androidId && cached.deviceId === identity.androidId);
+          if (cached.active && sameDevice) {
+            active = true;
+            expiresAt = cached.expiresAt ?? null;
+            effectiveResult = {
+              ...r,
+              active: true,
+              expiresAt,
+              transportPreserved: true,
+            };
+            console.log('[SUBSCRIPTION_VERIFY]', reason, 'ambiguous_preserved_cache', {
+              resolveSource: r.resolveSource ?? null,
+            });
+          }
+        }
+
+        if (
+          verifyKey !== lastVerifyKeyRef.current ||
+          (active === false && r.resolveSource !== 'inactive')
+        ) {
+          if (active === false && r.resolveSource !== 'inactive') {
+            console.log('[SUBSCRIPTION_VERIFY]', reason, 'preserved_subscribed_state', {
+              resolveSource: r.resolveSource ?? null,
+              hadActive: isSubscribedRef.current,
+            });
+            return effectiveResult;
+          }
+          if (verifyKey !== lastVerifyKeyRef.current) return r;
         }
 
         isSubscribedRef.current = active;
@@ -284,24 +331,23 @@ export function OsmaniAppProvider({ children }) {
       } catch (e) {
         console.log('[SUBSCRIPTION_VERIFY]', reason, 'error', e?.message ?? e);
         if (verifyKey === lastVerifyKeyRef.current) {
-          const transport = isNetworkTransportError(e);
           const identity = await getDeviceIdentity().catch(() => ({
             deviceId: '',
             androidId: null,
           }));
           const { deviceId } = identity;
-          const cached = transport ? await readSubscriptionCache() : null;
+          const cached = await readSubscriptionCache();
           const sameDevice =
             cached &&
             (!cached.deviceId ||
               cached.deviceId === deviceId ||
               (identity.androidId && cached.deviceId === identity.androidId));
-          if (transport && cached?.active && sameDevice) {
+          if (cached?.active && sameDevice) {
             isSubscribedRef.current = true;
             setIsSubscribed(true);
             setSubscriptionExpiresAt(cached.expiresAt ?? null);
             setSubscriptionVersion((v) => v + 1);
-            console.log('[SUBSCRIPTION_VERIFY]', reason, 'transport_preserved_cache_throw', {
+            console.log('[SUBSCRIPTION_VERIFY]', reason, 'error_preserved_cache', {
               error: e?.message ?? e,
             });
             return {
@@ -310,12 +356,21 @@ export function OsmaniAppProvider({ children }) {
               transportPreserved: true,
             };
           }
+          if (isSubscribedRef.current) {
+            console.log('[SUBSCRIPTION_VERIFY]', reason, 'error_preserved_active_state', {
+              error: e?.message ?? e,
+            });
+            return {
+              active: true,
+              transportPreserved: true,
+            };
+          }
           isSubscribedRef.current = false;
           setIsSubscribed(false);
           setSubscriptionExpiresAt(null);
           setSubscriptionDetails(null);
           setSubscriptionVersion((v) => v + 1);
-          if (!transport) {
+          if (!isNetworkTransportError(e)) {
             await clearSubscriptionCache(`verify-error:${reason}`);
           }
         }
@@ -380,56 +435,41 @@ export function OsmaniAppProvider({ children }) {
    * boolean answer is sourced from the backend, not the device clock.
    * @returns {Promise<boolean>}
    */
-  const gateForPlayback = useCallback(async (reason = 'play', opts = {}) => {
-    const { trustCache = false, background = false } = opts;
+  const gateForPlayback = useCallback(async (reason = 'play') => {
+    const fastReason = String(reason);
+    const isBackground = fastReason.startsWith('gate-bg:') || fastReason.includes('-bg');
 
-    if (trustCache && isSubscribedRef.current) {
-      if (background) {
-        void reverifySubscription(`gate-bg:${reason}`).catch(() => null);
-      }
-      console.log('[PLAYBACK_GATE]', 'allowed_cache', reason);
-      return true;
-    }
-
-    if (background && isSubscribedRef.current) {
-      void (async () => {
-        try {
-          const r = await reverifySubscription(`gate-bg:${reason}`);
-          if (r?.active !== true) {
-            console.log('[PLAYBACK_GATE]', 'bg_denied', reason);
-            setRevokedReason((cur) => cur ?? 'expired');
-          }
-        } catch (e) {
-          console.log('[PLAYBACK_GATE]', 'bg_error', reason, e?.message ?? e);
-        }
-      })();
-      return true;
-    }
-
-    try {
-      const r = await withTimeout(
-        reverifySubscription(`gate:${reason}`),
-        PREMIUM_GATE_MAX_MS,
-        'premium-gate',
-      );
-      const active = r?.active === true;
-      if (!active) {
-        console.log('[PLAYBACK_GATE]', 'denied', reason);
-        setRevokedReason((cur) => cur ?? 'expired');
-      } else {
-        console.log('[PLAYBACK_GATE]', 'allowed', reason);
-      }
-      return active;
-    } catch (e) {
+    if (!isBackground) {
       if (isSubscribedRef.current) {
-        console.log('[PLAYBACK_GATE]', 'timeout_cache_allowed', reason, e?.message ?? e);
-        void reverifySubscription(`gate-bg:${reason}`).catch(() => null);
+        void reverifySubscription(`gate-bg:${reason}`);
+        console.log('[PLAYBACK_GATE]', 'allowed_cache_ref', reason);
         return true;
       }
-      console.log('[PLAYBACK_GATE]', 'timeout_denied', reason, e?.message ?? e);
-      return false;
+      const { cached } = await readHydratableSubscriptionCache();
+      if (cached?.active) {
+        isSubscribedRef.current = true;
+        setIsSubscribed(true);
+        setSubscriptionExpiresAt(cached.expiresAt ?? null);
+        if (!subscriptionDetails) {
+          setSubscriptionDetails(subscriptionDetailsFromCache(cached));
+        }
+        setSubscriptionVersion((v) => v + 1);
+        void reverifySubscription(`gate-bg:${reason}`);
+        console.log('[PLAYBACK_GATE]', 'allowed_cache_read', reason);
+        return true;
+      }
     }
-  }, [reverifySubscription]);
+
+    const r = await reverifySubscription(isBackground ? reason : `gate:${reason}`);
+    const active = r?.active === true;
+    if (!active) {
+      console.log('[PLAYBACK_GATE]', 'denied', reason);
+      setRevokedReason((cur) => cur ?? 'expired');
+    } else {
+      console.log('[PLAYBACK_GATE]', 'allowed', reason);
+    }
+    return active;
+  }, [reverifySubscription, subscriptionDetails]);
 
   /** Apply the same object returned from `reverifySubscription` / API (strict `isActive`). */
   const unlockChannels = useCallback((subscription) => {
@@ -453,38 +493,6 @@ export function OsmaniAppProvider({ children }) {
       devLog('[SERVER_HEALTH_UPDATE]', 'fetch_failed', e?.message ?? e);
       return null;
     }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const identity = await getDeviceIdentity().catch(() => ({}));
-        const hydrated = await hydrateSubscriptionFromCache(identity);
-        if (!cancelled && hydrated?.active) {
-          isSubscribedRef.current = true;
-          setIsSubscribed(true);
-          setSubscriptionExpiresAt(hydrated.expiresAt);
-          console.log('[SUBSCRIPTION_CACHE]', 'hydrate_boot', {
-            expiresAt: hydrated.expiresAt,
-            deviceId: identity.deviceId?.slice?.(0, 8),
-          });
-        }
-      } catch (e) {
-        console.log('[SUBSCRIPTION_CACHE]', 'hydrate_boot_error', e?.message ?? e);
-      } finally {
-        if (!cancelled) {
-          setSubscriptionCacheReady(true);
-          if (subscriptionCacheReadyResolveRef.current) {
-            subscriptionCacheReadyResolveRef.current(true);
-            subscriptionCacheReadyResolveRef.current = null;
-          }
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   useEffect(() => {
@@ -680,8 +688,9 @@ export function OsmaniAppProvider({ children }) {
   /** Debounced channels/banners + subscription reverify after admin SSE bursts. */
   const adminSoftSyncTimerRef = useRef(null);
   const scheduleAdminDrivenSoftSync = useCallback(
-    (reason = 'sse:admin', { immediate = false } = {}) => {
-      const run = () => {
+    (reason = 'sse:admin') => {
+      if (adminSoftSyncTimerRef.current) clearTimeout(adminSoftSyncTimerRef.current);
+      adminSoftSyncTimerRef.current = setTimeout(() => {
         adminSoftSyncTimerRef.current = null;
         devLog('[ADMIN_SYNC]', 'soft_refresh', reason);
         invalidateCatalogCache();
@@ -693,17 +702,7 @@ export function OsmaniAppProvider({ children }) {
           forceNetwork: true,
         });
         void reverifySubscription(reason);
-      };
-      if (immediate) {
-        if (adminSoftSyncTimerRef.current) {
-          clearTimeout(adminSoftSyncTimerRef.current);
-          adminSoftSyncTimerRef.current = null;
-        }
-        run();
-        return;
-      }
-      if (adminSoftSyncTimerRef.current) clearTimeout(adminSoftSyncTimerRef.current);
-      adminSoftSyncTimerRef.current = setTimeout(run, 180);
+      }, 320);
     },
     [refresh, refreshTrialWatchSettings, reverifySubscription],
   );
@@ -724,12 +723,24 @@ export function OsmaniAppProvider({ children }) {
       }),
     );
     void refresh({ showGlobalLoading: false, preserveDataOnError: true, forceNetwork: true });
-    void warmPaymentCatalogCache();
   }, [refresh]);
 
-  // Cold-start: recover (in case of reinstall) and verify — background, never blocks splash.
+  // Cold-start: hydrate cache immediately, then recover+verify in background.
   useEffect(() => {
+    let cancelled = false;
     (async () => {
+      try {
+        await hydrateSubscriptionFromCache('cold-start-cache');
+      } catch (e) {
+        console.log('[SUBSCRIPTION_COLD_START]', 'cache_hydrate_error', e?.message ?? e);
+      }
+      if (!cancelled) {
+        setSubscriptionSyncLoaded(true);
+        if (subscriptionReadyResolveRef.current) {
+          subscriptionReadyResolveRef.current(true);
+          subscriptionReadyResolveRef.current = null;
+        }
+      }
       try {
         await withTimeout(
           recoverAndVerify('cold-start'),
@@ -738,25 +749,17 @@ export function OsmaniAppProvider({ children }) {
         );
       } catch (e) {
         console.log('[SUBSCRIPTION_COLD_START]', 'timeout_or_error', e?.message ?? e);
-      } finally {
-        setSubscriptionSyncLoaded(true);
-        if (subscriptionReadyResolveRef.current) {
-          subscriptionReadyResolveRef.current(true);
-          subscriptionReadyResolveRef.current = null;
-        }
       }
     })();
-  }, [recoverAndVerify]);
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateSubscriptionFromCache, recoverAndVerify]);
 
   const awaitTrialWatchSettingsReady = useCallback(async () => {
     if (trialWatchSettingsLoaded) return true;
     return trialWatchReadyPromiseRef.current;
   }, [trialWatchSettingsLoaded]);
-
-  const awaitSubscriptionCacheReady = useCallback(async () => {
-    if (subscriptionCacheReady) return true;
-    return subscriptionCacheReadyPromiseRef.current;
-  }, [subscriptionCacheReady]);
 
   const awaitSubscriptionSyncReady = useCallback(async () => {
     if (subscriptionSyncLoaded) return true;
@@ -765,37 +768,26 @@ export function OsmaniAppProvider({ children }) {
 
   const getPremiumAccessSnapshot = useCallback(
     () => ({
-      premiumPlaybackReady: subscriptionCacheReady && trialWatchSettingsLoaded,
+      premiumPlaybackReady: subscriptionSyncLoaded && trialWatchSettingsLoaded,
       isSubscribed: isSubscribedRef.current,
       freeMode: settingsRef.current.freeMode,
       trialWatchSettings: trialWatchSettingsRef.current,
     }),
-    [subscriptionCacheReady, trialWatchSettingsLoaded],
+    [subscriptionSyncLoaded, trialWatchSettingsLoaded],
   );
 
   const awaitPremiumAccessSnapshot = useCallback(async () => {
-    try {
-      await withTimeout(
-        Promise.all([awaitTrialWatchSettingsReady(), awaitSubscriptionCacheReady()]),
-        PREMIUM_GATE_MAX_MS,
-        'premium-tap-gate',
-      );
-    } catch (e) {
-      console.log('[PREMIUM_TAP_GATE]', 'snapshot_cap', e?.message ?? e);
-    }
+    await Promise.all([awaitTrialWatchSettingsReady(), awaitSubscriptionSyncReady()]);
     return getPremiumAccessSnapshot();
   }, [
-    awaitSubscriptionCacheReady,
+    awaitSubscriptionSyncReady,
     awaitTrialWatchSettingsReady,
     getPremiumAccessSnapshot,
   ]);
 
-  const verifySubscriptionInBackground = useCallback((reason = 'tap-bg') => {
-    void reverifySubscription(`gate-bg:${reason}`).catch(() => null);
-  }, [reverifySubscription]);
+  const awaitPremiumGateReady = awaitPremiumAccessSnapshot;
 
-  /** Fast path for channel tap — cache read only, never blocks on recover/verify. */
-  const premiumPlaybackReady = subscriptionCacheReady && trialWatchSettingsLoaded;
+  const premiumPlaybackReady = subscriptionSyncLoaded && trialWatchSettingsLoaded;
 
   useEffect(() => {
     void refreshServerHealth('initial');
@@ -982,7 +974,7 @@ export function OsmaniAppProvider({ children }) {
           setSettings((prev) => ({ ...prev, ...patch }));
           console.log('[SETTINGS_SYNC]', ev, patch);
         }
-        scheduleAdminDrivenSoftSync(`sse:${ev}`, { immediate: true });
+        scheduleAdminDrivenSoftSync(`sse:${ev}`);
       }),
     );
     return () => {
@@ -1165,15 +1157,12 @@ export function OsmaniAppProvider({ children }) {
       trialWatchSettings,
       trialWatchSettingsLoaded,
       subscriptionSyncLoaded,
-      subscriptionCacheReady,
       premiumPlaybackReady,
       getPremiumAccessSnapshot,
       awaitPremiumAccessSnapshot,
       awaitTrialWatchSettingsReady,
       awaitSubscriptionSyncReady,
-      awaitSubscriptionCacheReady,
       awaitPremiumGateReady,
-      verifySubscriptionInBackground,
       paymentModalRequest,
       requestPaymentModal,
     }),
@@ -1207,15 +1196,12 @@ export function OsmaniAppProvider({ children }) {
       trialWatchSettings,
       trialWatchSettingsLoaded,
       subscriptionSyncLoaded,
-      subscriptionCacheReady,
       premiumPlaybackReady,
       getPremiumAccessSnapshot,
       awaitPremiumAccessSnapshot,
       awaitTrialWatchSettingsReady,
       awaitSubscriptionSyncReady,
-      awaitSubscriptionCacheReady,
       awaitPremiumGateReady,
-      verifySubscriptionInBackground,
       paymentModalRequest,
       requestPaymentModal,
     ],

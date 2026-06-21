@@ -172,10 +172,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       ? routeTrialBootstrap
       : null;
   const [accessChecked, setAccessChecked] = useState(
-    () => !channelIsPremium || freeMode || viaTrialPlayback,
+    () => !channelIsPremium || freeMode || viaTrialPlayback || isSubscribed,
   );
   const [accessAllowed, setAccessAllowed] = useState(
-    () => !channelIsPremium || freeMode || viaTrialPlayback,
+    () => !channelIsPremium || freeMode || viaTrialPlayback || isSubscribed,
   );
 
   const streams = [
@@ -652,6 +652,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return undefined;
     }
 
+    if (isSubscribed) {
+      setAccessChecked(true);
+      setAccessAllowed(true);
+      premiumGateSessionRef.current = { channelKey, granted: true };
+      void gateForPlayback('player-mount');
+      return undefined;
+    }
+
     if (
       premiumGateSessionRef.current.granted &&
       premiumGateSessionRef.current.channelKey === channelKey
@@ -661,32 +669,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
     setAccessChecked(false);
     setAccessAllowed(false);
-
-    if (isSubscribed) {
-      setAccessChecked(true);
-      setAccessAllowed(true);
-      premiumGateSessionRef.current = { channelKey, granted: true };
-      void (async () => {
-        try {
-          const r = await reverifySubscription('player-mount-bg');
-          if (cancelled) return;
-          if (r?.active === true) return;
-          console.log('[player][gate]', 'bg_denied', { channel: channel?.name });
-          premiumGateSessionRef.current = { channelKey, granted: false };
-          if (exitPlayerRef.current) {
-            void exitPlayerRef.current('gate_denied');
-          } else {
-            try {
-              navigation.goBack();
-            } catch {}
-          }
-        } catch (e) {
-          console.log('[player][gate]', 'bg_verify_error', e?.message ?? e);
-        }
-      })();
-      return undefined;
-    }
-
     (async () => {
       const ok = await gateForPlayback('player-mount');
       if (cancelled) return;
@@ -715,8 +697,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     channelIsPremium,
     freeMode,
     viaTrialPlayback,
+    isSubscribed,
     gateForPlayback,
-    reverifySubscription,
     navigation,
   ]);
 
