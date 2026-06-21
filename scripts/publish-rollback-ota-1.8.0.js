@@ -3,21 +3,19 @@
 
 /**
  * Roll back runtime 1.8.0 (v22) OTA to stable f7cb49b + VPS migration.
- * Does not change main branch app code — uses a temporary git worktree.
+ * Temporarily restores f7cb49b tree, publishes OTA, then hard-resets to saved HEAD.
  *
  * Usage: node scripts/publish-rollback-ota-1.8.0.js [--dry-run]
  */
 
 const { spawnSync } = require('child_process');
-const fs = require('fs');
 const path = require('path');
 
-const STABLE_COMMIT = 'f7cb49b6d7396cc8a6a3a1dae23bd5294c6742a2';
+const STABLE_COMMIT = 'f7cb49b';
 const RUNTIME = '1.8.0';
 const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const dryRun = process.argv.includes('--dry-run');
 const repoRoot = path.join(__dirname, '..');
-const worktreeDir = path.join(repoRoot, '.ota-worktree-1.8.0');
 
 function run(cmd, args, opts = {}) {
   const result = spawnSync(cmd, args, { stdio: 'inherit', shell: false, ...opts });
@@ -27,23 +25,22 @@ function run(cmd, args, opts = {}) {
   }
 }
 
-function cleanup() {
-  if (fs.existsSync(worktreeDir)) {
-    run('git', ['worktree', 'remove', '--force', worktreeDir], { cwd: repoRoot });
-  }
+function getHead() {
+  return spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).stdout.trim();
 }
 
 console.log(`[rollback-ota-1.8.0] stable source ${STABLE_COMMIT}`);
-cleanup();
+const savedHead = getHead();
+console.log(`[rollback-ota-1.8.0] saving HEAD ${savedHead}`);
 
-run('git', ['worktree', 'add', '--detach', worktreeDir, STABLE_COMMIT], { cwd: repoRoot });
+run('git', ['restore', '--source', STABLE_COMMIT, '--worktree', '--staged', '.'], { cwd: repoRoot });
 
-const msg = `rollback(ota): restore stable runtime ${RUNTIME} from f7cb49b (VPS preserved)`;
-console.log(`\n=== OTA runtime ${RUNTIME} from worktree ===`);
+const msg = `rollback ota restore stable runtime ${RUNTIME} from ${STABLE_COMMIT} VPS preserved`;
+console.log(`\n=== OTA runtime ${RUNTIME} from ${STABLE_COMMIT} tree ===`);
 
 if (dryRun) {
   console.log(`[dry-run] OTA_RUNTIME_TARGET=${RUNTIME} eas update --channel production`);
-  cleanup();
+  run('git', ['reset', '--hard', savedHead], { cwd: repoRoot });
   process.exit(0);
 }
 
@@ -62,8 +59,8 @@ const result = spawnSync(
   ],
   {
     stdio: 'inherit',
-    shell: false,
-    cwd: worktreeDir,
+    shell: true,
+    cwd: repoRoot,
     env: {
       ...process.env,
       CI: '1',
@@ -73,7 +70,8 @@ const result = spawnSync(
   },
 );
 
-cleanup();
+run('git', ['reset', '--hard', savedHead], { cwd: repoRoot });
+console.log(`[rollback-ota-1.8.0] restored HEAD ${savedHead}`);
 
 if (result.status !== 0) {
   console.error(`FAILED runtime ${RUNTIME} exit ${result.status}`);
