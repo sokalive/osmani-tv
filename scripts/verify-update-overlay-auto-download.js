@@ -21,9 +21,9 @@ function pass(msg) {
   console.log('PASS:', msg);
 }
 
-if (!client.includes('function isAutoDownloadInProgress()')) {
-  fail('updateClient must define isAutoDownloadInProgress');
-} else pass('isAutoDownloadInProgress helper');
+if (!/function isAutoDownloadInProgress\(\)[\s\S]*?lastUiState\.downloaded/.test(client)) {
+  fail('isAutoDownloadInProgress must block until downloaded');
+} else pass('isAutoDownloadInProgress blocks until download complete');
 
 if (!client.includes('if (isAutoDownloadInProgress()) return;')) {
   fail('dismissSoft must block during auto-download');
@@ -51,6 +51,12 @@ else pass('buttons pinned outside ScrollView');
 
 if (!overlay.includes('styles.messageScroll')) fail('message scroll region required');
 else pass('message scroll region for long admin text');
+
+if (!overlay.includes('styles.pinnedMeta')) fail('version/progress must be pinned outside ScrollView');
+else pass('pinnedMeta keeps version and progress visible');
+
+if (!overlay.includes('isAutoDownloadBlocking')) fail('isAutoDownloadBlocking helper required');
+else pass('isAutoDownloadBlocking covers full auto-download session');
 
 if (!process.exitCode) {
   console.log('\n[verify-update-overlay-auto-download] ok');

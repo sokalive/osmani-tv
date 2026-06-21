@@ -32,6 +32,13 @@ const CTA_TEXT = '#FFFFFF';
 
 const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MAX_SHEET_H = Math.min(480, Math.round(WINDOW_HEIGHT * 0.82));
+/** Reserve space so pinned version/progress + CTA stay visible on small screens. */
+const BUTTON_STACK_MIN_H = 124;
+const PINNED_META_MIN_H = 72;
+const MESSAGE_SCROLL_MAX_H = Math.max(
+  96,
+  MAX_SHEET_H - BUTTON_STACK_MIN_H - PINNED_META_MIN_H - 36,
+);
 
 function formatMB(bytes) {
   if (!bytes || bytes <= 0) return '';
@@ -66,6 +73,14 @@ function derivePhase(ui) {
   return 'idle';
 }
 
+/** Auto-download session: block dismiss/cancel until APK bytes are on disk. */
+function isAutoDownloadBlocking(info, phase) {
+  if (info?.autoDownload !== true) return false;
+  if (phase === 'downloaded') return false;
+  if (phase === 'installing' || phase === 'needs_permission') return false;
+  return true;
+}
+
 export default function UpdateOverlay() {
   const insets = useSafeAreaInsets();
   const [ui, setUi] = useState(null);
@@ -90,9 +105,7 @@ export default function UpdateOverlay() {
   useEffect(() => {
     if (!ui?.visible) return undefined;
     const infoSnap = ui?.info ?? {};
-    const autoLock =
-      infoSnap.autoDownload === true &&
-      (phase === 'downloading' || phase === 'verifying');
+    const autoLock = isAutoDownloadBlocking(infoSnap, phase);
     const block = ui?.decision === 'FORCE' || autoLock;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (block) return true;
@@ -111,8 +124,7 @@ export default function UpdateOverlay() {
   const info = ui.info ?? {};
   const action = getUpdateAction(info);
 
-  const autoDownloadLock =
-    info.autoDownload === true && (phase === 'downloading' || phase === 'verifying');
+  const autoDownloadLock = isAutoDownloadBlocking(info, phase);
   const blockDismiss = isForce || autoDownloadLock;
 
   const title = String(info.title ?? '').trim() || defaultTitle(ui.decision);
@@ -214,13 +226,15 @@ export default function UpdateOverlay() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               bounces={false}
-              style={styles.messageScroll}
+              style={[styles.messageScroll, { maxHeight: MESSAGE_SCROLL_MAX_H }]}
               contentContainerStyle={styles.scrollInner}
             >
               <View style={styles.handleBar} />
               <Text style={styles.title}>{title}</Text>
               <Text style={styles.body}>{message}</Text>
+            </ScrollView>
 
+            <View style={styles.pinnedMeta}>
               {installedName || latestName ? (
                 <View style={styles.versionRow}>
                   {installedName ? <Text style={styles.versionMuted}>{installedName}</Text> : null}
@@ -257,7 +271,7 @@ export default function UpdateOverlay() {
                   Allow Osmani TV to install from this source, then tap OPEN INSTALLER again.
                 </Text>
               ) : null}
-            </ScrollView>
+            </View>
 
             <View style={styles.buttonStack}>
               <Pressable
@@ -298,6 +312,7 @@ const styles = StyleSheet.create({
   },
   sheet: {
     width: '100%',
+    flexDirection: 'column',
     overflow: 'hidden',
     backgroundColor: SHEET_BG,
     borderRadius: 22,
@@ -312,11 +327,15 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
   },
   scrollInner: {
-    paddingBottom: 8,
+    paddingBottom: 4,
   },
   messageScroll: {
     flexGrow: 0,
     flexShrink: 1,
+  },
+  pinnedMeta: {
+    flexShrink: 0,
+    width: '100%',
   },
   buttonStack: {
     flexShrink: 0,
