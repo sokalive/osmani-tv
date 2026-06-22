@@ -39,6 +39,7 @@ import NotificationPermissionReminderGate from './components/NotificationPermiss
 import ManualSubscriptionGiftModal from './components/ManualSubscriptionGiftModal';
 import PopupSettingsModal from './components/PopupSettingsModal';
 import TransferConfirmModal from './components/TransferConfirmModal';
+import TransferSuccessModal from './components/TransferSuccessModal';
 import TransferredAwayModal from './components/TransferredAwayModal';
 import UpdateOverlay from './components/UpdateOverlay';
 import OtaDebugOverlay, { OtaDebugTitleTap } from './components/OtaDebugOverlay';
@@ -1520,14 +1521,18 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
  * available regardless of which screen the user is on.
  *   - TransferConfirmModal:    shown on the SOURCE device when the
  *     backend pushes `transfer_requested` over /api/sync/stream.
- *   - TransferredAwayModal:    hard-block shown after `subscription_revoked`,
- *     `transfer_completed` (when the backend confirms this device lost
- *     access), or any pre-play verify that returns active=false.
+ *   - TransferSuccessModal:   source device after transfer-out completes
+ *     (instant clear + optional repurchase).
+ *   - TransferredAwayModal:    hard-block for expired/revoked (not transfer-out).
  */
 function SubscriptionLifecycleGates() {
   const {
     revokedReason,
     dismissRevoked,
+    sourceTransferSuccessVisible,
+    applySourceTransferCompleted,
+    dismissSourceTransferSuccess,
+    requestPaymentModal,
     pendingTransfer,
     dismissPendingTransfer,
     reverifySubscription,
@@ -1539,8 +1544,17 @@ function SubscriptionLifecycleGates() {
   useRegisterBlockingSheet('lifecycle-transfer', Boolean(pendingTransfer));
   useRegisterBlockingSheet(
     'lifecycle-revoked',
-    Boolean(revokedReason) && !plansOpen,
+    Boolean(revokedReason) && revokedReason !== 'transferred' && !plansOpen,
   );
+
+  const onTransferApproved = useCallback(() => {
+    void applySourceTransferCompleted('transfer-approved');
+  }, [applySourceTransferCompleted]);
+
+  const onBuyAgainAfterTransfer = useCallback(() => {
+    dismissSourceTransferSuccess();
+    requestPaymentModal();
+  }, [dismissSourceTransferSuccess, requestPaymentModal]);
 
   const onRecover = useCallback(async () => {
     if (recovering) return;
@@ -1572,11 +1586,20 @@ function SubscriptionLifecycleGates() {
   return (
     <>
       {pendingTransfer ? (
-        <TransferConfirmModal event={pendingTransfer} onDismiss={dismissPendingTransfer} />
+        <TransferConfirmModal
+          event={pendingTransfer}
+          onDismiss={dismissPendingTransfer}
+          onApproved={onTransferApproved}
+        />
       ) : null}
+      <TransferSuccessModal
+        visible={sourceTransferSuccessVisible}
+        onBuyAgain={onBuyAgainAfterTransfer}
+        onDismiss={dismissSourceTransferSuccess}
+      />
       <TransferredAwayModal
-        visible={Boolean(revokedReason) && !plansOpen}
-        reason={revokedReason ?? 'transferred'}
+        visible={Boolean(revokedReason) && revokedReason !== 'transferred' && !plansOpen}
+        reason={revokedReason ?? 'expired'}
         recovering={recovering}
         onRecover={onRecover}
         onOpenPlans={onOpenPlans}

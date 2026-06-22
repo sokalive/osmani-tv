@@ -21,7 +21,7 @@ import { respondToTransfer } from '../api/subscription';
  * hard-block is `TransferredAwayModal`, which appears after the
  * backend confirms the transfer (`transfer_completed` / verify=false).
  */
-export default function TransferConfirmModal({ event, onDismiss }) {
+export default function TransferConfirmModal({ event, onDismiss, onApproved }) {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
 
@@ -47,6 +47,9 @@ export default function TransferConfirmModal({ event, onDismiss }) {
         setError('');
         await respondToTransfer(event.code, decision);
         console.log('[TRANSFER_RESPOND]', 'sent', { code: event.code, decision });
+        if (decision === 'approve') {
+          onApproved?.();
+        }
         close();
       } catch (e) {
         const msg = e?.message ?? String(e ?? 'unknown_error');
@@ -56,7 +59,7 @@ export default function TransferConfirmModal({ event, onDismiss }) {
         setBusy('');
       }
     },
-    [close, event?.code],
+    [close, event?.code, onApproved],
   );
 
   if (!event) return null;

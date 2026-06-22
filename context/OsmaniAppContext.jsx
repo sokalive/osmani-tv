@@ -129,6 +129,8 @@ export function OsmaniAppProvider({ children }) {
   const [subscriptionVersion, setSubscriptionVersion] = useState(0);
   /** Set when the backend reports the subscription is no longer active on this device. */
   const [revokedReason, setRevokedReason] = useState(null);
+  /** Source device: transfer-out success popup (replaces transferred TransferredAwayModal). */
+  const [sourceTransferSuccessVisible, setSourceTransferSuccessVisible] = useState(false);
   /** Active `transfer_requested` payload (source-device approval popup). */
   const [pendingTransfer, setPendingTransfer] = useState(null);
   /** Bumped to re-open global emergency modal (banner / channel tap while emergency). */
@@ -932,6 +934,14 @@ export function OsmaniAppProvider({ children }) {
         }
         if (!hadActiveBefore) return;
         if (!isConfirmedSubscriptionLoss(r)) return;
+        const isTransfer =
+          reason === 'transferred' ||
+          reason === 'transfer' ||
+          String(reason).toLowerCase().includes('transfer');
+        if (isTransfer && role === 'source') {
+          await applySourceTransferCompleted('sse:subscription_revoked');
+          return;
+        }
         setRevokedReason(reason);
         isSubscribedRef.current = false;
         setIsSubscribed(false);
@@ -952,17 +962,15 @@ export function OsmaniAppProvider({ children }) {
         const role = await subscriptionTransferSseRole(payload, 'transfer_completed');
         if (role === 'none' || role === 'other') return;
         console.log('[TRANSFER_COMPLETED]', 'sse', payload, { role });
-        const hadActiveBefore = isSubscribedRef.current;
-        sourceTransferSessionRef.current = null;
-        setPendingTransfer(null);
-        const r = await reverifySubscription('sse:transfer_completed');
-        if (r?.active === true) {
-          setRevokedReason(null);
+        if (role === 'source') {
+          const hadActiveBefore = isSubscribedRef.current;
+          if (!hadActiveBefore) return;
+          await applySourceTransferCompleted('sse:transfer_completed');
           return;
         }
-        if (role === 'source' && hadActiveBefore && isConfirmedSubscriptionLoss(r)) {
-          setRevokedReason('transferred');
-        }
+        sourceTransferSessionRef.current = null;
+        setPendingTransfer(null);
+        void reverifySubscription('sse:transfer_completed');
       })();
     });
     // `transfer_approved` fires on the TARGET device once the source
@@ -1080,7 +1088,7 @@ export function OsmaniAppProvider({ children }) {
       offRuntimeModes.forEach((off) => off());
       offCatalogAliases.forEach((off) => off());
     };
-  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync]);
+  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted]);
 
   // Foreground sync: refresh catalog + reverify periodically while app is active.
   useEffect(() => {
@@ -1150,6 +1158,41 @@ export function OsmaniAppProvider({ children }) {
 
   const dismissRevoked = useCallback(() => {
     setRevokedReason(null);
+  }, []);
+
+  /** Drop local active subscription immediately — cache, refs, and UI gates. */
+  const clearLocalActiveSubscription = useCallback(async (reason = 'manual') => {
+    isSubscribedRef.current = false;
+    setIsSubscribed(false);
+    setSubscriptionExpiresAt(null);
+    setSubscriptionDetails(null);
+    setSubscriptionVersion((v) => v + 1);
+    setRevokedReason(null);
+    try {
+      await clearSubscriptionCache(`clear-local:${reason}`);
+    } catch {
+      /* ignore */
+    }
+    console.log('[SUBSCRIPTION_CLEAR_LOCAL]', reason);
+  }, []);
+
+  /**
+   * Source Phone A: instant loss of premium access + success popup, then background verify.
+   */
+  const applySourceTransferCompleted = useCallback(
+    async (reason = 'transfer_completed') => {
+      if (!isSubscribedRef.current) return;
+      sourceTransferSessionRef.current = null;
+      setPendingTransfer(null);
+      await clearLocalActiveSubscription(reason);
+      setSourceTransferSuccessVisible(true);
+      void reverifySubscription(`bg:${reason}`);
+    },
+    [clearLocalActiveSubscription, reverifySubscription],
+  );
+
+  const dismissSourceTransferSuccess = useCallback(() => {
+    setSourceTransferSuccessVisible(false);
   }, []);
 
   const clearSourceTransferSession = useCallback(() => {
@@ -1240,6 +1283,10 @@ export function OsmaniAppProvider({ children }) {
       // revoke / transfer
       revokedReason,
       dismissRevoked,
+      sourceTransferSuccessVisible,
+      applySourceTransferCompleted,
+      dismissSourceTransferSuccess,
+      clearLocalActiveSubscription,
       pendingTransfer,
       dismissPendingTransfer,
       triggerPendingTransfer,
@@ -1280,6 +1327,10 @@ export function OsmaniAppProvider({ children }) {
       unlockChannels,
       revokedReason,
       dismissRevoked,
+      sourceTransferSuccessVisible,
+      applySourceTransferCompleted,
+      dismissSourceTransferSuccess,
+      clearLocalActiveSubscription,
       pendingTransfer,
       dismissPendingTransfer,
       triggerPendingTransfer,

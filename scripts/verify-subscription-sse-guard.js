@@ -31,9 +31,9 @@ else pass('subscriptionSseGuard module');
 if (!ctx.includes('subscriptionTransferSseRole')) fail('context must use SSE guard');
 else pass('context imports SSE guard');
 
-if (!ctx.includes("setRevokedReason('transferred')") || !ctx.includes("role === 'source'")) {
-  fail('transferred modal must require source role + confirmed loss');
-} else pass('transfer_completed gated to source device');
+if (!ctx.includes('applySourceTransferCompleted') || !ctx.includes("role === 'source'")) {
+  fail('transfer_completed must instantly clear source subscription');
+} else pass('transfer_completed instant source clear');
 
 if (ctx.includes('isConfirmedSubscriptionLoss')) {
   pass('subscription_revoked verifies before modal');
