@@ -31,6 +31,8 @@ import {
 } from '../api/payment';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { formatCheckoutPaymentError } from '../lib/paymentCheckoutErrors';
+import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
+import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { verifySubscription } from '../api/subscription';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
@@ -56,8 +58,8 @@ const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
 
 const POLL_MS = 1500;
-const PAYMENT_ACTIVATION_RETRY_MS = 750;
-const PAYMENT_ACTIVATION_MAX_ATTEMPTS = 10;
+const PAYMENT_ACTIVATION_RETRY_MS = 500;
+const PAYMENT_ACTIVATION_MAX_ATTEMPTS = 12;
 
 /**
  * Local fallback used only when GET /api/payment-providers fails or
@@ -170,6 +172,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [logoErrors, setLogoErrors] = useState({});
   const [checkoutProvider, setCheckoutProvider] = useState('zenopay');
   const [checkoutTestMode, setCheckoutTestMode] = useState(false);
+  const [checkoutLogoUrl, setCheckoutLogoUrl] = useState(null);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -294,28 +297,47 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
-  /** Load active checkout gateway (zenopay | sonicpesa | auraxpay) when modal opens. */
+  /** Sync active checkout gateway (zenopay | sonicpesa | auraxpay) from admin API. */
+  const reloadCheckoutConfig = useCallback(async () => {
+    try {
+      const cfg = await getCheckoutPaymentProviders();
+      setCheckoutProvider(cfg.payment_provider);
+      setCheckoutTestMode(cfg.auraxpay_test === true);
+      setCheckoutLogoUrl(cfg.logos?.auraxpay ?? null);
+      console.log('[PremiumModal]', 'checkout_provider', cfg.payment_provider, {
+        auraxpay: cfg.auraxpay,
+        auraxpay_test: cfg.auraxpay_test,
+      });
+      return cfg;
+    } catch (e) {
+      console.log('[PremiumModal]', 'checkout_provider_load_failed', e?.message ?? e);
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     if (!visible) return undefined;
-    let cancelled = false;
-    (async () => {
-      try {
-        const cfg = await getCheckoutPaymentProviders();
-        if (cancelled) return;
-        setCheckoutProvider(cfg.payment_provider);
-        setCheckoutTestMode(cfg.auraxpay_test === true);
-        console.log('[PremiumModal]', 'checkout_provider', cfg.payment_provider, {
-          auraxpay: cfg.auraxpay,
-          auraxpay_test: cfg.auraxpay_test,
-        });
-      } catch {
-        if (!cancelled) setCheckoutProvider('zenopay');
-      }
-    })();
+    void reloadCheckoutConfig();
+    return undefined;
+  }, [visible, reloadCheckoutConfig]);
+
+  /** Refresh gateway routing when admin toggles Aurax/SonicPesa without closing modal. */
+  useEffect(() => {
+    if (!visible) return undefined;
+    const events = [
+      'aurax_settings_changed',
+      'sonicpesa_settings_changed',
+      'payment_providers_changed',
+    ];
+    const offs = events.map((ev) =>
+      subscribeRealtimeEvent(ev, () => {
+        void reloadCheckoutConfig();
+      }),
+    );
     return () => {
-      cancelled = true;
+      offs.forEach((off) => off());
     };
-  }, [visible]);
+  }, [visible, reloadCheckoutConfig]);
 
   /** When modal opens, always sync subscription from server (do not trust stale context). */
   useEffect(() => {
@@ -568,6 +590,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setSubmitting(true);
     try {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+      const freshCfg = await reloadCheckoutConfig();
+      const activeProvider = freshCfg?.payment_provider ?? checkoutProvider;
       const payPayload = {
         phone: phoneNumber.replace(/\s/g, ''),
         plan_id: selectedPlan.id,
@@ -576,7 +600,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         device_fingerprint: deviceFingerprint,
       };
       void cacheSecurityPhone(payPayload.phone);
-      const startPayment = resolveCheckoutStartPayment(checkoutProvider);
+      const startPayment = resolveCheckoutStartPayment(activeProvider);
+      console.log('[PremiumModal]', 'payment_start', { provider: activeProvider, planId: selectedPlan.id });
       const { order_id: oid, expiresInSeconds } = await startPayment(payPayload);
       doneRef.current = false;
       setWaitingDeviceId(deviceId);
@@ -594,7 +619,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           '[PremiumModal]',
           'payment_start_failed',
           JSON.stringify({
-            provider: checkoutProvider,
+            provider: activeProvider,
             backendReason: e.backendReason,
             httpStatus: e.httpStatus,
             path: e.path,
@@ -771,6 +796,31 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                             />
                           </View>
                           <Text style={[styles.networksLabel, styles.step2GapClear]}>Mitandao inayokubaliwa</Text>
+                          {checkoutProvider === 'auraxpay' ? (
+                            <View style={[styles.checkoutBadge, styles.step2GapClear]}>
+                              {checkoutLogoUrl ? (
+                                <Image
+                                  source={{ uri: checkoutLogoUrl }}
+                                  style={styles.checkoutBadgeLogo}
+                                  resizeMode="contain"
+                                />
+                              ) : (
+                                <View
+                                  style={[
+                                    styles.checkoutBadgeIcon,
+                                    { backgroundColor: CHECKOUT_GATEWAY_META.auraxpay.accent },
+                                  ]}
+                                >
+                                  <Text style={styles.checkoutBadgeIconText}>
+                                    {CHECKOUT_GATEWAY_META.auraxpay.initial}
+                                  </Text>
+                                </View>
+                              )}
+                              <Text style={styles.checkoutBadgeText}>
+                                {CHECKOUT_GATEWAY_META.auraxpay.name}
+                              </Text>
+                            </View>
+                          ) : null}
                           <View style={[styles.networksGrid, styles.step2GapClear]}>
                             {providers.map((n) => {
                               const tint = NETWORK_COLORS[n.name] || ACCENT;
@@ -1375,6 +1425,42 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     fontWeight: '700',
+  },
+  checkoutBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(8,145,178,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(8,145,178,0.35)',
+    marginBottom: 10,
+  },
+  checkoutBadgeLogo: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+  },
+  checkoutBadgeIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkoutBadgeIconText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  checkoutBadgeText: {
+    color: '#E0F2FE',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   networksRow: {
     flexDirection: 'row',

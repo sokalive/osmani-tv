@@ -39,10 +39,16 @@ function resolveActiveCheckoutProvider(cfg) {
 }
 
 function parseCheckoutProvidersResponse(body) {
+  const auraxpay =
+    body?.auraxpay === true ||
+    body?.aurax === true ||
+    body?.aurax_pay === true ||
+    body?.auraxPay === true;
   const flags = {
     zenopay: body?.zenopay !== false,
     sonicpesa: Boolean(body?.sonicpesa),
-    auraxpay: Boolean(body?.auraxpay),
+    auraxpay,
+    auraxpay_test: Boolean(body?.auraxpay_test ?? body?.aurax_test),
   };
   return {
     payment_provider: resolveActiveCheckoutProvider({
@@ -142,6 +148,25 @@ const aurax = parseCheckoutProvidersResponse({
 assert(aurax.payment_provider === 'auraxpay', 'auraxpay active provider');
 assert(aurax.auraxpay === true, 'auraxpay flag true when enabled');
 
+const auraxAliasOnly = parseCheckoutProvidersResponse({
+  payment_provider: 'auraxpay',
+  zenopay: true,
+  sonicpesa: false,
+  aurax: true,
+});
+assert(auraxAliasOnly.payment_provider === 'auraxpay', 'aurax alias enables auraxpay routing');
+assert(auraxAliasOnly.auraxpay === true, 'aurax alias sets auraxpay flag');
+
+const auraxHidden = parseCheckoutProvidersResponse({
+  payment_provider: 'auraxpay',
+  zenopay: true,
+  sonicpesa: false,
+  auraxpay: false,
+  aurax: false,
+});
+assert(auraxHidden.payment_provider === 'zenopay', 'auraxpay hidden when flags false');
+assert(auraxHidden.auraxpay === false, 'auraxpay flag false when disabled');
+
 const checkoutSrc = fs.readFileSync(path.join(root, 'lib', 'checkoutPaymentProviders.js'), 'utf8');
 assert(checkoutSrc.includes('resolveActiveCheckoutProvider'), 'resolveActiveCheckoutProvider exported');
 assert(checkoutSrc.includes('auraxpay_test'), 'auraxpay_test parsed from checkout-providers');
@@ -169,6 +194,9 @@ assert(!modalSrc.includes('payButtonLabel'), 'no provider-specific pay button la
 assert(!modalSrc.includes('Njia ya malipo'), 'no visible checkout gateway cards');
 assert(!modalSrc.includes('checkoutGateways'), 'no checkout gateway card grid');
 assert(modalSrc.includes('formatCheckoutPaymentError'), 'PremiumModal maps payment failure text');
+assert(modalSrc.includes('reloadCheckoutConfig'), 'PremiumModal reloads checkout config');
+assert(modalSrc.includes('aurax_settings_changed'), 'PremiumModal listens for Aurax admin SSE');
+assert(modalSrc.includes('CHECKOUT_GATEWAY_META'), 'PremiumModal shows active Aurax badge metadata');
 assert(modalSrc.includes('checkoutTestMode'), 'PremiumModal tracks auraxpay_test for admin probe UI');
 
 // VersionCode / runtime backward compatibility (OTA targets)
