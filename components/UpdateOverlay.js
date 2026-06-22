@@ -23,6 +23,7 @@ import {
   startDownload,
   subscribe,
 } from '../lib/updateClient';
+import { isMandatoryUpdate } from '../lib/updateMandatoryPolicy';
 
 const SHEET_BG = '#0F1115';
 const TEXT_MUTED = '#9CA3AF';
@@ -73,12 +74,9 @@ function derivePhase(ui) {
   return 'idle';
 }
 
-/** Auto-download session: block dismiss/cancel until APK bytes are on disk. */
-function isAutoDownloadBlocking(info, phase) {
-  if (info?.autoDownload !== true) return false;
-  if (phase === 'downloaded') return false;
-  if (phase === 'installing' || phase === 'needs_permission') return false;
-  return true;
+/** @deprecated use isMandatoryUpdate — kept for verify script grep */
+function isAutoDownloadBlocking(info, decision) {
+  return isMandatoryUpdate(info, decision);
 }
 
 export default function UpdateOverlay() {
@@ -105,10 +103,9 @@ export default function UpdateOverlay() {
   useEffect(() => {
     if (!ui?.visible) return undefined;
     const infoSnap = ui?.info ?? {};
-    const autoLock = isAutoDownloadBlocking(infoSnap, phase);
-    const block = ui?.decision === 'FORCE' || autoLock;
+    const mandatory = isMandatoryUpdate(infoSnap, ui?.decision);
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (block) return true;
+      if (mandatory) return true;
       if (phase === 'downloading' || phase === 'verifying') {
         cancelDownload();
       }
@@ -124,8 +121,8 @@ export default function UpdateOverlay() {
   const info = ui.info ?? {};
   const action = getUpdateAction(info);
 
-  const autoDownloadLock = isAutoDownloadBlocking(info, phase);
-  const blockDismiss = isForce || autoDownloadLock;
+  const mandatoryUpdate = isMandatoryUpdate(info, ui.decision);
+  const blockDismiss = mandatoryUpdate;
 
   const title = String(info.title ?? '').trim() || defaultTitle(ui.decision);
   const message =
@@ -163,7 +160,7 @@ export default function UpdateOverlay() {
   };
 
   const onCancel = () => {
-    if (isForce || autoDownloadLock) return;
+    if (mandatoryUpdate) return;
     if (phase === 'downloading' || phase === 'verifying') {
       cancelDownload();
     }
@@ -189,7 +186,7 @@ export default function UpdateOverlay() {
     busy ||
     (phase === 'idle' && !action.canDownload && !action.canOpenStore);
 
-  const showCancel = !isForce && phase !== 'installing' && !autoDownloadLock;
+  const showCancel = !mandatoryUpdate;
 
   return (
     <Modal
