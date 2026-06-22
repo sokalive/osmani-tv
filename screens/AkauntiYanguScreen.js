@@ -194,8 +194,13 @@ export default function AkauntiYanguScreen() {
     if (!isSubscribed) {
       lastPaymentLabelRef.current = null;
       lastDurationDaysRef.current = null;
+      return;
     }
-  }, [isSubscribed]);
+    const pay = resolveSubscriptionPaymentLabel(subscriptionDetails);
+    if (pay) lastPaymentLabelRef.current = pay;
+    const days = resolvePlanDurationDays(subscriptionDetails);
+    if (days != null) lastDurationDaysRef.current = String(days);
+  }, [isSubscribed, subscriptionDetails]);
 
   const deviceLabel = useMemo(() => getDeviceLabel(), []);
   const deviceShort =

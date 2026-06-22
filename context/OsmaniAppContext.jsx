@@ -42,6 +42,10 @@ import {
   readHydratableSubscriptionCache,
   subscriptionDetailsFromCache,
 } from '../lib/subscriptionCacheHydrate';
+import {
+  extractPlanSnapshotFromDetails,
+  mergeSubscriptionDetails,
+} from '../lib/subscriptionDetailsMerge';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
@@ -312,7 +316,12 @@ export function OsmaniAppProvider({ children }) {
               transportPreserved: effectiveResult.transportPreserved === true,
             }
           : null;
-        setSubscriptionDetails(detailsPayload);
+        let mergedDetails = null;
+        setSubscriptionDetails((prev) => {
+          if (!active) return null;
+          mergedDetails = mergeSubscriptionDetails(prev, detailsPayload);
+          return mergedDetails;
+        });
         console.log('[MANUAL_GIFT]', 'context_after_verify', {
           reason,
           active,
@@ -329,7 +338,18 @@ export function OsmaniAppProvider({ children }) {
         setSubscriptionVersion((v) => v + 1);
         if (active) {
           setRevokedReason(null);
-          await writeSubscriptionCache({ active: true, expiresAt, deviceId, fingerprint: deviceFingerprint });
+          let planSnapshot = extractPlanSnapshotFromDetails(mergedDetails);
+          if (!planSnapshot) {
+            const cachedSnap = await readSubscriptionCache();
+            planSnapshot = cachedSnap.planSnapshot ?? null;
+          }
+          await writeSubscriptionCache({
+            active: true,
+            expiresAt,
+            deviceId,
+            fingerprint: deviceFingerprint,
+            planSnapshot,
+          });
         } else if (
           !active &&
           !isSubscriptionTransportFailure(r) &&
@@ -367,6 +387,7 @@ export function OsmaniAppProvider({ children }) {
             isSubscribedRef.current = true;
             setIsSubscribed(true);
             setSubscriptionExpiresAt(cached.expiresAt ?? null);
+            setSubscriptionDetails(subscriptionDetailsFromCache(cached));
             setSubscriptionVersion((v) => v + 1);
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'error_preserved_cache', {
               error: e?.message ?? e,

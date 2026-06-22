@@ -78,6 +78,41 @@ if (!player.includes('isSubscribed')) {
   fail('player optimistic premium gate required');
 } else pass('player optimistic premium gate');
 
+if (!hydrate.includes('subscriptionDetailsFromPlanSnapshot')) {
+  fail('plan snapshot hydrate required');
+} else pass('plan snapshot hydrate');
+
+const merge = fs.readFileSync(path.join(root, 'lib', 'subscriptionDetailsMerge.js'), 'utf8');
+const account = fs.readFileSync(path.join(root, 'screens', 'AkauntiYanguScreen.js'), 'utf8');
+const subApi = fs.readFileSync(path.join(root, 'api', 'subscription.js'), 'utf8');
+
+if (!merge.includes('mergeSubscriptionDetails')) fail('mergeSubscriptionDetails required');
+else pass('mergeSubscriptionDetails module');
+
+if (!context.includes('mergeSubscriptionDetails')) fail('context must merge partial verify details');
+else pass('context merges partial verify details');
+
+if (!subApi.includes('planSnapshot')) fail('subscription cache must persist plan snapshot');
+else pass('plan snapshot AsyncStorage key');
+
+if (!account.includes('lastPaymentLabelRef')) fail('account sticky payment ref');
+else pass('account sticky payment ref');
+
+if (!account.includes('lastDurationDaysRef')) fail('account sticky duration ref');
+else pass('account sticky duration ref');
+
+const { mergeSubscriptionDetails } = require('../lib/subscriptionDetailsMerge');
+const merged = mergeSubscriptionDetails(
+  { amount: 5000, currency: 'TZS', planDurationDays: 30, plans: [{ id: 1, price: 5000 }] },
+  { amount: null, planDurationDays: null, plans: [], expiresAt: '2026-12-01', active: true },
+);
+if (merged.amount !== 5000) fail('merge must preserve amount');
+else pass('merge preserves amount');
+if (merged.planDurationDays !== 30) fail('merge must preserve planDurationDays');
+else pass('merge preserves planDurationDays');
+if (!Array.isArray(merged.plans) || merged.plans.length !== 1) fail('merge must preserve plans');
+else pass('merge preserves plans');
+
 if (!process.exitCode) {
   console.log('\n[verify-subscription-cache-hydrate] ok');
 }

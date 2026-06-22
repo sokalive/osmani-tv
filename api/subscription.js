@@ -40,6 +40,7 @@ export const SUB_CACHE_KEYS = Object.freeze({
   deviceId: 'osmani:sub:device_id',
   fingerprint: 'osmani:sub:fingerprint',
   revokedAt: 'osmani:sub:revoked_at',
+  planSnapshot: 'osmani:sub:plan_snapshot',
 });
 
 async function readJson(res) {
@@ -1388,33 +1389,63 @@ export async function getTransferStatus(code) {
 
 export async function readSubscriptionCache() {
   try {
-    const [active, expiresAt, deviceId, fingerprint, revokedAt] = await Promise.all([
+    const [active, expiresAt, deviceId, fingerprint, revokedAt, planSnapshotRaw] =
+      await Promise.all([
       AsyncStorage.getItem(SUB_CACHE_KEYS.active),
       AsyncStorage.getItem(SUB_CACHE_KEYS.expiresAt),
       AsyncStorage.getItem(SUB_CACHE_KEYS.deviceId),
       AsyncStorage.getItem(SUB_CACHE_KEYS.fingerprint),
       AsyncStorage.getItem(SUB_CACHE_KEYS.revokedAt),
+      AsyncStorage.getItem(SUB_CACHE_KEYS.planSnapshot),
     ]);
+    let planSnapshot = null;
+    if (planSnapshotRaw) {
+      try {
+        planSnapshot = JSON.parse(planSnapshotRaw);
+      } catch {
+        planSnapshot = null;
+      }
+    }
     return {
       active: active === '1',
       expiresAt: expiresAt || null,
       deviceId: deviceId || null,
       fingerprint: fingerprint || null,
       revokedAt: revokedAt || null,
+      planSnapshot,
     };
   } catch {
-    return { active: false, expiresAt: null, deviceId: null, fingerprint: null, revokedAt: null };
+    return {
+      active: false,
+      expiresAt: null,
+      deviceId: null,
+      fingerprint: null,
+      revokedAt: null,
+      planSnapshot: null,
+    };
   }
 }
 
-export async function writeSubscriptionCache({ active, expiresAt, deviceId, fingerprint }) {
+export async function writeSubscriptionCache({
+  active,
+  expiresAt,
+  deviceId,
+  fingerprint,
+  planSnapshot,
+}) {
   try {
-    await AsyncStorage.multiSet([
+    const pairs = [
       [SUB_CACHE_KEYS.active, active ? '1' : '0'],
       [SUB_CACHE_KEYS.expiresAt, expiresAt ? String(expiresAt) : ''],
       [SUB_CACHE_KEYS.deviceId, deviceId ? String(deviceId) : ''],
       [SUB_CACHE_KEYS.fingerprint, fingerprint ? String(fingerprint) : ''],
-    ]);
+    ];
+    if (planSnapshot && typeof planSnapshot === 'object') {
+      pairs.push([SUB_CACHE_KEYS.planSnapshot, JSON.stringify(planSnapshot)]);
+    } else if (!active) {
+      pairs.push([SUB_CACHE_KEYS.planSnapshot, '']);
+    }
+    await AsyncStorage.multiSet(pairs);
   } catch {}
 }
 
@@ -1425,6 +1456,7 @@ export async function clearSubscriptionCache(reason = 'unknown') {
       SUB_CACHE_KEYS.expiresAt,
       SUB_CACHE_KEYS.deviceId,
       SUB_CACHE_KEYS.fingerprint,
+      SUB_CACHE_KEYS.planSnapshot,
     ]);
     await AsyncStorage.setItem(SUB_CACHE_KEYS.revokedAt, new Date().toISOString());
     console.log('[SUBSCRIPTION_CACHE]', 'cleared', { reason });
