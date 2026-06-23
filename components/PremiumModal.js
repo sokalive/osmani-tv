@@ -34,6 +34,7 @@ import { formatCheckoutPaymentError } from '../lib/paymentCheckoutErrors';
 import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { verifySubscription } from '../api/subscription';
+import { formatUserFacingApiError } from '../lib/catalogConnectivity';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { cacheSecurityPhone } from '../lib/security/securityPhone';
@@ -287,7 +288,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           return list[0] ?? null;
         });
       } catch (e) {
-        if (!cancelled) setPlansError(e?.message ?? 'Imeshindwa kupakia mipango');
+        if (!cancelled) setPlansError(formatUserFacingApiError(e));
       } finally {
         if (!cancelled) setPlansLoading(false);
       }

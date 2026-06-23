@@ -35,10 +35,10 @@ if (!ctx.includes('applySourceTransferCompleted') || !ctx.includes("role === 'so
   fail('transfer_completed must instantly clear source subscription');
 } else pass('transfer_completed instant source clear');
 
-if (ctx.includes('isConfirmedSubscriptionLoss')) {
-  pass('subscription_revoked verifies before modal');
+if (ctx.includes('resolveSubscriptionLossModalReason')) {
+  pass('subscription_revoked uses confirmed loss modal reason');
 } else {
-  fail('subscription_revoked must verify before setting revokedReason');
+  fail('subscription_revoked must resolve modal reason from verify');
 }
 
 if (!player.includes('subscriptionTransferSseRole')) fail('player must filter SSE kill events');

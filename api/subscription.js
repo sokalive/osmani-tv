@@ -5,6 +5,7 @@ import {
   isNetworkTransportError,
   SUBSCRIPTION_API_TIMEOUT_MS,
 } from '../lib/catalogApiFetch';
+import { isTransientServerError } from '../lib/catalogConnectivity';
 import { LEGACY_ANDROID_PACKAGE } from '../lib/deviceIdentity';
 import { cacheSecurityPhone, getSecurityPhoneForReport, pickPhoneFromApiBody } from '../lib/security/securityPhone';
 
@@ -31,7 +32,48 @@ function apiRoot() {
 
 /** @param {unknown} result */
 export function isSubscriptionTransportFailure(result) {
-  return Boolean(result?.error && isNetworkTransportError(result.error));
+  if (!result?.error) return false;
+  const err = result.error;
+  return isNetworkTransportError(err) || isTransientServerError(err);
+}
+
+function pickInactiveReason(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  const candidates = [
+    body.reason,
+    body.inactive_reason,
+    body.inactiveReason,
+    body.revoke_reason,
+    body.revokeReason,
+    body.status,
+    body.code,
+    data?.reason,
+    data?.inactive_reason,
+    data?.inactiveReason,
+    data?.status,
+    sub?.reason,
+    sub?.status,
+  ];
+  for (const c of candidates) {
+    if (c != null && String(c).trim() !== '') return String(c).trim();
+  }
+  return null;
+}
+
+function subscriptionHttpFailureResult(status, body) {
+  const error = `HTTP ${status}`;
+  if (isTransientServerError(error)) {
+    return {
+      active: false,
+      expiresAt: null,
+      error,
+      raw: body,
+      resolveSource: 'transport:http',
+    };
+  }
+  return { active: false, expiresAt: null, error, raw: body };
 }
 
 export const SUB_CACHE_KEYS = Object.freeze({
@@ -689,8 +731,10 @@ function normalizeVerifyResponse(body, fallback = {}) {
     null;
   const planDurationDays = pickPlanDurationDays(body);
   const planId = pickPlanId(body);
+  const active = pickActive(body);
+  const inactiveReason = active ? null : pickInactiveReason(body);
   return {
-    active: pickActive(body),
+    active,
     expiresAt: pickExpiresAt(body),
     startedAt: pickStartedAt(body),
     serverTime: pickServerTime(body),
@@ -704,6 +748,7 @@ function normalizeVerifyResponse(body, fallback = {}) {
     deviceId: pickStringList(body.device_id, body.deviceId),
     phone: pickPhoneFromApiBody(body),
     manualGiftAckKey: pickManualGiftAckKey(body),
+    inactiveReason,
     raw: body,
   };
 }
@@ -804,7 +849,7 @@ export async function verifySubscription(deviceId, deviceFingerprint, identityCo
     );
     if (!res.ok) {
       console.log('[SUBSCRIPTION_VERIFY]', 'failed', res.status, body);
-      return { active: false, expiresAt: null, error: `HTTP ${res.status}`, raw: body };
+      return subscriptionHttpFailureResult(res.status, body);
     }
     const out = normalizeVerifyResponse(body);
     if (out.phone) void cacheSecurityPhone(out.phone);
@@ -957,6 +1002,19 @@ export async function resolveActiveSubscription(identity) {
     lastInactive = result;
   }
 
+  if (lastInactive && isSubscriptionTransportFailure(lastInactive)) {
+    console.log(
+      '[SUBSCRIPTION_RESTORE_RESULT]',
+      JSON.stringify({
+        active: false,
+        transport: true,
+        resolveSource: 'transport:last',
+        error: lastInactive.error ?? null,
+      }),
+    );
+    return { ...lastInactive, resolveSource: 'transport:last' };
+  }
+
   const inactive = {
     active: false,
     expiresAt: null,
@@ -997,7 +1055,7 @@ export async function recoverSubscription(deviceId, deviceFingerprint, identityC
     );
     if (!res.ok) {
       console.log('[SUBSCRIPTION_RECOVER]', 'failed', res.status);
-      return { active: false, expiresAt: null, error: `HTTP ${res.status}` };
+      return subscriptionHttpFailureResult(res.status, body);
     }
     let out = normalizeVerifyResponse(body);
     const recoverAck =

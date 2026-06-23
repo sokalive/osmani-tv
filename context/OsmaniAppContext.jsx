@@ -25,7 +25,7 @@ import {
 } from '../lib/bannersCache';
 import { readChannelsCache, writeChannelsCache } from '../lib/channelsCache';
 import { isNetworkTransportError } from '../lib/catalogApiFetch';
-import { shouldMarkCatalogOffline, isTransientServerError } from '../lib/catalogConnectivity';
+import { shouldMarkCatalogOffline, isTransientServerError, formatUserFacingApiError } from '../lib/catalogConnectivity';
 import { getApiBaseUrl } from '../lib/apiBaseUrl';
 import { probeApiHostRouting } from '../lib/playVpsApiHost';
 import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
@@ -34,6 +34,7 @@ import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import {
   isConfirmedSubscriptionLoss,
+  resolveSubscriptionLossModalReason,
   subscriptionTransferSseRole,
   unwrapSubscriptionSsePayload,
 } from '../lib/subscriptionSseGuard';
@@ -412,7 +413,7 @@ export function OsmaniAppProvider({ children }) {
           setSubscriptionExpiresAt(null);
           setSubscriptionDetails(null);
           setSubscriptionVersion((v) => v + 1);
-          if (!isNetworkTransportError(e)) {
+          if (!isNetworkTransportError(e) && !isTransientServerError(e)) {
             await clearSubscriptionCache(`verify-error:${reason}`);
           }
         }
@@ -508,7 +509,10 @@ export function OsmaniAppProvider({ children }) {
       console.log('[PLAYBACK_GATE]', 'denied', reason);
       const hadSubscription = isSubscribedRef.current;
       if (hadSubscription && isConfirmedSubscriptionLoss(r)) {
-        setRevokedReason((cur) => cur ?? 'expired');
+        const modalReason = resolveSubscriptionLossModalReason(r);
+        if (modalReason) {
+          setRevokedReason((cur) => cur ?? modalReason);
+        }
       }
     } else {
       console.log('[PLAYBACK_GATE]', 'allowed', reason);
@@ -705,7 +709,7 @@ export function OsmaniAppProvider({ children }) {
           catalogCount,
         });
       } else {
-        setError(e?.message ?? 'Failed to load');
+        setError(formatUserFacingApiError(e));
         if (catalogCount > 0) setIsOffline(false);
       }
       if (!preserveDataOnError) {
@@ -944,10 +948,10 @@ export function OsmaniAppProvider({ children }) {
         console.log('[SUBSCRIPTION_REVOKED]', 'sse', payload, { role });
         const hadActiveBefore = isSubscribedRef.current;
         const inner = unwrapSubscriptionSsePayload(payload);
-        const reason =
+        const sseReason =
           inner && typeof inner === 'object' && typeof inner.reason === 'string'
             ? inner.reason
-            : 'revoked';
+            : null;
         const r = await reverifySubscription('sse:subscription_revoked');
         if (r?.active === true) {
           setRevokedReason(null);
@@ -956,14 +960,16 @@ export function OsmaniAppProvider({ children }) {
         if (!hadActiveBefore) return;
         if (!isConfirmedSubscriptionLoss(r)) return;
         const isTransfer =
-          reason === 'transferred' ||
-          reason === 'transfer' ||
-          String(reason).toLowerCase().includes('transfer');
+          sseReason === 'transferred' ||
+          sseReason === 'transfer' ||
+          String(sseReason ?? '').toLowerCase().includes('transfer');
         if (isTransfer && role === 'source') {
           await applySourceTransferCompleted('sse:subscription_revoked');
           return;
         }
-        setRevokedReason(reason);
+        const modalReason = resolveSubscriptionLossModalReason(r);
+        if (!modalReason) return;
+        setRevokedReason(modalReason);
         isSubscribedRef.current = false;
         setIsSubscribed(false);
         setSubscriptionExpiresAt(null);
