@@ -442,12 +442,23 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const [pickerKind, setPickerKind] = useState(null);
 
   const sessionDeviceIdRef = useRef('');
+  const sessionWatchIdRef = useRef('');
+  const sessionInstallInstanceRef = useRef('');
   const sessionChannelIdRef = useRef('');
   const sessionChannelNameRef = useRef('');
   const pingTimerRef = useRef(null);
   const stopSentRef = useRef(false);
   const analyticsBgStopTimerRef = useRef(null);
   const PLAYER_ANALYTICS_BG_GRACE_MS = 4000;
+
+  const channelWatchMeta = useCallback(
+    () => ({
+      watchSessionId: sessionWatchIdRef.current,
+      channelName: sessionChannelNameRef.current,
+      installInstanceId: sessionInstallInstanceRef.current,
+    }),
+    [],
+  );
   const emergencyInterruptOnceRef = useRef(false);
   const deviceIntelInterruptOnceRef = useRef(false);
   /** True after hard expiry: no Video/WebView surfaces (buffers cleared by unmount). */
@@ -1108,19 +1119,28 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         console.warn('[player][analytics] skip session — missing channel_id');
         return;
       }
-      const deviceId = await startLiveSession(channelId, channelName);
+      const session = await startLiveSession(channelId, channelName);
       if (cancelled) return;
-      sessionDeviceIdRef.current = deviceId;
+      sessionDeviceIdRef.current = session.deviceId;
+      sessionWatchIdRef.current = session.watchSessionId;
+      sessionInstallInstanceRef.current = session.installInstanceId;
       stopSentRef.current = false;
-      console.log('[player][analytics] session started with device_id:', deviceId);
+      console.log('[player][analytics] session started with device_id:', session.deviceId, {
+        watch_session_id: session.watchSessionId,
+      });
 
       pingTimerRef.current = setInterval(() => {
         console.log('[player][analytics] heartbeat tick', {
           device_id: sessionDeviceIdRef.current,
+          watch_session_id: sessionWatchIdRef.current,
           channel_id: sessionChannelIdRef.current,
           interval_ms: PING_MS,
         });
-        void pingLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
+        void pingLiveSession(
+          sessionDeviceIdRef.current,
+          sessionChannelIdRef.current,
+          channelWatchMeta(),
+        );
       }, PING_MS);
       console.log('[player][analytics] heartbeat timer started:', PING_MS);
     })();
@@ -1139,13 +1159,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           device_id: sessionDeviceIdRef.current,
           channel_id: sessionChannelIdRef.current,
         });
-        void stopLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
+        void stopLiveSession(
+          sessionDeviceIdRef.current,
+          sessionChannelIdRef.current,
+          channelWatchMeta(),
+        );
       }
       // Detach channel from the app-level presence session so the
       // admin watcher count drops without waiting for the next tick.
       clearActiveChannel();
     };
-  }, [channel?.id, channel?.channel_id, channel?.name]);
+  }, [channel?.id, channel?.channel_id, channel?.name, channelWatchMeta]);
 
   // Background grace + resume: do not end session on transient `inactive`.
   useEffect(() => {
@@ -1159,20 +1183,30 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         if (stopSentRef.current && sessionChannelIdRef.current) {
           stopSentRef.current = false;
           void (async () => {
-            const deviceId = await startLiveSession(
+            const session = await startLiveSession(
               sessionChannelIdRef.current,
               sessionChannelNameRef.current,
             );
-            sessionDeviceIdRef.current = deviceId;
+            sessionDeviceIdRef.current = session.deviceId;
+            sessionWatchIdRef.current = session.watchSessionId;
+            sessionInstallInstanceRef.current = session.installInstanceId;
             if (pingTimerRef.current) clearInterval(pingTimerRef.current);
             pingTimerRef.current = setInterval(() => {
-              void pingLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
+              void pingLiveSession(
+                sessionDeviceIdRef.current,
+                sessionChannelIdRef.current,
+                channelWatchMeta(),
+              );
             }, PING_MS);
             setActiveChannel(sessionChannelIdRef.current, sessionChannelNameRef.current);
           })();
         } else if (!pingTimerRef.current && sessionDeviceIdRef.current) {
           pingTimerRef.current = setInterval(() => {
-            void pingLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
+            void pingLiveSession(
+              sessionDeviceIdRef.current,
+              sessionChannelIdRef.current,
+              channelWatchMeta(),
+            );
           }, PING_MS);
         }
         return;
@@ -1187,7 +1221,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         }
         if (!stopSentRef.current) {
           stopSentRef.current = true;
-          void stopLiveSession(sessionDeviceIdRef.current, sessionChannelIdRef.current);
+          void stopLiveSession(
+            sessionDeviceIdRef.current,
+            sessionChannelIdRef.current,
+            channelWatchMeta(),
+          );
         }
       }, PLAYER_ANALYTICS_BG_GRACE_MS);
     });
@@ -1198,7 +1236,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         analyticsBgStopTimerRef.current = null;
       }
     };
-  }, []);
+  }, [channelWatchMeta]);
 
   // AUTO HIDE CONTROLS
   const clearHideTimer = useCallback(() => {

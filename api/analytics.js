@@ -5,15 +5,55 @@ import { nativeApplicationVersion } from 'expo-application';
 import { getApiBaseUrl } from '../lib/apiBaseUrl';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { getAnalyticsLocationPayload } from '../lib/analyticsLocation';
+import { readNativeAndroidVersionCode } from '../lib/playVpsApiHost';
 
 const INSTALL_TRACKED_KEY = 'osmani:install_tracked_v1';
 const PING_MS = 45000;
 /** Heartbeat for the app-level presence layer (decoupled from channel session). */
 const PRESENCE_PING_MS = 45000;
 const RETRY_DELAYS_MS = [0, 700, 1800];
-/** Channel session heartbeats — keep retries so dashboard counts stay stable. */
+/** Channel watch heartbeats — keep retries so dashboard counts stay stable. */
 const SESSION_HEARTBEAT_RETRIES_MS = [0, 800, 2000, 5000];
 const ANALYTICS_DEBUG = __DEV__;
+
+async function createWatchSessionId() {
+  try {
+    return await Crypto.randomUUID();
+  } catch {
+    return `w-${Date.now()}-${Math.floor(Math.random() * 1e9).toString(36)}`;
+  }
+}
+
+/**
+ * @param {string} channelId
+ * @param {string} channelName
+ * @param {string} watchSessionId
+ */
+async function buildChannelWatchPayload(channelId, channelName, watchSessionId) {
+  const { deviceId, installInstanceId } = await getDeviceIdentity();
+  const loc = await resolveLocationEnvelope();
+  const versionCode = readNativeAndroidVersionCode();
+  return {
+    device_id: deviceId,
+    session_id: watchSessionId,
+    watch_session_id: watchSessionId,
+    install_instance_id: installInstanceId,
+    channel_id: String(channelId ?? ''),
+    channel_name: String(channelName ?? ''),
+    platform: Platform.OS,
+    app_version: nativeApplicationVersion ?? 'unknown',
+    version_code: Number.isFinite(versionCode) && versionCode > 0 ? versionCode : undefined,
+    api_host: getApiBaseUrl(),
+    countryCode: loc.countryCode,
+    city: loc.city,
+    region: loc.region,
+    country: loc.country,
+  };
+}
+
+/**
+ * @typedef {{ deviceId: string; watchSessionId: string; installInstanceId: string; channelName: string }} LiveSessionHandle
+ */
 
 let cachedAppSessionId = '';
 
@@ -157,83 +197,121 @@ export async function trackInstallOnce() {
   }
 }
 
+/**
+ * Start a channel watch session (Most Watched Channels).
+ * @returns {Promise<LiveSessionHandle>}
+ */
 export async function startLiveSession(channelId, channelName) {
+  const empty = { deviceId: '', watchSessionId: '', installInstanceId: '', channelName: '' };
   try {
-    const { deviceId, installInstanceId } = await getDeviceIdentity();
-    const loc = await resolveLocationEnvelope();
+    const watchSessionId = await createWatchSessionId();
+    const payload = await buildChannelWatchPayload(channelId, channelName, watchSessionId);
     if (ANALYTICS_DEBUG) {
       console.log('[analytics] session start values:', {
-        device_id: deviceId,
-        install_instance_id: installInstanceId,
-        channel_id: String(channelId ?? ''),
-        channel_name: String(channelName ?? ''),
-        countryCode: loc.countryCode,
-        city: loc.city,
-        region: loc.region,
+        device_id: payload.device_id,
+        session_id: watchSessionId,
+        install_instance_id: payload.install_instance_id,
+        channel_id: payload.channel_id,
+        channel_name: payload.channel_name,
+        version_code: payload.version_code,
+        api_host: payload.api_host,
       });
     }
     await postJson(
       '/api/analytics/session/start',
       {
-        device_id: deviceId,
-        install_instance_id: installInstanceId,
-        channel_id: String(channelId ?? ''),
-        channel_name: String(channelName ?? ''),
-        countryCode: loc.countryCode,
-        city: loc.city,
-        region: loc.region,
-        country: loc.country,
+        ...payload,
         started_at: new Date().toISOString(),
       },
       { retries: SESSION_HEARTBEAT_RETRIES_MS },
     );
-    return deviceId;
+    await pingLiveSession(payload.device_id, channelId, {
+      watchSessionId,
+      channelName: payload.channel_name,
+      installInstanceId: payload.install_instance_id,
+    });
+    return {
+      deviceId: payload.device_id,
+      watchSessionId,
+      installInstanceId: payload.install_instance_id,
+      channelName: payload.channel_name,
+    };
   } catch {
-    return '';
+    return empty;
   }
 }
 
-export async function stopLiveSession(deviceId, channelId) {
+/**
+ * @param {string} deviceId
+ * @param {string} channelId
+ * @param {{ watchSessionId?: string; channelName?: string; installInstanceId?: string }} [meta]
+ */
+export async function stopLiveSession(deviceId, channelId, meta = {}) {
   if (!deviceId) return;
   const loc = await resolveLocationEnvelope();
+  const versionCode = readNativeAndroidVersionCode();
+  const watchSessionId = meta.watchSessionId ?? '';
   if (ANALYTICS_DEBUG) {
     console.log('[analytics] session end values:', {
       device_id: deviceId,
+      session_id: watchSessionId,
       channel_id: String(channelId ?? ''),
+      countryCode: loc.countryCode,
+    });
+  }
+  await postJson(
+    '/api/analytics/session/end',
+    {
+      device_id: deviceId,
+      session_id: watchSessionId || undefined,
+      watch_session_id: watchSessionId || undefined,
+      install_instance_id: meta.installInstanceId ?? undefined,
+      channel_id: String(channelId ?? ''),
+      channel_name: meta.channelName != null ? String(meta.channelName) : undefined,
+      app_version: nativeApplicationVersion ?? 'unknown',
+      version_code: Number.isFinite(versionCode) && versionCode > 0 ? versionCode : undefined,
+      api_host: getApiBaseUrl(),
       countryCode: loc.countryCode,
       city: loc.city,
       region: loc.region,
-    });
-  }
-  await postJson('/api/analytics/session/end', {
-    device_id: deviceId,
-    channel_id: String(channelId ?? ''),
-    countryCode: loc.countryCode,
-    city: loc.city,
-    region: loc.region,
-    country: loc.country,
-    ended_at: new Date().toISOString(),
-  });
+      country: loc.country,
+      ended_at: new Date().toISOString(),
+    },
+    { retries: SESSION_HEARTBEAT_RETRIES_MS },
+  );
 }
 
-export async function pingLiveSession(deviceId, channelId) {
+/**
+ * @param {string} deviceId
+ * @param {string} channelId
+ * @param {{ watchSessionId?: string; channelName?: string; installInstanceId?: string }} [meta]
+ */
+export async function pingLiveSession(deviceId, channelId, meta = {}) {
   if (!deviceId) return;
   const loc = await resolveLocationEnvelope();
+  const versionCode = readNativeAndroidVersionCode();
+  const watchSessionId = meta.watchSessionId ?? '';
   if (ANALYTICS_DEBUG) {
     console.log('[analytics] heartbeat values:', {
       device_id: deviceId,
+      session_id: watchSessionId,
       channel_id: String(channelId ?? ''),
       every_ms: PING_MS,
       countryCode: loc.countryCode,
-      city: loc.city,
-      region: loc.region,
     });
   }
   await postJson(
     '/api/analytics/session/heartbeat',
     {
       device_id: deviceId,
+      session_id: watchSessionId || undefined,
+      watch_session_id: watchSessionId || undefined,
+      install_instance_id: meta.installInstanceId ?? undefined,
       channel_id: String(channelId ?? ''),
+      channel_name: meta.channelName != null ? String(meta.channelName) : undefined,
+      app_version: nativeApplicationVersion ?? 'unknown',
+      version_code: Number.isFinite(versionCode) && versionCode > 0 ? versionCode : undefined,
+      api_host: getApiBaseUrl(),
       countryCode: loc.countryCode,
       city: loc.city,
       region: loc.region,
