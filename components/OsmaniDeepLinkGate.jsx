@@ -29,6 +29,8 @@ export default function OsmaniDeepLinkGate({ navigationRef, pendingUrlRef }) {
     requestPaymentModal,
     requestEmergencyModal,
     gateForPlayback,
+    requireUpdateBeforeChannelPlayback,
+    requestChannelUpdateGate,
   } = useOsmaniApp();
   const security = useSecurity();
 
@@ -67,6 +69,8 @@ export default function OsmaniDeepLinkGate({ navigationRef, pendingUrlRef }) {
         requestEmergencyModal,
         verifySubscriptionBeforePlay: gateForPlayback,
         security,
+        requireUpdateBeforeChannelPlayback,
+        onChannelUpdateRequired: requestChannelUpdateGate,
       });
 
       if (result.reason === 'nav_not_ready') {
@@ -99,6 +103,8 @@ export default function OsmaniDeepLinkGate({ navigationRef, pendingUrlRef }) {
       requestEmergencyModal,
       gateForPlayback,
       security,
+      requireUpdateBeforeChannelPlayback,
+      requestChannelUpdateGate,
     ],
   );
 

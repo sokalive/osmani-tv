@@ -13,11 +13,88 @@ async function parseJson(res) {
 
 function normalizeAppFlags(body) {
   if (!body || typeof body !== 'object') return null;
+  const patch = parseViewerSettingsPatch(body);
   return {
     freeMode: Boolean(body.freeMode),
     emergencyMode: Boolean(body.emergencyMode),
     maintenanceMode: Boolean(body.maintenanceMode),
+    requireUpdateBeforeChannelPlayback: Boolean(patch?.requireUpdateBeforeChannelPlayback),
   };
+}
+
+function updatePlaybackGateFromObject(o) {
+  const v = pickDefined(o, [
+    'require_update_before_channel_playback',
+    'requireUpdateBeforeChannelPlayback',
+    'require_update_before_playback',
+    'requireUpdateBeforePlayback',
+    'block_channel_playback_until_update',
+    'blockChannelPlaybackUntilUpdate',
+  ]);
+  if (v === undefined) return undefined;
+  return coerceBool(v);
+}
+
+/**
+ * Viewer-safe app flags beyond free/emergency/maintenance.
+ * @param {Record<string, unknown>} o
+ */
+function parseViewerSettingsPatchFromObject(o) {
+  /** @type {{ requireUpdateBeforeChannelPlayback?: boolean }} */
+  const patch = {};
+  const gate = updatePlaybackGateFromObject(o);
+  if (gate !== undefined) patch.requireUpdateBeforeChannelPlayback = gate;
+  return patch;
+}
+
+/**
+ * @param {unknown} payload
+ * @returns {{ freeMode?: boolean, emergencyMode?: boolean, maintenanceMode?: boolean, requireUpdateBeforeChannelPlayback?: boolean } | null}
+ */
+export function parseViewerSettingsPatch(payload) {
+  const candidates = [];
+  const push = (x) => {
+    if (x && typeof x === 'object' && !candidates.includes(x)) candidates.push(x);
+  };
+  push(payload);
+  if (payload && typeof payload === 'object') {
+    push(payload.payload);
+    push(payload.data);
+    push(payload.body);
+    push(payload.settings);
+    push(payload.current_settings);
+    push(payload.app_settings);
+    push(payload.app_modes);
+    push(payload.appModes);
+    push(payload.runtime_modes);
+    push(payload.runtimeModes);
+    push(payload.config);
+    if (payload.config && typeof payload.config === 'object') {
+      push(payload.config.app_settings);
+      push(payload.config.settings);
+      push(payload.config.app_modes);
+      push(payload.config.appModes);
+      push(payload.config.modes);
+    }
+    if (payload.data && typeof payload.data === 'object') {
+      push(payload.data.settings);
+      push(payload.data.app_settings);
+      push(payload.data.app_modes);
+    }
+  }
+  /** @type {{ freeMode?: boolean, emergencyMode?: boolean, maintenanceMode?: boolean, requireUpdateBeforeChannelPlayback?: boolean }} */
+  const out = {};
+  for (const o of candidates) {
+    const modes = triStateModesFromObject(o);
+    if (modes.freeMode !== undefined) out.freeMode = modes.freeMode;
+    if (modes.emergencyMode !== undefined) out.emergencyMode = modes.emergencyMode;
+    if (modes.maintenanceMode !== undefined) out.maintenanceMode = modes.maintenanceMode;
+    const gate = parseViewerSettingsPatchFromObject(o);
+    if (gate.requireUpdateBeforeChannelPlayback !== undefined) {
+      out.requireUpdateBeforeChannelPlayback = gate.requireUpdateBeforeChannelPlayback;
+    }
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 function pickDefined(obj, keys) {
@@ -89,40 +166,12 @@ function triStateModesFromObject(o) {
  * @returns {{ freeMode?: boolean, emergencyMode?: boolean, maintenanceMode?: boolean } | null}
  */
 export function parseAppSettingsRealtimePatch(payload) {
-  const candidates = [];
-  const push = (x) => {
-    if (x && typeof x === 'object' && !candidates.includes(x)) candidates.push(x);
-  };
-  push(payload);
-  if (payload && typeof payload === 'object') {
-    push(payload.payload);
-    push(payload.data);
-    push(payload.body);
-    push(payload.settings);
-    push(payload.current_settings);
-    push(payload.app_settings);
-    push(payload.app_modes);
-    push(payload.appModes);
-    push(payload.runtime_modes);
-    push(payload.runtimeModes);
-    push(payload.config);
-    if (payload.config && typeof payload.config === 'object') {
-      push(payload.config.app_modes);
-      push(payload.config.appModes);
-      push(payload.config.modes);
-    }
-    if (payload.data && typeof payload.data === 'object') {
-      push(payload.data.app_modes);
-      push(payload.data.settings);
-    }
-  }
-  /** @type {{ freeMode?: boolean, emergencyMode?: boolean, maintenanceMode?: boolean }} */
-  const out = {};
-  for (const o of candidates) {
-    const part = triStateModesFromObject(o);
-    if (part.freeMode !== undefined) out.freeMode = part.freeMode;
-    if (part.emergencyMode !== undefined) out.emergencyMode = part.emergencyMode;
-    if (part.maintenanceMode !== undefined) out.maintenanceMode = part.maintenanceMode;
+  const patch = parseViewerSettingsPatch(payload);
+  if (!patch) return null;
+  const { requireUpdateBeforeChannelPlayback, ...modes } = patch;
+  const out = { ...modes };
+  if (requireUpdateBeforeChannelPlayback !== undefined) {
+    out.requireUpdateBeforeChannelPlayback = requireUpdateBeforeChannelPlayback;
   }
   return Object.keys(out).length ? out : null;
 }

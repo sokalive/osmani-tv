@@ -255,6 +255,8 @@ function BannerCarousel({
   awaitRecoverBoot,
   openPaymentModal,
   resetKey = 0,
+  requireUpdateBeforeChannelPlayback = false,
+  onChannelUpdateRequired,
 }) {
   const security = useSecurity();
   const scrollRef = useRef(null);
@@ -370,6 +372,8 @@ function BannerCarousel({
         verifySubscriptionBeforePlay,
         security,
         Alert,
+        requireUpdateBeforeChannelPlayback,
+        onChannelUpdateRequired,
       });
     },
     [
@@ -386,6 +390,8 @@ function BannerCarousel({
       isSubscribed,
       openPaymentModal,
       security,
+      requireUpdateBeforeChannelPlayback,
+      onChannelUpdateRequired,
     ],
   );
 

@@ -59,6 +59,7 @@ const defaultSettings = {
   freeMode: false,
   emergencyMode: false,
   maintenanceMode: false,
+  requireUpdateBeforeChannelPlayback: false,
 };
 /** SSE names that carry free / emergency / maintenance — must not share the catalog debouncer. */
 const RUNTIME_MODE_SSE_NAMES = Object.freeze(['app_settings_changed', ...ADMIN_RUNTIME_MODE_SSE_EVENTS]);
@@ -162,6 +163,8 @@ export function OsmaniAppProvider({ children }) {
   }
   /** Incremented to open PremiumModal from any screen (trial / preview expiry). */
   const [paymentModalRequest, setPaymentModalRequest] = useState(0);
+  /** Legacy channel playback blocked until APK update (admin toggle). */
+  const [channelUpdateGateVisible, setChannelUpdateGateVisible] = useState(false);
 
   const verifyInFlightRef = useRef(false);
   const refreshInFlightRef = useRef(0);
@@ -1247,6 +1250,14 @@ export function OsmaniAppProvider({ children }) {
     setPaymentModalRequest((v) => v + 1);
   }, []);
 
+  const requestChannelUpdateGate = useCallback(() => {
+    setChannelUpdateGateVisible(true);
+  }, []);
+
+  const dismissChannelUpdateGate = useCallback(() => {
+    setChannelUpdateGateVisible(false);
+  }, []);
+
   /**
    * Force-set the pending transfer payload from an external code path
    * (polling fallback, optimistic local transition, etc). Logs the
@@ -1333,6 +1344,10 @@ export function OsmaniAppProvider({ children }) {
       awaitPremiumGateReady,
       paymentModalRequest,
       requestPaymentModal,
+      requireUpdateBeforeChannelPlayback: settings.requireUpdateBeforeChannelPlayback,
+      channelUpdateGateVisible,
+      requestChannelUpdateGate,
+      dismissChannelUpdateGate,
     }),
     [
       settings,
@@ -1377,6 +1392,9 @@ export function OsmaniAppProvider({ children }) {
       awaitPremiumGateReady,
       paymentModalRequest,
       requestPaymentModal,
+      channelUpdateGateVisible,
+      requestChannelUpdateGate,
+      dismissChannelUpdateGate,
     ],
   );
 

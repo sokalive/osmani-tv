@@ -42,6 +42,7 @@ import TransferConfirmModal from './components/TransferConfirmModal';
 import TransferSuccessModal from './components/TransferSuccessModal';
 import TransferredAwayModal from './components/TransferredAwayModal';
 import UpdateOverlay from './components/UpdateOverlay';
+import ChannelUpdateGateModal from './components/ChannelUpdateGateModal';
 import OtaDebugOverlay, { OtaDebugTitleTap } from './components/OtaDebugOverlay';
 import WhatsAppFloatingButtonGate from './components/WhatsAppFloatingButtonGate';
 import GlobalPaymentModalGate from './components/GlobalPaymentModalGate';
@@ -292,6 +293,8 @@ function ChannelCatalogScreen({
     getPremiumAccessSnapshot,
     subscriptionSyncLoaded,
     trialWatchSettingsLoaded,
+    requireUpdateBeforeChannelPlayback,
+    requestChannelUpdateGate,
   } = useOsmaniApp();
   const security = useSecurity();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
@@ -763,6 +766,8 @@ function ChannelCatalogScreen({
         verifySubscriptionBeforePlay,
         security,
         Alert,
+        requireUpdateBeforeChannelPlayback,
+        onChannelUpdateRequired: requestChannelUpdateGate,
       });
       logChannelCardTap('navigation_finished', {
         channelKey,
@@ -781,6 +786,8 @@ function ChannelCatalogScreen({
       subscriptionSyncLoaded,
       trialWatchSettingsLoaded,
       isSubscribed,
+      requireUpdateBeforeChannelPlayback,
+      requestChannelUpdateGate,
     ],
   );
 
@@ -1016,6 +1023,8 @@ function ChannelCatalogScreen({
             getPremiumAccessSnapshot={getPremiumAccessSnapshot}
             awaitRecoverBoot={awaitRecoverBoot}
             openPaymentModal={openPremiumModal}
+            requireUpdateBeforeChannelPlayback={requireUpdateBeforeChannelPlayback}
+            onChannelUpdateRequired={requestChannelUpdateGate}
           />
         ) : null}
 
@@ -1433,6 +1442,13 @@ export default function App() {
   );
 }
 
+function ChannelUpdateGateHost() {
+  const { channelUpdateGateVisible, dismissChannelUpdateGate } = useOsmaniApp();
+  return (
+    <ChannelUpdateGateModal visible={channelUpdateGateVisible} onDismiss={dismissChannelUpdateGate} />
+  );
+}
+
 function AppShell({ navigationRevision, setNavigationRevision }) {
   useStartupSplash();
   useGlobalSecureScreen();
@@ -1506,6 +1522,7 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
             />
             <PopupSettingsModal />
             <UpdateOverlay />
+            <ChannelUpdateGateHost />
             <OtaDebugOverlay />
             <SubscriptionLifecycleGates />
             <GlobalPaymentModalGate />
