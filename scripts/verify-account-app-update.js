@@ -23,6 +23,13 @@ else pass('account update handler');
 if (!account.includes('UPDATE APP')) fail('UPDATE APP button');
 else pass('UPDATE APP button');
 
+if (!account.includes("from '../lib/tabBarLayout'")) {
+  fail('tabBarLayout import — missing import crashes Akaunti Yangu before Update section renders');
+} else pass('tabBarLayout import');
+
+if (!account.includes('testID="account-update-section"')) fail('account-update-section testID');
+else pass('account-update-section testID');
+
 if (!updateLib.includes('ACCOUNT_UPDATE_ALREADY_LATEST_SWAHILI')) fail('already latest copy');
 else pass('already latest copy');
 
@@ -34,8 +41,5 @@ else pass('reuses startDownload');
 
 if (!account.includes('isBlockingSheetActive')) fail('defers when blocking sheet active');
 else pass('modal defer on blocking sheet');
-
-if (!account.includes('getScrollContentBottomPadding')) fail('scroll bottom padding import');
-else pass('scroll bottom padding import');
 
 if (!process.exitCode) console.log('\n[verify-account-app-update] ok');

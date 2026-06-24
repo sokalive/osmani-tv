@@ -11,24 +11,35 @@ const { spawnSync } = require('child_process');
 const RUNTIMES = ['1.6.0', '1.7.0', '1.7.1', '1.7.2', '1.8.0', '1.8.1', '1.8.2'];
 const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const dryRun = process.argv.includes('--dry-run');
+const otaMessage =
+  process.env.OTA_MESSAGE ||
+  'fix(account): Update App section visible on Akaunti Yangu (tabBar import + scroll padding)';
 
 for (const runtime of RUNTIMES) {
-  const msg = `fix-account-UpdateApp-${runtime}`;
+  const msg = `${otaMessage} [${runtime}]`;
   console.log(`\n=== OTA runtime ${runtime} ===`);
   if (dryRun) {
     console.log(`[dry-run] OTA_RUNTIME_TARGET=${runtime} eas update --channel production`);
     continue;
   }
-  const quotedMsg = msg.replace(/"/g, '');
-  const cmd =
-    `${NPX} eas-cli update --channel production --environment production ` +
-    `--message "${quotedMsg}" --non-interactive`;
-  const result = spawnSync(cmd, {
+  const args = [
+    'eas-cli',
+    'update',
+    '--channel',
+    'production',
+    '--environment',
+    'production',
+    '--message',
+    msg,
+    '--non-interactive',
+  ];
+  const result = spawnSync(NPX, args, {
     stdio: 'inherit',
-    shell: true,
+    shell: false,
     env: {
       ...process.env,
       CI: '1',
+      EAS_SKIP_AUTO_FINGERPRINT: '1',
       OTA_RUNTIME_TARGET: runtime,
       EXPO_PUBLIC_API_URL: 'https://api.osmanitv.com',
     },

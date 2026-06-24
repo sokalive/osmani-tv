@@ -40,7 +40,8 @@ import {
 import { useModalSheetCoordinator } from '../context/ModalSheetCoordinatorContext';
 import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
 
-/** Matches App.js theme — do not diverge */
+/** Extra scroll padding so Update App stays above tab bar on all devices */
+const ACCOUNT_UPDATE_SCROLL_EXTRA = 40;
 const COLORS = {
   background: '#0C0608',
   card: '#1A1D23',
@@ -149,7 +150,7 @@ export default function AkauntiYanguScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const insets = useSafeAreaInsets();
-  const bottomPad = getScrollContentBottomPadding(insets);
+  const bottomPad = getScrollContentBottomPadding(insets) + ACCOUNT_UPDATE_SCROLL_EXTRA;
   const [hamishaModalVisible, setHamishaModalVisible] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [offerCodeInput, setOfferCodeInput] = useState('');
@@ -565,15 +566,22 @@ export default function AkauntiYanguScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.updateSection}>
+        <View
+          style={styles.updateSection}
+          testID="account-update-section"
+          accessibilityLabel="Update App section"
+        >
           <Text style={styles.updateSectionTitle}>Update App</Text>
           <Text style={styles.offerDescription}>
             Pakua toleo jipya la programu ikiwa linapatikana.
           </Text>
           <Pressable
             style={[styles.updateSubmitOuter, updateBusy && styles.offerSubmitOuterDisabled]}
-            onPress={() => guardAccountAction(() => void handleAccountAppUpdate())}
+            onPress={() => void handleAccountAppUpdate()}
             disabled={updateBusy}
+            testID="account-update-button"
+            accessibilityRole="button"
+            accessibilityLabel="UPDATE APP"
           >
             <LinearGradient
               colors={['#38BDF8', '#0EA5E9']}
@@ -934,13 +942,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   updateSection: {
-    marginTop: 8,
-    marginBottom: 16,
+    marginTop: 16,
+    marginBottom: 24,
     backgroundColor: COLORS.card,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.2)',
+    borderColor: 'rgba(56,189,248,0.35)',
+    elevation: 4,
+    shadowColor: '#38BDF8',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
   updateSectionTitle: {
     color: COLORS.white,
