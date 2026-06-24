@@ -165,6 +165,7 @@ export function OsmaniAppProvider({ children }) {
   const [paymentModalRequest, setPaymentModalRequest] = useState(0);
   /** Legacy channel playback blocked until APK update (admin toggle). */
   const [channelUpdateGateVisible, setChannelUpdateGateVisible] = useState(false);
+  const presentChannelUpdateGateRef = useRef(() => false);
 
   const verifyInFlightRef = useRef(false);
   const refreshInFlightRef = useRef(0);
@@ -1251,7 +1252,20 @@ export function OsmaniAppProvider({ children }) {
   }, []);
 
   const requestChannelUpdateGate = useCallback(() => {
+    return presentChannelUpdateGateRef.current() === true;
+  }, []);
+
+  const presentChannelUpdateGate = useCallback(() => {
     setChannelUpdateGateVisible(true);
+  }, []);
+
+  const bindPresentChannelUpdateGate = useCallback((fn) => {
+    presentChannelUpdateGateRef.current = typeof fn === 'function' ? fn : () => false;
+    return () => {
+      if (presentChannelUpdateGateRef.current === fn) {
+        presentChannelUpdateGateRef.current = () => false;
+      }
+    };
   }, []);
 
   const dismissChannelUpdateGate = useCallback(() => {
@@ -1347,6 +1361,8 @@ export function OsmaniAppProvider({ children }) {
       requireUpdateBeforeChannelPlayback: settings.requireUpdateBeforeChannelPlayback,
       channelUpdateGateVisible,
       requestChannelUpdateGate,
+      presentChannelUpdateGate,
+      bindPresentChannelUpdateGate,
       dismissChannelUpdateGate,
     }),
     [
@@ -1394,6 +1410,8 @@ export function OsmaniAppProvider({ children }) {
       requestPaymentModal,
       channelUpdateGateVisible,
       requestChannelUpdateGate,
+      presentChannelUpdateGate,
+      bindPresentChannelUpdateGate,
       dismissChannelUpdateGate,
     ],
   );

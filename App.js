@@ -42,7 +42,7 @@ import TransferConfirmModal from './components/TransferConfirmModal';
 import TransferSuccessModal from './components/TransferSuccessModal';
 import TransferredAwayModal from './components/TransferredAwayModal';
 import UpdateOverlay from './components/UpdateOverlay';
-import ChannelUpdateGateModal from './components/ChannelUpdateGateModal';
+import ChannelUpdateGateHost from './components/ChannelUpdateGateHost';
 import OtaDebugOverlay, { OtaDebugTitleTap } from './components/OtaDebugOverlay';
 import WhatsAppFloatingButtonGate from './components/WhatsAppFloatingButtonGate';
 import GlobalPaymentModalGate from './components/GlobalPaymentModalGate';
@@ -1439,13 +1439,6 @@ export default function App() {
         <AppShell navigationRevision={navigationRevision} setNavigationRevision={setNavigationRevision} />
       </EmbeddedOtaBootGate>
     </SafeAreaProvider>
-  );
-}
-
-function ChannelUpdateGateHost() {
-  const { channelUpdateGateVisible, dismissChannelUpdateGate } = useOsmaniApp();
-  return (
-    <ChannelUpdateGateModal visible={channelUpdateGateVisible} onDismiss={dismissChannelUpdateGate} />
   );
 }
 

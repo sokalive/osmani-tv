@@ -24,6 +24,7 @@ import {
   subscribe,
 } from '../lib/updateClient';
 import { isMandatoryUpdate } from '../lib/updateMandatoryPolicy';
+import { useRegisterBlockingSheet } from '../context/ModalSheetCoordinatorContext';
 
 const SHEET_BG = '#0F1115';
 const TEXT_MUTED = '#9CA3AF';
@@ -96,6 +97,8 @@ export default function UpdateOverlay() {
   }, []);
 
   const phase = useMemo(() => (ui ? derivePhase(ui) : 'idle'), [ui]);
+
+  useRegisterBlockingSheet('update-overlay', Boolean(ui?.visible));
 
   const isForce = ui?.decision === 'FORCE';
   const isPlayStore = ui?.decision === 'PLAY_STORE';

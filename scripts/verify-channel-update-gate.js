@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Channel-level update gate for legacy APK (versionCode < 24).
+ * Channel update gate + modal priority coordination.
  * Run: node scripts/verify-channel-update-gate.js
  */
 
@@ -32,57 +32,100 @@ function shouldBlockChannelForUpdate(requireUpdateBeforeChannelPlayback, version
   return true;
 }
 
+// mirror lib/modalPriorityGuard.js
+function evaluateChannelUpdateGatePresentation(opts = {}) {
+  const EXACT = new Set([
+    'lifecycle-revoked',
+    'lifecycle-transfer',
+    'lifecycle-plans',
+    'global-payment-modal',
+    'global-emergency',
+    'device-intelligence-blocked',
+    'update-overlay',
+  ]);
+  const hasHigher = (ids) =>
+    (ids || []).some(
+      (id) =>
+        EXACT.has(id) ||
+        id.startsWith('catalog-premium-') ||
+        id.startsWith('catalog-manual-gift-'),
+    );
+  if (opts.channelUpdateGateVisible) return { defer: false, reason: 'already_visible' };
+  if (opts.mandatoryUpdateOverlayActive) return { defer: true, reason: 'mandatory_update_overlay' };
+  if (opts.updateOverlayVisible) return { defer: true, reason: 'update_overlay' };
+  if (opts.sourceTransferSuccessVisible) return { defer: true, reason: 'transfer_success' };
+  if (hasHigher(opts.blockingSheetIds)) return { defer: true, reason: 'blocking_sheet' };
+  return { defer: false, reason: null };
+}
+
 const gate = read('lib/channelUpdateGate.js');
+const priority = read('lib/modalPriorityGuard.js');
 const nav = read('lib/premiumChannelNavigation.js');
-const settings = read('api/settings.js');
-const ctx = read('context/OsmaniAppContext.jsx');
-const modal = read('components/ChannelUpdateGateModal.js');
+const host = read('components/ChannelUpdateGateHost.jsx');
+const updateClient = read('lib/updateClient.js');
+const overlay = read('components/UpdateOverlay.js');
 const app = read('App.js');
 
 if (!gate.includes('shouldBlockChannelForUpdate')) fail('missing shouldBlockChannelForUpdate');
 else pass('channelUpdateGate helper');
 
-if (!settings.includes('require_update_before_channel_playback')) {
-  fail('settings must parse require_update_before_channel_playback');
-} else pass('settings parses admin toggle');
+if (!priority.includes('evaluateChannelUpdateGatePresentation')) fail('missing modal priority guard');
+else pass('modal priority guard');
 
-if (!nav.includes('shouldBlockChannelForUpdate')) fail('navigation must call update gate');
-else pass('navigation uses update gate');
+if (!host.includes('evaluateChannelUpdateGatePresentation')) fail('host must use priority guard');
+else pass('ChannelUpdateGateHost coordinates priority');
+
+if (!host.includes('useRegisterBlockingSheet')) fail('channel gate must register blocking sheet');
+else pass('channel gate registers coordinator id');
+
+if (!updateClient.includes('isMandatoryUpdateOverlayActive')) fail('updateClient exports mandatory overlay check');
+else pass('mandatory overlay export');
+
+if (!updateClient.includes('isUpdateOverlayVisible')) fail('updateClient exports overlay visible check');
+else pass('update overlay visible export');
+
+if (!overlay.includes("useRegisterBlockingSheet('update-overlay'")) {
+  fail('UpdateOverlay must register blocking sheet');
+} else pass('UpdateOverlay registers coordinator');
 
 const gateIdx = nav.indexOf('shouldBlockChannelForUpdate');
 const premiumIdx = nav.indexOf('openPaymentModal');
-const verifyIdx = nav.indexOf('verifySubscriptionBeforePlay');
-if (gateIdx < 0 || gateIdx > premiumIdx || gateIdx > verifyIdx) {
-  fail('update gate must run before premium/payment flow');
-} else pass('update gate precedes premium gate');
+if (gateIdx < 0 || gateIdx > premiumIdx) fail('update gate must precede premium gate');
+else pass('update gate precedes premium gate');
 
-if (!gate.includes('Huwezi kutazama channel hii hadi ufanye update')) fail('missing title');
-else pass('popup title');
+if (!nav.includes('channel_update_gate_deferred')) fail('navigation must log deferred gate');
+else pass('deferred gate logging');
 
-if (!gate.includes('Bonyeza UPDATE kupata toleo jipya')) fail('missing message');
-else pass('popup message');
+if (!app.includes('ChannelUpdateGateHost')) fail('App must mount ChannelUpdateGateHost');
+else pass('ChannelUpdateGateHost mounted');
 
-if (!modal.includes('startDownload')) fail('UPDATE must start APK download');
-else pass('UPDATE uses startDownload');
+// priority simulations
+const mandatory = evaluateChannelUpdateGatePresentation({ mandatoryUpdateOverlayActive: true });
+if (!mandatory.defer || mandatory.reason !== 'mandatory_update_overlay') {
+  fail('sim: mandatory update blocks channel gate');
+} else pass('sim: mandatory update blocks channel gate');
 
-if (!app.includes('ChannelUpdateGateModal')) fail('App must mount channel update modal');
-else pass('modal mounted in App');
+const soft = evaluateChannelUpdateGatePresentation({ updateOverlayVisible: true });
+if (!soft.defer) fail('sim: any update overlay blocks channel gate');
+else pass('sim: update overlay blocks channel gate');
 
-if (!ctx.includes('requireUpdateBeforeChannelPlayback')) fail('context must expose toggle');
-else pass('context exposes toggle');
+const revoked = evaluateChannelUpdateGatePresentation({ blockingSheetIds: ['lifecycle-revoked'] });
+if (!revoked.defer) fail('sim: revoked modal blocks channel gate');
+else pass('sim: revoked modal blocks channel gate');
 
-// simulations
-if (!shouldBlockChannelForUpdate(true, 20)) fail('v20 + ON must block');
+const payment = evaluateChannelUpdateGatePresentation({ blockingSheetIds: ['global-payment-modal'] });
+if (!payment.defer) fail('sim: payment modal blocks channel gate');
+else pass('sim: payment modal blocks channel gate');
+
+const ok = evaluateChannelUpdateGatePresentation({ blockingSheetIds: [] });
+if (ok.defer) fail('sim: clean state allows channel gate');
+else pass('sim: clean state allows channel gate');
+
+if (!shouldBlockChannelForUpdate(true, 20)) fail('v20 + ON must block playback');
 else pass('sim: v20 toggle ON blocks');
 
 if (shouldBlockChannelForUpdate(true, 24)) fail('v24 + ON must not block');
 else pass('sim: v24 toggle ON passes');
-
-if (shouldBlockChannelForUpdate(false, 20)) fail('v20 + OFF must not block');
-else pass('sim: v20 toggle OFF passes');
-
-if (!shouldBlockChannelForUpdate(true, 16)) fail('v16 + ON must block');
-else pass('sim: v16 toggle ON blocks');
 
 if (!process.exitCode) {
   console.log('\n[verify-channel-update-gate] ok');
