@@ -34,6 +34,7 @@ import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import {
   isConfirmedSubscriptionLoss,
+  logSubscriptionLossModalDecision,
   resolveSubscriptionLossModalReason,
   subscriptionTransferSseRole,
   unwrapSubscriptionSsePayload,
@@ -507,16 +508,24 @@ export function OsmaniAppProvider({ children }) {
       }
     }
 
+    const hadSubscriptionBefore = isSubscribedRef.current;
     const r = await reverifySubscription(isBackground ? reason : `gate:${reason}`);
     const active = r?.active === true;
     if (!active) {
       console.log('[PLAYBACK_GATE]', 'denied', reason);
-      const hadSubscription = isSubscribedRef.current;
-      if (hadSubscription && isConfirmedSubscriptionLoss(r)) {
+      if (hadSubscriptionBefore && isConfirmedSubscriptionLoss(r)) {
         const modalReason = resolveSubscriptionLossModalReason(r);
+        logSubscriptionLossModalDecision(`gate:${reason}`, r, modalReason ?? 'skipped', {
+          hadSubscriptionBefore,
+        });
         if (modalReason) {
           setRevokedReason((cur) => cur ?? modalReason);
         }
+      } else if (hadSubscriptionBefore) {
+        logSubscriptionLossModalDecision(`gate:${reason}`, r, 'skipped', {
+          hadSubscriptionBefore,
+          notConfirmedLoss: true,
+        });
       }
     } else {
       console.log('[PLAYBACK_GATE]', 'allowed', reason);
@@ -958,20 +967,52 @@ export function OsmaniAppProvider({ children }) {
             : null;
         const r = await reverifySubscription('sse:subscription_revoked');
         if (r?.active === true) {
+          logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'cleared', {
+            role,
+            hadActiveBefore,
+            sseReason,
+          });
           setRevokedReason(null);
           return;
         }
-        if (!hadActiveBefore) return;
-        if (!isConfirmedSubscriptionLoss(r)) return;
+        if (!hadActiveBefore) {
+          logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'skipped', {
+            role,
+            hadActiveBefore,
+            sseReason,
+            skip: 'no_prior_active',
+          });
+          return;
+        }
+        if (!isConfirmedSubscriptionLoss(r)) {
+          logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'skipped', {
+            role,
+            hadActiveBefore,
+            sseReason,
+            skip: 'not_confirmed_loss',
+          });
+          return;
+        }
         const isTransfer =
           sseReason === 'transferred' ||
           sseReason === 'transfer' ||
           String(sseReason ?? '').toLowerCase().includes('transfer');
         if (isTransfer && role === 'source') {
+          logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'skipped', {
+            role,
+            hadActiveBefore,
+            sseReason,
+            skip: 'source_transfer',
+          });
           await applySourceTransferCompleted('sse:subscription_revoked');
           return;
         }
         const modalReason = resolveSubscriptionLossModalReason(r);
+        logSubscriptionLossModalDecision('sse:subscription_revoked', r, modalReason ?? 'skipped', {
+          role,
+          hadActiveBefore,
+          sseReason,
+        });
         if (!modalReason) return;
         setRevokedReason(modalReason);
         isSubscribedRef.current = false;

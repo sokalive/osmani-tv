@@ -31,14 +31,18 @@ export default function TransferredAwayModal({
       ? 'Kifurushi kimehamishwa'
       : reason === 'revoked'
         ? 'Kifurushi kimezuiwa'
-        : 'Kifurushi kimekwisha';
+        : reason === 'suspended'
+          ? 'Kifurushi kimesimamishwa'
+          : 'Kifurushi kimekwisha';
 
   const body =
     reason === 'transferred'
       ? 'Kifurushi chako kimehamishwa kwenda kifaa kingine. Hauwezi tena kutazama channel za kulipia kwenye simu hii hadi ulipie tena au urudishe kifurushi.'
       : reason === 'revoked'
-        ? 'Admin amesimamisha ufikiaji wa kifurushi chako. Tafadhali wasiliana na admin au lipia tena ili kuendelea.'
-        : 'Kifurushi chako kimekwisha. Lipia tena au rudisha kifurushi ili kuendelea kutazama.';
+        ? 'Admin amezuia kifurushi chako. Tafadhali wasiliana na admin au lipia tena ili kuendelea.'
+        : reason === 'suspended'
+          ? 'Admin amesimamisha ufikiaji wa kifurushi chako kwa muda. Tafadhali wasiliana na admin au lipia tena ili kuendelea.'
+          : 'Kifurushi chako kimekwisha. Lipia tena au rudisha kifurushi ili kuendelea kutazama.';
 
   return (
     <Modal

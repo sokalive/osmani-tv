@@ -61,14 +61,17 @@ function isConfirmedSubscriptionLoss(verifyResult) {
 
 function isExplicitRevokedInactiveReason(reason) {
   const t = String(reason ?? '').toLowerCase();
-  if (!t) return false;
-  return t === 'revoked' || t === 'suspended' || t.includes('revoked') || t.includes('suspend');
+  return t === 'revoked';
 }
 
 function resolveSubscriptionLossModalReason(verifyResult) {
   if (!isConfirmedSubscriptionLoss(verifyResult)) return null;
-  const fromVerify = verifyResult.inactiveReason ?? null;
-  if (isExplicitRevokedInactiveReason(fromVerify)) return 'revoked';
+  const reason = String(verifyResult.inactiveReason ?? '').toLowerCase();
+  const status = String(verifyResult.raw?.status ?? '').toLowerCase();
+  if (reason === 'revoked' || status === 'revoked') return 'revoked';
+  const suspended =
+    reason === 'suspended' || status === 'suspended';
+  if (suspended) return 'suspended';
   return 'expired';
 }
 
@@ -121,6 +124,16 @@ const ambiguousInactive = { active: false, resolveSource: 'inactive', inactiveRe
 if (resolveSubscriptionLossModalReason(ambiguousInactive) !== 'expired') {
   fail('sim: ambiguous inactive must default expired not revoked');
 } else pass('sim: ambiguous inactive defaults expired');
+
+const falseCodeRevoked = {
+  active: false,
+  resolveSource: 'inactive',
+  inactiveReason: null,
+  raw: { code: 'SUBSCRIPTION_REVOKED' },
+};
+if (resolveSubscriptionLossModalReason(falseCodeRevoked) !== 'expired') {
+  fail('sim: code field alone must not open revoked modal');
+} else pass('sim: code-only hint defaults expired');
 
 const preserved = {
   active: true,
