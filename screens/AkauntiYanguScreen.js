@@ -38,6 +38,7 @@ import {
   runAccountAppUpdate,
 } from '../lib/accountAppUpdate';
 import { useModalSheetCoordinator } from '../context/ModalSheetCoordinatorContext';
+import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
 
 /** Matches App.js theme — do not diverge */
 const COLORS = {
@@ -567,7 +568,7 @@ export default function AkauntiYanguScreen() {
         <View style={styles.updateSection}>
           <Text style={styles.updateSectionTitle}>Update App</Text>
           <Text style={styles.offerDescription}>
-            Pakua toleo jipya la programu ikiwa linapatikana
+            Pakua toleo jipya la programu ikiwa linapatikana.
           </Text>
           <Pressable
             style={[styles.updateSubmitOuter, updateBusy && styles.offerSubmitOuterDisabled]}

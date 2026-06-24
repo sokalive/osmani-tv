@@ -35,4 +35,7 @@ else pass('reuses startDownload');
 if (!account.includes('isBlockingSheetActive')) fail('defers when blocking sheet active');
 else pass('modal defer on blocking sheet');
 
+if (!account.includes('getScrollContentBottomPadding')) fail('scroll bottom padding import');
+else pass('scroll bottom padding import');
+
 if (!process.exitCode) console.log('\n[verify-account-app-update] ok');
