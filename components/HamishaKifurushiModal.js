@@ -22,6 +22,12 @@ import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { getTransferStatus, initiateTransfer, redeemTransfer } from '../api/subscription';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
+import { formatTransferRequestUserMessage } from '../lib/transferRequestErrors';
+import {
+  isValidTanzaniaMobilePhone,
+  normalizeTanzaniaMobilePhone,
+} from '../lib/tanzaniaPhone';
+import { useRegisterBlockingSheet } from '../context/ModalSheetCoordinatorContext';
 
 const COLORS = {
   background: '#0C0608',
@@ -57,8 +63,9 @@ function formatTimer(totalSeconds) {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-function normalizePhone(raw) {
-  return String(raw || '').replace(/[^\d]/g, '').slice(0, 10);
+function formatPhoneInput(raw) {
+  const norm = normalizeTanzaniaMobilePhone(raw);
+  return norm?.local ?? String(raw || '').replace(/[^\d]/g, '').slice(0, 10);
 }
 
 /**
@@ -130,6 +137,8 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   const [waitingCode, setWaitingCode] = useState('');
   const [rejectionReason, setRejectionReason] = useState('');
 
+  useRegisterBlockingSheet('lifecycle-hamisha-transfer', visible);
+
   const cardMaxHeight = windowHeight * 0.82;
   const introScrollMidMaxHeight = Math.min(windowHeight * 0.54, 480);
 
@@ -183,7 +192,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     return () => clearInterval(timer);
   }, [visible, step, generatedCode]);
 
-  const isPhoneValid = useMemo(() => /^0[67]\d{8}$/.test(phone), [phone]);
+  const isPhoneValid = useMemo(() => isValidTanzaniaMobilePhone(phone), [phone]);
   const redeemCode = code.trim();
   const isRedeemCodeValid = /^\d{6}$/.test(redeemCode);
 
@@ -351,15 +360,25 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     setBusy(true);
     setError('');
     try {
-      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-      const r = await initiateTransfer(deviceId, deviceFingerprint, phone);
+      const identity = await getDeviceIdentity();
+      const r = await initiateTransfer(identity.deviceId, identity.deviceFingerprint, phone, {
+        installInstanceId: identity.installInstanceId,
+        packageName: identity.packageName,
+        packageAndroidId: identity.packageAndroidId,
+        legacyPackageAndroidId: identity.legacyPackageAndroidId,
+        stableHardwareId: identity.stableHardwareId,
+        displayedAccountId: identity.displayedAccountId,
+        androidId: identity.androidId,
+        legacyDeviceFingerprint: identity.legacyDeviceFingerprint,
+        legacyPackageName: identity.legacyPackageName,
+        migration_bridge: true,
+      });
       setGeneratedCode(r.code);
       markSourceTransferSession?.(r.code);
       setRemainingSeconds(TRANSFER_CODE_SECONDS);
       setStep(STEPS.GENERATED);
     } catch (e) {
-      const msg = e?.message ?? String(e ?? 'unknown_error');
-      setError(msg);
+      setError(formatTransferRequestUserMessage(e, e?.httpStatus));
     } finally {
       setBusy(false);
     }
@@ -390,8 +409,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       }
       setError('Code haijafanikiwa. Hakikisha umeingiza code sahihi.');
     } catch (e) {
-      const msg = e?.message ?? String(e ?? 'unknown_error');
-      setError(msg);
+      setError(formatTransferRequestUserMessage(e, e?.httpStatus));
     } finally {
       setBusy(false);
     }
@@ -547,7 +565,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
                       value={phone}
                       onChangeText={(t) => {
                         setError('');
-                        setPhone(normalizePhone(t));
+                        setPhone(formatPhoneInput(t));
                       }}
                     />
                     {error ? <Text style={styles.errorText}>{error}</Text> : null}

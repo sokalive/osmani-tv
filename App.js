@@ -72,6 +72,8 @@ import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBa
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
+import { instructionVideoVisibleForInstall, isInstructionVideoChannel } from './lib/instructionVideoChannel';
+import { readNativeAndroidVersionCode } from './lib/playVpsApiHost';
 import { logChannelCardTap } from './lib/channelCardTapDiagnostics';
 import { channelIsFreeAccess } from './lib/trialWatchAccess';
 import { computeNearExpirySnapshot } from './lib/subscriptionNearExpiry';
@@ -194,7 +196,8 @@ function channelVisibleInApp(raw) {
       : raw?.active !== undefined
         ? Boolean(raw.active)
         : true;
-  return showInApp && isActive;
+  if (!showInApp || !isActive) return false;
+  return instructionVideoVisibleForInstall(raw, readNativeAndroidVersionCode());
 }
 
 function catalogGridSectionTitle(navigatorTabKey, selectedFilter) {
@@ -229,7 +232,8 @@ function mapApiChannelToCard(raw, index, freeMode = false, serverHealth = null) 
   const isHD = raw?.isHD !== undefined ? Boolean(raw.isHD) : raw?.hd !== false;
   const isPremiumApi =
     raw?.accessType === 'premium' || Boolean(raw?.accessPremium === true || raw?.access_premium === true);
-  const isPremium = freeMode ? false : isPremiumApi;
+  const isInstructionVideo = isInstructionVideoChannel(raw);
+  const isPremium = freeMode || isInstructionVideo ? false : isPremiumApi;
   const category = raw?.category != null ? String(raw.category) : '';
   const resolved = resolveStream(raw);
   const thumbnailUri = resolveChannelThumbnailUri(raw);

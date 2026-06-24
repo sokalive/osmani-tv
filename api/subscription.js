@@ -8,6 +8,8 @@ import {
 import { isTransientServerError } from '../lib/catalogConnectivity';
 import { LEGACY_ANDROID_PACKAGE } from '../lib/deviceIdentity';
 import { cacheSecurityPhone, getSecurityPhoneForReport, pickPhoneFromApiBody } from '../lib/security/securityPhone';
+import { formatTanzaniaPhoneForApi, normalizeTanzaniaMobilePhone } from '../lib/tanzaniaPhone';
+import { createTransferRequestError } from '../lib/transferRequestErrors';
 
 /**
  * Device-bound subscription HTTP client.
@@ -1226,25 +1228,51 @@ function ensureTransferPrefix(raw) {
  * passed at confirm time.
  *
  * Backend route: POST /api/transfer/request
+ * @param {object} [identityContext] install_instance_id, android_id, etc.
  */
-export async function initiateTransfer(deviceId, deviceFingerprint, phone = '') {
+export async function initiateTransfer(
+  deviceId,
+  deviceFingerprint,
+  phone = '',
+  identityContext = {},
+) {
   const url = '/api/transfer/request';
-  console.log('[TRANSFER_REQUEST]', 'request', { url });
+  const phoneNorm = normalizeTanzaniaMobilePhone(phone);
+  const ctx = await buildIdentityContext({
+    ...identityContext,
+    phone: phoneNorm?.local ?? undefined,
+  });
+  const basePayload = buildMigrationIdentityPayload(deviceId, deviceFingerprint, ctx);
   const payload = {
+    ...basePayload,
     source_device_id: deviceId,
-    // The source device doesn't yet know the target id. Backend rebinds
-    // ownership to whatever `target_device_id` is presented at confirm.
     target_device_id: deviceId,
     device_id: deviceId,
     device_fingerprint: deviceFingerprint,
   };
-  const normalizedPhone = String(phone || '').replace(/[^\d]/g, '');
-  if (normalizedPhone) payload.phone = normalizedPhone;
+  if (phoneNorm?.local) {
+    payload.phone = phoneNorm.local;
+    payload.payment_phone = phoneNorm.local;
+    payload.phone_e164 = phoneNorm.e164;
+  } else {
+    const fallback = formatTanzaniaPhoneForApi(phone);
+    if (fallback) {
+      payload.phone = fallback;
+      payload.payment_phone = fallback;
+    }
+  }
+  console.log('[TRANSFER_REQUEST]', 'request', {
+    url,
+    phone: payload.phone ? `${String(payload.phone).slice(0, 4)}…` : null,
+    phone_e164: payload.phone_e164 ? `${String(payload.phone_e164).slice(0, 6)}…` : null,
+    deviceId: String(deviceId).slice(0, 8),
+    install_instance_id: payload.install_instance_id ? `${String(payload.install_instance_id).slice(0, 8)}…` : null,
+  });
   const { res, body } = await postJson(url, payload);
   if (!res.ok) {
     const reason = body?.error ?? body?.message ?? `HTTP ${res.status}`;
-    console.log('[TRANSFER_REQUEST]', 'failed', reason);
-    throw new Error(String(reason));
+    console.log('[TRANSFER_REQUEST]', 'failed', res.status, reason);
+    throw createTransferRequestError(res.status, String(reason), body);
   }
   const rawCode = pickTransferCode(body);
   if (!rawCode) throw new Error('Transfer code missing in response');

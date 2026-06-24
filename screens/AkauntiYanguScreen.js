@@ -33,7 +33,11 @@ import {
 import { getDeviceLabel } from '../lib/deviceLabel';
 import { computeSubscriptionProgress, getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
 import { formatSubscriptionRemainingCountdown } from '../lib/formatSubscriptionRemaining';
-import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
+import {
+  ACCOUNT_UPDATE_ALREADY_LATEST_SWAHILI,
+  runAccountAppUpdate,
+} from '../lib/accountAppUpdate';
+import { useModalSheetCoordinator } from '../context/ModalSheetCoordinatorContext';
 
 /** Matches App.js theme — do not diverge */
 const COLORS = {
@@ -148,6 +152,8 @@ export default function AkauntiYanguScreen() {
   const [hamishaModalVisible, setHamishaModalVisible] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [offerCodeInput, setOfferCodeInput] = useState('');
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const { isBlockingSheetActive } = useModalSheetCoordinator();
 
   useEffect(() => {
     if (route?.params?.openPremiumAfterExpiry === true) {
@@ -319,6 +325,26 @@ export default function AkauntiYanguScreen() {
     await Clipboard.setStringAsync(deviceIdFull);
     Alert.alert('', 'Device ID imenakiliwa');
   }, [deviceIdFull]);
+
+  const handleAccountAppUpdate = useCallback(async () => {
+    if (updateBusy || isBlockingSheetActive) return;
+    setUpdateBusy(true);
+    try {
+      const result = await runAccountAppUpdate();
+      if (result.outcome === 'already_latest') {
+        Alert.alert('', ACCOUNT_UPDATE_ALREADY_LATEST_SWAHILI);
+        return;
+      }
+      if (result.outcome === 'downloading' || result.outcome === 'store') {
+        return;
+      }
+      if (result.outcome === 'error' || result.outcome === 'unavailable') {
+        Alert.alert('', result.message ?? 'Imeshindwa kukagua sasisho.');
+      }
+    } finally {
+      setUpdateBusy(false);
+    }
+  }, [updateBusy, isBlockingSheetActive]);
 
   const cooldownActive = cooldownRemainingSec > 0;
 
@@ -533,6 +559,31 @@ export default function AkauntiYanguScreen() {
                 <ActivityIndicator color="#111827" />
               ) : (
                 <Text style={styles.offerSubmitText}>THIBITISHA CODE</Text>
+              )}
+            </LinearGradient>
+          </Pressable>
+        </View>
+
+        <View style={styles.updateSection}>
+          <Text style={styles.updateSectionTitle}>Update App</Text>
+          <Text style={styles.offerDescription}>
+            Pakua toleo jipya la programu ikiwa linapatikana
+          </Text>
+          <Pressable
+            style={[styles.updateSubmitOuter, updateBusy && styles.offerSubmitOuterDisabled]}
+            onPress={() => guardAccountAction(() => void handleAccountAppUpdate())}
+            disabled={updateBusy}
+          >
+            <LinearGradient
+              colors={['#38BDF8', '#0EA5E9']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.offerSubmitGradient}
+            >
+              {updateBusy ? (
+                <ActivityIndicator color="#0F172A" />
+              ) : (
+                <Text style={styles.offerSubmitText}>UPDATE APP</Text>
               )}
             </LinearGradient>
           </Pressable>
@@ -880,5 +931,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  updateSection: {
+    marginTop: 8,
+    marginBottom: 16,
+    backgroundColor: COLORS.card,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.2)',
+  },
+  updateSectionTitle: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  updateSubmitOuter: {
+    borderRadius: 16,
+    overflow: 'hidden',
   },
 });

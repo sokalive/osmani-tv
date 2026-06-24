@@ -56,6 +56,11 @@ import {
   shouldRunTrialWatchOnChannel,
 } from '../lib/trialWatchAccess';
 import {
+  isInstructionVideoChannel,
+  isPortraitInstructionVideoChannel,
+} from '../lib/instructionVideoChannel';
+import { resolveInstructionVideoPlaybackUri } from '../lib/instructionVideoCache';
+import {
   applyNativeVideoResizeMode,
   normalizeVideoResizeMode,
 } from '../lib/nativeVideoResize';
@@ -154,6 +159,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const { blocked: deviceIntelligenceBlocked } = useDeviceIntelligence();
   const playbackSecurity = usePlaybackSecurityGate();
   const channel = liveChannel ?? initialChannel;
+  const isPortraitInstructionVideo = isPortraitInstructionVideoChannel(channel);
   const channelIsPremium = channelIsPremiumAccess(channel, { freeMode });
   const channelPlaybackKey = String(
     channel?.id ?? channel?.channel_id ?? channel?.name ?? '',
@@ -185,6 +191,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   ].filter(Boolean);
 
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
+  const [instructionPlaybackUri, setInstructionPlaybackUri] = useState('');
   /** When direct/auto playback fails, retry once through CDN stream-proxy. */
   const [hlsForceProxy, setHlsForceProxy] = useState(false);
   const manifestRefreshAttemptRef = useRef(0);
@@ -199,7 +206,33 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     lastRecoveryWallMs: 0,
     recovering: false,
   });
-  const uri = streams[currentUrlIndex];
+  const uri = instructionPlaybackUri || streams[currentUrlIndex];
+
+  useEffect(() => {
+    let cancelled = false;
+    const remote =
+      channel?.url ??
+      channel?.stream_url ??
+      streams[currentUrlIndex] ??
+      '';
+    if (!isInstructionVideoChannel(channel) || !remote) {
+      setInstructionPlaybackUri('');
+      return undefined;
+    }
+    void (async () => {
+      const resolved = await resolveInstructionVideoPlaybackUri(channel, String(remote));
+      if (!cancelled) setInstructionPlaybackUri(resolved);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    channel,
+    channelPlaybackKey,
+    currentUrlIndex,
+    channel?.url,
+    channel?.stream_url,
+  ]);
   const headers = useMemo(
     () => ({
       ...(channel?.referer && { Referer: channel.referer }),
@@ -408,7 +441,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const [isPlaying, setIsPlaying] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [resizeMode, setResizeMode] = useState(ResizeMode.CONTAIN);
+  const [resizeMode, setResizeMode] = useState(() =>
+    isPortraitInstructionVideoChannel(initialChannel)
+      ? ResizeMode.COVER
+      : ResizeMode.CONTAIN,
+  );
 
   useEffect(() => {
     if (!useNativePlayer) return undefined;
@@ -650,7 +687,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (!channel) return undefined;
     const channelKey = String(channel?.id ?? channel?.channel_id ?? '').trim();
 
-    if (!channelIsPremium || freeMode) {
+    if (!channelIsPremium || freeMode || isInstructionVideoChannel(channel)) {
       setAccessChecked(true);
       setAccessAllowed(true);
       premiumGateSessionRef.current = { channelKey, granted: true };
@@ -1020,9 +1057,14 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     handlePlaybackFailure(errMsg);
   };
 
-  // ROTATION — portrait/StatusBar also reset synchronously in exitPlayer / teardown.
+  // ROTATION — portrait instruction VIDEO stays vertical; live channels use landscape.
   useEffect(() => {
-    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    if (isPortraitInstructionVideo) {
+      setResizeMode(ResizeMode.COVER);
+      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    } else {
+      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    }
     StatusBar.setHidden(true);
     statusBarHiddenRef.current = true;
 
@@ -1030,7 +1072,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
       StatusBar.setHidden(false);
     };
-  }, []);
+  }, [isPortraitInstructionVideo, channelPlaybackKey]);
 
   useEffect(() => {
     playerLifecycleRef.current.mounted = true;
@@ -2163,7 +2205,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         onPress: () => {
           statusBarHiddenRef.current = !statusBarHiddenRef.current;
           StatusBar.setHidden(statusBarHiddenRef.current);
-          if (statusBarHiddenRef.current) {
+          if (isPortraitInstructionVideo) {
+            void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+          } else if (statusBarHiddenRef.current) {
             void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
           }
         },
@@ -2179,6 +2223,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       useHlsWebView,
       useEmbedWebView,
       useNativePlayer,
+      isPortraitInstructionVideo,
       onPlayPause,
       openLanguagePicker,
       openQualityPicker,
