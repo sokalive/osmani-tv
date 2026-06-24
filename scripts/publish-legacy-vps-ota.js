@@ -35,7 +35,7 @@ for (const runtime of RUNTIMES) {
   ];
   const result = spawnSync(NPX, args, {
     stdio: 'inherit',
-    shell: false,
+    shell: process.platform === 'win32',
     env: {
       ...process.env,
       CI: '1',
