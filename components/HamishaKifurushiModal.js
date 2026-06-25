@@ -22,6 +22,7 @@ import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { getTransferStatus, initiateTransfer, redeemTransfer } from '../api/subscription';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
+import { subscriptionTransferSseRole } from '../lib/subscriptionSseGuard';
 import { formatTransferRequestUserMessage } from '../lib/transferRequestErrors';
 import {
   isValidTanzaniaMobilePhone,
@@ -120,6 +121,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     triggerPendingTransfer,
     markSourceTransferSession,
     clearSourceTransferSession,
+    applySourceTransferCompleted,
   } = useOsmaniApp();
 
   const [step, setStep] = useState(STEPS.INTRO);
@@ -281,6 +283,36 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       offPending();
     };
   }, [visible, step, generatedCode, close, triggerPendingTransfer]);
+
+  /** Source device: clear subscription immediately when transfer completes. */
+  useEffect(() => {
+    if (!visible || step !== STEPS.GENERATED) return undefined;
+    const offCompleted = subscribeRealtimeEvent('transfer_completed', (payload) => {
+      void (async () => {
+        const role = await subscriptionTransferSseRole(payload, 'transfer_completed');
+        if (role !== 'source') return;
+        console.log('[TRANSFER_COMPLETED]', 'hamisha_source_clear', payload);
+        await applySourceTransferCompleted?.('hamisha:transfer_completed');
+        close();
+      })();
+    });
+    const offRevoked = subscribeRealtimeEvent('subscription_revoked', (payload) => {
+      void (async () => {
+        const role = await subscriptionTransferSseRole(payload, 'subscription_revoked');
+        if (role !== 'source') return;
+        const inner = payload?.payload ?? payload;
+        const reason = String(inner?.reason ?? '').toLowerCase();
+        if (!reason.includes('transfer')) return;
+        console.log('[SUBSCRIPTION_REVOKED]', 'hamisha_source_transfer_clear', payload);
+        await applySourceTransferCompleted?.('hamisha:subscription_revoked_transfer');
+        close();
+      })();
+    });
+    return () => {
+      offCompleted();
+      offRevoked();
+    };
+  }, [visible, step, applySourceTransferCompleted, close]);
 
   /**
    * Auto-close fail-safe. If the global context decides a pending

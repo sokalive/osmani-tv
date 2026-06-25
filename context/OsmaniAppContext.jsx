@@ -181,12 +181,19 @@ export function OsmaniAppProvider({ children }) {
   const rawChannelsRef = useRef([]);
   /** Set after source POST /transfer/request succeeds; gates Kubali/Kataa popup. */
   const sourceTransferSessionRef = useRef(null);
+  /** Blocks cache hydrate / verify re-activation on source after transfer-out. */
+  const sourceTransferClearLockUntilRef = useRef(0);
+  const SOURCE_TRANSFER_CLEAR_LOCK_MS = 10 * 60 * 1000;
 
   /**
    * Apply cached active subscription for instant UI / gates. Server verify
    * runs in background and may revoke only on confirmed inactive.
    */
   const hydrateSubscriptionFromCache = useCallback(async (reason = 'cache-hydrate') => {
+    if (sourceTransferClearLockUntilRef.current > Date.now()) {
+      console.log('[SUBSCRIPTION_CACHE]', reason, 'skipped_hydrate_after_source_transfer');
+      return false;
+    }
     const { cached } = await readHydratableSubscriptionCache();
     if (!cached?.active) return false;
     isSubscribedRef.current = true;
@@ -237,8 +244,26 @@ export function OsmaniAppProvider({ children }) {
         let active = r.active === true;
         let expiresAt = r.expiresAt ?? null;
         let effectiveResult = r;
+        const transferLockActive = sourceTransferClearLockUntilRef.current > Date.now();
+
+        if (transferLockActive && active) {
+          const src = String(r.resolveSource ?? '');
+          if (src !== 'inactive') {
+            console.log('[SUBSCRIPTION_VERIFY]', reason, 'blocked_reactivate_after_source_transfer', {
+              resolveSource: src,
+            });
+            active = false;
+            expiresAt = null;
+            effectiveResult = { ...r, active: false, expiresAt: null };
+          } else {
+            sourceTransferClearLockUntilRef.current = 0;
+          }
+        }
 
         if (!active && isSubscriptionTransportFailure(r)) {
+          if (transferLockActive) {
+            console.log('[SUBSCRIPTION_VERIFY]', reason, 'skipped_transport_cache_after_source_transfer');
+          } else {
           const cached = await readSubscriptionCache();
           const sameDevice =
             !cached.deviceId ||
@@ -258,7 +283,9 @@ export function OsmaniAppProvider({ children }) {
               error: r.error,
             });
           }
+          }
         } else if (
+          !transferLockActive &&
           !active &&
           r.resolveSource !== 'inactive' &&
           isSubscribedRef.current
@@ -285,9 +312,9 @@ export function OsmaniAppProvider({ children }) {
 
         if (
           verifyKey !== lastVerifyKeyRef.current ||
-          (active === false && r.resolveSource !== 'inactive')
+          (active === false && r.resolveSource !== 'inactive' && !transferLockActive)
         ) {
-          if (active === false && r.resolveSource !== 'inactive') {
+          if (active === false && r.resolveSource !== 'inactive' && !transferLockActive) {
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'preserved_subscribed_state', {
               resolveSource: r.resolveSource ?? null,
               hadActive: isSubscribedRef.current,
@@ -389,7 +416,11 @@ export function OsmaniAppProvider({ children }) {
             (!cached.deviceId ||
               cached.deviceId === deviceId ||
               (identity.androidId && cached.deviceId === identity.androidId));
-          if (cached?.active && sameDevice) {
+          if (
+            sourceTransferClearLockUntilRef.current <= Date.now() &&
+            cached?.active &&
+            sameDevice
+          ) {
             isSubscribedRef.current = true;
             setIsSubscribed(true);
             setSubscriptionExpiresAt(cached.expiresAt ?? null);
@@ -1253,11 +1284,12 @@ export function OsmaniAppProvider({ children }) {
    */
   const applySourceTransferCompleted = useCallback(
     async (reason = 'transfer_completed') => {
-      if (!isSubscribedRef.current) return;
+      sourceTransferClearLockUntilRef.current = Date.now() + SOURCE_TRANSFER_CLEAR_LOCK_MS;
+      const hadActive = isSubscribedRef.current;
       sourceTransferSessionRef.current = null;
       setPendingTransfer(null);
       await clearLocalActiveSubscription(reason);
-      setSourceTransferSuccessVisible(true);
+      if (hadActive) setSourceTransferSuccessVisible(true);
       void reverifySubscription(`bg:${reason}`);
     },
     [clearLocalActiveSubscription, reverifySubscription],

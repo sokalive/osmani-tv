@@ -27,29 +27,23 @@ function read(rel) {
 require('./verify-account-app-update.js');
 
 const account = read('screens/AkauntiYanguScreen.js');
+const updateSection = read('components/AccountUpdateSection.js');
 
-if (!account.includes("from '../lib/tabBarLayout'")) {
-  fail('AkauntiYanguScreen imports tabBarLayout (required for scroll + Update section)');
-} else pass('tabBarLayout import present');
+if (!account.includes('AccountUpdateSection')) fail('AkauntiYangu mounts AccountUpdateSection');
+else pass('AkauntiYangu pinned AccountUpdateSection');
 
-if (!account.includes('getScrollContentBottomPadding')) {
-  fail('getScrollContentBottomPadding used for account scroll padding');
-} else pass('account scroll bottom padding');
+if (!account.includes('updateFooter')) fail('pinned update footer layout');
+else pass('pinned update footer layout');
 
-if (!account.includes('testID="account-update-section"')) {
-  fail('Update App section testID for device verification');
-} else pass('Update App section testID');
+if (!updateSection.includes('Update App')) fail('Update App title in component');
+else pass('Update App title in component');
 
-if (!account.includes('Update App')) fail('Update App title');
-else pass('Update App title visible in JSX');
-
-if (!account.includes('Pakua toleo jipya la programu ikiwa linapatikana.')) {
+if (!updateSection.includes('Pakua toleo jipya la programu ikiwa linapatikana.')) {
   fail('Update App Swahili subtitle with period');
 } else pass('Update App subtitle copy');
 
-if (account.includes('guardAccountAction(() => void handleAccountAppUpdate()')) {
-  fail('Update App must not be gated by device intelligence guard');
-} else pass('Update App available to all users');
+if (!account.includes('subscriptionVersion')) fail('account clears sticky refs on subscriptionVersion');
+else pass('account sticky ref clear on transfer');
 
 try {
   require('./verify-instruction-video-channel.js');
@@ -57,20 +51,23 @@ try {
   fail(`instruction video verify: ${e.message}`);
 }
 
+require('./verify-subscription-sse-guard.js');
+
 const hamisha = read('components/HamishaKifurushiModal.js');
 if (!hamisha.includes('isValidTanzaniaMobilePhone')) fail('Hamisha modal phone validation');
 else pass('transfer phone validation');
 
 console.log('\n--- Manual device verification (required) ---');
 console.log('| Runtime | Screen | versionCode | Expected | Actual |');
-console.log('| 1.6.0–1.8.2 | Akaunti Yangu (scroll bottom) | any | "Update App" + blue UPDATE APP | fill after test |');
+console.log('| 1.6.0–1.8.2 | Akaunti Yangu (pinned footer) | any | "Update App" + UPDATE APP always visible | fill after test |');
 console.log('| 1.6.0–1.8.2 | Akaunti Yangu tap UPDATE APP | < latest | APK download starts | fill after test |');
-console.log('| 1.6.0–1.8.2 | Akaunti Yangu tap UPDATE APP | 24 (latest) | Swahili already-latest alert | fill after test |');
+console.log('| 1.6.0–1.8.2 | Akaunti Yangu tap UPDATE APP | 24 | already-latest Swahili alert | fill after test |');
+console.log('| any | Phone A after transfer approve | — | ACTIVE clears instantly | fill after test |');
 console.log('\nSteps:');
-console.log('1. Force-close app twice (or wait 30s) so OTA reloads.');
-console.log('2. Open Akaunti Yangu tab → scroll past offer code to bottom.');
-console.log('3. Confirm testID account-update-section (or visible "Update App" card).');
-console.log('4. Tap UPDATE APP and note download vs already-latest alert.');
+console.log('1. Force-close app twice so OTA reloads.');
+console.log('2. Open Akaunti Yangu — Update App is pinned above tab bar (no scroll needed).');
+console.log('3. Logcat: [ACCOUNT_UPDATE_SECTION] mounted');
+console.log('4. Transfer A→B, approve on A — logcat [SUBSCRIPTION_CLEAR_LOCAL]');
 
 if (failed > 0) {
   console.error(`\n[verify-recent-features] ${failed} failure(s)`);

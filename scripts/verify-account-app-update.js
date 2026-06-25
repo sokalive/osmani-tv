@@ -16,18 +16,21 @@ function pass(msg) {
 
 const account = fs.readFileSync(path.join(root, 'screens/AkauntiYanguScreen.js'), 'utf8');
 const updateLib = fs.readFileSync(path.join(root, 'lib/accountAppUpdate.js'), 'utf8');
+const updateSection = fs.readFileSync(path.join(root, 'components/AccountUpdateSection.js'), 'utf8');
 
-if (!account.includes('runAccountAppUpdate')) fail('account uses runAccountAppUpdate');
-else pass('account update handler');
+if (!account.includes('AccountUpdateSection')) fail('account mounts AccountUpdateSection');
+else pass('account mounts AccountUpdateSection');
 
-if (!account.includes('UPDATE APP')) fail('UPDATE APP button');
+if (!updateSection.includes('runAccountAppUpdate')) fail('AccountUpdateSection uses runAccountAppUpdate');
+else pass('AccountUpdateSection handler');
+
+if (!updateSection.includes('UPDATE APP')) fail('UPDATE APP button');
 else pass('UPDATE APP button');
 
-if (!account.includes("from '../lib/tabBarLayout'")) {
-  fail('tabBarLayout import — missing import crashes Akaunti Yangu before Update section renders');
-} else pass('tabBarLayout import');
+if (!updateSection.includes('ACCOUNT_UPDATE_SECTION')) fail('runtime mount log');
+else pass('runtime mount log');
 
-if (!account.includes('testID="account-update-section"')) fail('account-update-section testID');
+if (!updateSection.includes('testID="account-update-section"')) fail('account-update-section testID');
 else pass('account-update-section testID');
 
 if (!updateLib.includes('ACCOUNT_UPDATE_ALREADY_LATEST_SWAHILI')) fail('already latest copy');
@@ -39,7 +42,7 @@ else pass('reuses forceRecheck');
 if (!updateLib.includes('startDownload')) fail('reuses startDownload');
 else pass('reuses startDownload');
 
-if (!account.includes('isBlockingSheetActive')) fail('defers when blocking sheet active');
+if (!updateSection.includes('isBlockingSheetActive')) fail('defers when blocking sheet active');
 else pass('modal defer on blocking sheet');
 
 if (!process.exitCode) console.log('\n[verify-account-app-update] ok');

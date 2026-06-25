@@ -18,6 +18,7 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import AccountUpdateSection from '../components/AccountUpdateSection';
 import HamishaKifurushiModal from '../components/HamishaKifurushiModal';
 import PremiumModal from '../components/PremiumModal';
 import { redeemOfferCode } from '../api/subscription';
@@ -33,15 +34,10 @@ import {
 import { getDeviceLabel } from '../lib/deviceLabel';
 import { computeSubscriptionProgress, getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
 import { formatSubscriptionRemainingCountdown } from '../lib/formatSubscriptionRemaining';
-import {
-  ACCOUNT_UPDATE_ALREADY_LATEST_SWAHILI,
-  runAccountAppUpdate,
-} from '../lib/accountAppUpdate';
-import { useModalSheetCoordinator } from '../context/ModalSheetCoordinatorContext';
-import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
+import { getTabBarTotalHeight } from '../lib/tabBarLayout';
 
-/** Extra scroll padding so Update App stays above tab bar on all devices */
-const ACCOUNT_UPDATE_SCROLL_EXTRA = 40;
+/** Extra scroll padding above pinned Update App footer */
+const ACCOUNT_SCROLL_EXTRA = 12;
 const COLORS = {
   background: '#0C0608',
   card: '#1A1D23',
@@ -150,12 +146,11 @@ export default function AkauntiYanguScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const insets = useSafeAreaInsets();
-  const bottomPad = getScrollContentBottomPadding(insets) + ACCOUNT_UPDATE_SCROLL_EXTRA;
+  const bottomPad = getTabBarTotalHeight(insets) + ACCOUNT_SCROLL_EXTRA;
+  const updateFooterPad = getTabBarTotalHeight(insets) + 8;
   const [hamishaModalVisible, setHamishaModalVisible] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [offerCodeInput, setOfferCodeInput] = useState('');
-  const [updateBusy, setUpdateBusy] = useState(false);
-  const { isBlockingSheetActive } = useModalSheetCoordinator();
 
   useEffect(() => {
     if (route?.params?.openPremiumAfterExpiry === true) {
@@ -176,6 +171,7 @@ export default function AkauntiYanguScreen() {
     subscriptionExpiresAt,
     subscriptionDetails,
     subscriptionSyncLoaded,
+    subscriptionVersion,
     refreshSubscription,
   } = useOsmaniApp();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
@@ -202,6 +198,11 @@ export default function AkauntiYanguScreen() {
     if (!isSubscribed) {
       lastPaymentLabelRef.current = null;
       lastDurationDaysRef.current = null;
+    }
+  }, [isSubscribed, subscriptionVersion]);
+
+  useEffect(() => {
+    if (!isSubscribed) {
       return;
     }
     const pay = resolveSubscriptionPaymentLabel(subscriptionDetails);
@@ -328,26 +329,6 @@ export default function AkauntiYanguScreen() {
     Alert.alert('', 'Device ID imenakiliwa');
   }, [deviceIdFull]);
 
-  const handleAccountAppUpdate = useCallback(async () => {
-    if (updateBusy || isBlockingSheetActive) return;
-    setUpdateBusy(true);
-    try {
-      const result = await runAccountAppUpdate();
-      if (result.outcome === 'already_latest') {
-        Alert.alert('', ACCOUNT_UPDATE_ALREADY_LATEST_SWAHILI);
-        return;
-      }
-      if (result.outcome === 'downloading' || result.outcome === 'store') {
-        return;
-      }
-      if (result.outcome === 'error' || result.outcome === 'unavailable') {
-        Alert.alert('', result.message ?? 'Imeshindwa kukagua sasisho.');
-      }
-    } finally {
-      setUpdateBusy(false);
-    }
-  }, [updateBusy, isBlockingSheetActive]);
-
   const cooldownActive = cooldownRemainingSec > 0;
 
   const handleRedeemOfferCode = useCallback(async () => {
@@ -389,9 +370,11 @@ export default function AkauntiYanguScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <StatusBar style="light" />
+      <View style={styles.screenBody}>
       <ScrollView
+        style={styles.scrollFlex}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad + 150 }]}
       >
         <View style={styles.header}>
           <Pressable
@@ -565,39 +548,11 @@ export default function AkauntiYanguScreen() {
             </LinearGradient>
           </Pressable>
         </View>
-
-        <View
-          style={styles.updateSection}
-          testID="account-update-section"
-          accessibilityLabel="Update App section"
-        >
-          <Text style={styles.updateSectionTitle}>Update App</Text>
-          <Text style={styles.offerDescription}>
-            Pakua toleo jipya la programu ikiwa linapatikana.
-          </Text>
-          <Pressable
-            style={[styles.updateSubmitOuter, updateBusy && styles.offerSubmitOuterDisabled]}
-            onPress={() => void handleAccountAppUpdate()}
-            disabled={updateBusy}
-            testID="account-update-button"
-            accessibilityRole="button"
-            accessibilityLabel="UPDATE APP"
-          >
-            <LinearGradient
-              colors={['#38BDF8', '#0EA5E9']}
-              start={{ x: 0, y: 0.5 }}
-              end={{ x: 1, y: 0.5 }}
-              style={styles.offerSubmitGradient}
-            >
-              {updateBusy ? (
-                <ActivityIndicator color="#0F172A" />
-              ) : (
-                <Text style={styles.offerSubmitText}>UPDATE APP</Text>
-              )}
-            </LinearGradient>
-          </Pressable>
-        </View>
       </ScrollView>
+      <View style={[styles.updateFooter, { paddingBottom: updateFooterPad }]}>
+        <AccountUpdateSection />
+      </View>
+      </View>
 
       <HamishaKifurushiModal
         visible={hamishaModalVisible}
@@ -619,6 +574,19 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  screenBody: {
+    flex: 1,
+  },
+  scrollFlex: {
+    flex: 1,
+  },
+  updateFooter: {
+    paddingHorizontal: HORIZONTAL_PADDING,
+    paddingTop: 8,
+    backgroundColor: COLORS.background,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(56,189,248,0.15)',
   },
   scrollContent: {
     paddingHorizontal: HORIZONTAL_PADDING,
@@ -940,29 +908,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.5,
-  },
-  updateSection: {
-    marginTop: 16,
-    marginBottom: 24,
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.35)',
-    elevation: 4,
-    shadowColor: '#38BDF8',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-  },
-  updateSectionTitle: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  updateSubmitOuter: {
-    borderRadius: 16,
-    overflow: 'hidden',
   },
 });
