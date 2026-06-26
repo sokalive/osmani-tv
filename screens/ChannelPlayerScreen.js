@@ -58,6 +58,8 @@ import {
 import {
   isInstructionVideoChannel,
   isPortraitInstructionVideoChannel,
+  pickInstructionVideoUrl,
+  resolveInstructionVideoUrl,
 } from '../lib/instructionVideoChannel';
 import { resolveInstructionVideoPlaybackUri } from '../lib/instructionVideoCache';
 import {
@@ -105,8 +107,14 @@ function hlsAudioLabel(track) {
   return `Audio ${track.index ?? track.id ?? ''}`.trim();
 }
 
-function playbackFailureMessage(reasonText) {
+function playbackFailureMessage(reasonText, { instructionVideo = false } = {}) {
   const r = String(reasonText ?? '');
+  if (instructionVideo) {
+    if (/404|not[\s_-]?found|http\s*404/i.test(r)) {
+      return 'Video ya maelekezo haijapatikana. Tafadhali jaribu tena baadae.';
+    }
+    return 'Video ya maelekezo haifanyi kazi. Tafadhali jaribu tena baadae.';
+  }
   if (/404|not[\s_-]?found|http\s*404/i.test(r)) return 'Stream link imeisha au haipatikani (404).';
   const short = r.length > 120 ? `${r.slice(0, 117)}...` : r;
   return short ? `Playback: ${short}` : 'Playback imeshindikana.';
@@ -159,8 +167,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const { blocked: deviceIntelligenceBlocked } = useDeviceIntelligence();
   const playbackSecurity = usePlaybackSecurityGate();
   const channel = liveChannel ?? initialChannel;
+  const isInstructionVideo = isInstructionVideoChannel(channel);
   const isPortraitInstructionVideo = isPortraitInstructionVideoChannel(channel);
-  const channelIsPremium = channelIsPremiumAccess(channel, { freeMode });
+  const channelIsPremium = isInstructionVideo
+    ? false
+    : channelIsPremiumAccess(channel, { freeMode });
   const channelPlaybackKey = String(
     channel?.id ?? channel?.channel_id ?? channel?.name ?? '',
   ).trim();
@@ -184,11 +195,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     () => !channelIsPremium || freeMode || viaTrialPlayback || isSubscribed,
   );
 
-  const streams = [
-    channel?.url,
-    channel?.backupStream1,
-    channel?.backupStream2,
-  ].filter(Boolean);
+  const streams = isInstructionVideo
+    ? [pickInstructionVideoUrl(channel)].filter(Boolean)
+    : [channel?.url, channel?.backupStream1, channel?.backupStream2].filter(Boolean);
 
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   const [instructionPlaybackUri, setInstructionPlaybackUri] = useState('');
@@ -206,33 +215,29 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     lastRecoveryWallMs: 0,
     recovering: false,
   });
-  const uri = instructionPlaybackUri || streams[currentUrlIndex];
+  const uri = isInstructionVideo
+    ? instructionPlaybackUri || resolveInstructionVideoUrl(channel)
+    : instructionPlaybackUri || streams[currentUrlIndex];
 
   useEffect(() => {
     let cancelled = false;
-    const remote =
-      channel?.url ??
-      channel?.stream_url ??
-      streams[currentUrlIndex] ??
-      '';
-    if (!isInstructionVideoChannel(channel) || !remote) {
+    if (!isInstructionVideo) {
+      setInstructionPlaybackUri('');
+      return undefined;
+    }
+    const remote = resolveInstructionVideoUrl(channel);
+    if (!remote) {
       setInstructionPlaybackUri('');
       return undefined;
     }
     void (async () => {
-      const resolved = await resolveInstructionVideoPlaybackUri(channel, String(remote));
+      const resolved = await resolveInstructionVideoPlaybackUri(channel, remote);
       if (!cancelled) setInstructionPlaybackUri(resolved);
     })();
     return () => {
       cancelled = true;
     };
-  }, [
-    channel,
-    channelPlaybackKey,
-    currentUrlIndex,
-    channel?.url,
-    channel?.stream_url,
-  ]);
+  }, [channel, channelPlaybackKey, isInstructionVideo]);
   const headers = useMemo(
     () => ({
       ...(channel?.referer && { Referer: channel.referer }),
@@ -243,10 +248,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   );
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
   const streamIdentity = useMemo(() => playbackStreamIdentity(channel), [channel]);
-  const playbackRoute = useMemo(
-    () => pickPlaybackRoute(uri, normalizedPlayerType),
-    [uri, normalizedPlayerType],
-  );
+  const playbackRoute = useMemo(() => {
+    if (isInstructionVideo) return 'native';
+    return pickPlaybackRoute(uri, normalizedPlayerType);
+  }, [isInstructionVideo, uri, normalizedPlayerType]);
   const useNativePlayer = playbackRoute === 'native';
   const useHlsWebView = playbackRoute === 'hls-webview';
   const useEmbedWebView = playbackRoute === 'embed-webview';
@@ -329,8 +334,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         overrideFileExtensionAndroid: 'm3u8',
       };
     }
+    if (isInstructionVideo) return { uri };
     return { uri, headers };
-  }, [useNativePlayer, uri, hlsManifestUrl, headers]);
+  }, [useNativePlayer, uri, hlsManifestUrl, headers, isInstructionVideo]);
 
   const hlsWebViewSource = useMemo(() => {
     if (!useHlsWebView || !hlsManifestUrl) return null;
@@ -513,9 +519,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   // LOG
   useEffect(() => {
     if (!uri) {
-      Alert.alert('ERROR', 'Hakuna stream URL 😢');
+      if (isInstructionVideo) {
+        setPlaybackError('Video ya maelekezo haijapatikana. Tafadhali jaribu tena baadae.');
+      } else {
+        Alert.alert('ERROR', 'Hakuna stream URL 😢');
+      }
     }
-  }, [uri]);
+  }, [uri, isInstructionVideo]);
 
   useEffect(() => {
     logPlayerInterrupt('channel_change_remount', {
@@ -862,6 +872,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   const attemptPlaybackRecovery = useCallback(
     (reasonText) => {
+      if (isInstructionVideo) return false;
       const reason = String(reasonText ?? '');
       const tokenExpiry =
         /token_expired|401|403/i.test(reason) || reason.includes('hls_token_expired');
@@ -930,6 +941,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       currentUrlIndex,
       streams.length,
       refreshManifestFromCatalog,
+      isInstructionVideo,
     ],
   );
 
@@ -941,11 +953,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     }
     setShowNativeBufferOverlay(false);
     setIsBuffering(false);
-    setPlaybackError(playbackFailureMessage(reasonText));
+    setPlaybackError(playbackFailureMessage(reasonText, { instructionVideo: isInstructionVideo }));
     clearHideTimer();
     setControlsVisible(true);
     controlsOpacity.setValue(1);
-  }, [controlsOpacity, clearHideTimer]);
+  }, [controlsOpacity, clearHideTimer, isInstructionVideo]);
 
   /** User-only: fresh mount without automatic timers or replay loops. */
   const manualReloadSameStream = useCallback(() => {
@@ -2308,7 +2320,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           - .mp4 / .ts ... → expo-av native
           - everything else (player.php, embed pages, iframe HTML) → plain WebView
       */}
-      <View style={styles.playerStage}>
+      <View style={[styles.playerStage, isPortraitInstructionVideo ? styles.playerStagePortrait : null]}>
         {playbackSurfacesMounted ? (
           <View pointerEvents="none" style={styles.videoUnderlay} />
         ) : null}
@@ -2400,11 +2412,15 @@ export default function ChannelPlayerScreen({ route, navigation }) {
               </Pressable>
               <View style={styles.titleBlock}>
                 <Text style={styles.title} numberOfLines={1}>{channel?.name || 'Live'}</Text>
-                <Text style={styles.subtitle}>Live Stream</Text>
+                <Text style={styles.subtitle}>
+                  {isInstructionVideo ? 'Video ya maelekezo' : 'Live Stream'}
+                </Text>
               </View>
+              {!isInstructionVideo ? (
               <View style={styles.liveBadge}>
                 <Text style={styles.liveBadgeText}>{liveLabel}</Text>
               </View>
+              ) : null}
             </View>
 
             {/* CENTER */}
@@ -2543,6 +2559,10 @@ const styles = StyleSheet.create({
 
   playerStage: {
     flex: 1,
+  },
+  playerStagePortrait: {
+    backgroundColor: '#000',
+    justifyContent: 'center',
   },
   video: {
     ...StyleSheet.absoluteFillObject,
