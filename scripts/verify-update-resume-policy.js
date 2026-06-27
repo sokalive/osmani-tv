@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Static checks: update popup must recheck on launch/resume without snooze timers.
+ * Static checks: soft update shows once per session; resume/SSE recheck without re-popup.
  * Run: node scripts/verify-update-resume-policy.js
  */
 
@@ -26,19 +26,23 @@ if (/RESUME_RECHECK_GUARD_MS\s*=\s*60_000/.test(updateClient)) {
 
 if (!updateClient.includes("scheduleCheck('app-resume', 0)")) {
   fail('app-resume must schedule immediate update-check');
-} else pass('app-resume schedules immediate check');
+} else pass('app-resume schedules silent recheck');
 
-if (!updateClient.includes('softUpdateDismissed = false')) {
-  fail('resume must reset dismiss for v15–v23');
-} else pass('resume dismiss reset for v15–v23');
+if (updateClient.includes('reassertSoftOverlayVisibility')) {
+  fail('must not reassert soft overlay on every resume');
+} else pass('no resume overlay reassert');
 
-if (updateClient.includes('PLAY_OTA_MIN_VERSION_CODE - 1')) {
-  fail('v15-only resume reassert must cover all vc < 24');
-} else pass('all outdated builds reassert on resume');
+if (!updateClient.includes("reason === 'app-launch') softUpdateDismissed = false")) {
+  fail('app-launch must reset session dismiss flag');
+} else pass('app-launch resets session dismiss');
 
-if (!updateClient.includes('reason !== \'app-resume\'')) {
-  fail('app-resume must not honor dismiss snooze');
-} else pass('app-resume ignores dismiss snooze');
+if (!updateClient.includes('softUpdateDismissed && !mandatory')) {
+  fail('soft dismiss must suppress overlay for non-mandatory updates');
+} else pass('session dismiss honored');
+
+if (updateClient.includes("reason !== 'app-resume'")) {
+  fail('app-resume must not bypass session dismiss');
+} else pass('app-resume respects session dismiss');
 
 if (!updateClient.includes('IMMEDIATE_CHECK_REASONS')) {
   fail('launch/resume must bypass recheck debounce');
