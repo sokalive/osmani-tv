@@ -65,6 +65,7 @@ import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startExpoUpdatesClient } from './lib/expoUpdatesClient';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
 import { setupOneSignal } from './lib/oneSignal';
+import { ensureOneSignalPushRegistration } from './lib/oneSignalPushRegistration';
 import { dispatchOsmaniDeepLink } from './lib/osmaniDeepLinkDispatch';
 import OsmaniDeepLinkGate from './components/OsmaniDeepLinkGate';
 import { resolveStream } from './lib/channelStream';
@@ -1461,7 +1462,13 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
     const stopOneSignal = setupOneSignal({
       onOpenUrl: dispatchOsmaniDeepLink,
     });
+    const pushResumeSub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void ensureOneSignalPushRegistration('app-resume');
+      }
+    });
     return () => {
+      pushResumeSub.remove();
       void stopPresence();
       stopRealtimeSync();
       stopUpdateClient();

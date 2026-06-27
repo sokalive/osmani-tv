@@ -5,6 +5,7 @@ import {
   getOsmaniNotificationPermissionGranted,
   requestOsmaniNotificationPermission,
 } from '../lib/notificationPermission';
+import { ensureOneSignalPushRegistration } from '../lib/oneSignalPushRegistration';
 import { useRegisterBlockingSheet } from '../context/ModalSheetCoordinatorContext';
 
 /**
@@ -27,6 +28,7 @@ export default function NotificationPermissionReminderGate() {
       const granted = await getOsmaniNotificationPermissionGranted();
       if (granted) {
         setVisible(false);
+        void ensureOneSignalPushRegistration('permission-reminder:already-granted');
         return;
       }
       setVisible(true);
@@ -59,6 +61,7 @@ export default function NotificationPermissionReminderGate() {
       await requestOsmaniNotificationPermission();
       const granted = await getOsmaniNotificationPermissionGranted();
       if (granted) {
+        await ensureOneSignalPushRegistration('permission-reminder:allowed');
         dismissedThisForegroundRef.current = true;
         setVisible(false);
       }
