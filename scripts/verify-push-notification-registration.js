@@ -55,15 +55,25 @@ if (!pushRegNative.includes('[PUSH_REG]')) {
 }
 
 if (oneSignalNative.includes('foregroundWillDisplay.parse-error')) {
-  pass('foreground display errors logged (image-safe)');
+  pass('foreground audience parse errors logged');
 } else {
-  fail('foreground handler must log display errors');
+  fail('foreground handler should log parse errors');
 }
 
-if (!oneSignalNative.includes('foregroundWillDisplay.display-error')) {
-  fail('foreground handler must not silently swallow display failures');
+if (oneSignalNative.includes('.display()')) {
+  fail('foregroundWillDisplay must not call manual display() — breaks rich images on v5');
 } else {
-  pass('foreground display failure handling');
+  pass('foreground relies on SDK auto-display for big_picture');
+}
+
+if (!oneSignalNative.includes('auto-displays rich media')) {
+  fail('foreground handler should document v5 auto-display behavior');
+} else {
+  pass('foreground rich-image compatibility documented');
+}
+
+if (oneSignalNative.includes('foregroundWillDisplay.display-error')) {
+  fail('removed manual display error path should not remain');
 }
 
 if (!appJs.includes("ensureOneSignalPushRegistration('app-resume')")) {
