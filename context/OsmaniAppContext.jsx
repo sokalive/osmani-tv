@@ -11,6 +11,7 @@ import {
 } from '../lib/trialWatchSettings.shared';
 import {
   clearSubscriptionCache,
+  isSubscriptionPendingActivation,
   isSubscriptionTransportFailure,
   readSubscriptionCache,
   recoverSubscription,
@@ -293,6 +294,30 @@ export function OsmaniAppProvider({ children }) {
         } else if (
           !transferLockActive &&
           !active &&
+          r.resolveSource === 'inactive' &&
+          isSubscriptionPendingActivation(r)
+        ) {
+          const cached = await readSubscriptionCache();
+          const sameDevice =
+            !cached.deviceId ||
+            cached.deviceId === deviceId ||
+            (identity.androidId && cached.deviceId === identity.androidId);
+          if (cached.active && sameDevice) {
+            active = true;
+            expiresAt = cached.expiresAt ?? null;
+            effectiveResult = {
+              ...r,
+              active: true,
+              expiresAt,
+              pendingPreserved: true,
+            };
+            console.log('[SUBSCRIPTION_VERIFY]', reason, 'pending_preserved_cache', {
+              status: r.status ?? r.raw?.status ?? null,
+            });
+          }
+        } else if (
+          !transferLockActive &&
+          !active &&
           r.resolveSource !== 'inactive' &&
           isSubscribedRef.current
         ) {
@@ -408,7 +433,8 @@ export function OsmaniAppProvider({ children }) {
           !active &&
           !isSubscriptionTransportFailure(r) &&
           !isSubscriptionTransportFailure(effectiveResult) &&
-          r.resolveSource === 'inactive'
+          r.resolveSource === 'inactive' &&
+          !isSubscriptionPendingActivation(r)
         ) {
           await clearSubscriptionCache(`verify:${reason}`);
         }

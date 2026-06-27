@@ -102,6 +102,33 @@ function pickActive(body) {
   if (!isPlainObject(body)) return false;
   const data = isPlainObject(body.data) ? body.data : null;
   const sub = isPlainObject(body.subscription) ? body.subscription : null;
+
+  const entitlementSeconds = pickNumber(
+    body.entitlement_remaining_seconds,
+    body.entitlementRemainingSeconds,
+    data?.entitlement_remaining_seconds,
+    data?.entitlementRemainingSeconds,
+    sub?.entitlement_remaining_seconds,
+    sub?.entitlementRemainingSeconds,
+  );
+  const entitlementDays = pickNumber(
+    body.entitlement_remaining_days,
+    body.entitlementRemainingDays,
+    data?.entitlement_remaining_days,
+    data?.entitlementRemainingDays,
+    sub?.entitlement_remaining_days,
+    sub?.entitlementRemainingDays,
+  );
+  if (Number.isFinite(entitlementSeconds) && entitlementSeconds > 0) return true;
+  if (Number.isFinite(entitlementDays) && entitlementDays > 0) return true;
+  if (
+    (body.is_stacked_entitlement === true || body.isStackedEntitlement === true) &&
+    ((Number.isFinite(entitlementDays) && entitlementDays > 0) ||
+      (Number.isFinite(entitlementSeconds) && entitlementSeconds > 0))
+  ) {
+    return true;
+  }
+
   const candidates = [
     body.active,
     body.is_active,
@@ -123,7 +150,7 @@ function pickActive(body) {
   ];
   for (const c of candidates) {
     if (c === true || c === 1 || c === '1' || c === 'true') return true;
-    if (c === false || c === 0 || c === '0' || c === 'false') return false;
+    if (c === false || c === 0 || c === '0' || c === 'false') break;
   }
   const status = String(body.status ?? data?.status ?? sub?.status ?? '').toLowerCase();
   if (['active', 'paid', 'live', 'ok'].includes(status)) return true;
@@ -764,8 +791,30 @@ function normalizeVerifyResponse(body, fallback = {}) {
   const inactiveReason = active ? null : pickInactiveReason(body);
   const remainingSeconds = pickRemainingSeconds(body);
   const remainingDays = pickRemainingDays(body);
+  const entitlementSeconds = pickNumber(
+    body.entitlement_remaining_seconds,
+    body.entitlementRemainingSeconds,
+    data?.entitlement_remaining_seconds,
+    data?.entitlementRemainingSeconds,
+    sub?.entitlement_remaining_seconds,
+    sub?.entitlementRemainingSeconds,
+  );
+  const entitlementDays = pickNumber(
+    body.entitlement_remaining_days,
+    body.entitlementRemainingDays,
+    data?.entitlement_remaining_days,
+    data?.entitlementRemainingDays,
+    sub?.entitlement_remaining_days,
+    sub?.entitlementRemainingDays,
+  );
+  const status =
+    body.status ??
+    data?.status ??
+    sub?.status ??
+    (inactiveReason && !active ? inactiveReason : null);
   return {
     active,
+    status: status != null ? String(status) : null,
     expiresAt: pickExpiresAt(body),
     startedAt: pickStartedAt(body),
     serverTime: pickServerTime(body),
@@ -779,6 +828,14 @@ function normalizeVerifyResponse(body, fallback = {}) {
     remaining_seconds: remainingSeconds,
     remainingDays,
     remaining_days: remainingDays,
+    entitlement_remaining_seconds: Number.isFinite(entitlementSeconds) ? entitlementSeconds : null,
+    entitlementRemainingSeconds: Number.isFinite(entitlementSeconds) ? entitlementSeconds : null,
+    entitlement_remaining_days: Number.isFinite(entitlementDays) ? entitlementDays : null,
+    entitlementRemainingDays: Number.isFinite(entitlementDays) ? entitlementDays : null,
+    is_stacked_entitlement:
+      body.is_stacked_entitlement === true || body.isStackedEntitlement === true,
+    isStackedEntitlement:
+      body.is_stacked_entitlement === true || body.isStackedEntitlement === true,
     plans: pickPlans(body),
     deviceId: pickStringList(body.device_id, body.deviceId),
     phone: pickPhoneFromApiBody(body),
@@ -982,6 +1039,53 @@ async function tryResolveForDeviceId(candidateDeviceId, identity, role) {
     return { ...statusAfter, resolveSource: `status_after_recover:${role}`, restoreRole: role };
   }
 
+  return {
+    ...verified,
+    resolveSource: 'inactive',
+    restoreRole: role,
+    inactiveRole: role,
+  };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Backend may still be finalizing a completed payment when status is pending. */
+export function isSubscriptionPendingActivation(result) {
+  if (!result || result.active === true) return false;
+  if (isSubscriptionTransportFailure(result)) return false;
+  const raw = result.raw;
+  const status = String(
+    result.status ??
+      raw?.status ??
+      raw?.data?.status ??
+      pickInactiveReason(raw) ??
+      '',
+  ).toLowerCase();
+  if (status === 'pending' || status === 'awaiting_confirmation' || status === 'awaiting_approval') {
+    return true;
+  }
+  const entDays = pickNumber(
+    result.entitlement_remaining_days,
+    result.entitlementRemainingDays,
+    raw?.entitlement_remaining_days,
+    raw?.entitlementRemainingDays,
+  );
+  return Number.isFinite(entDays) && entDays > 0;
+}
+
+async function retryVerifyAfterPendingActivation(identity, attempts = 5) {
+  const deviceId = identity.subscriptionDeviceId || identity.deviceId;
+  const fingerprint = identity.deviceFingerprint;
+  for (let i = 0; i < attempts; i += 1) {
+    await sleep(500 * (i + 1));
+    const retry = await verifySubscription(deviceId, fingerprint, identity);
+    if (retry?.active === true) {
+      return { ...retry, resolveSource: `verify:activation_retry_${i + 1}` };
+    }
+    if (!isSubscriptionPendingActivation(retry)) break;
+  }
   return null;
 }
 
@@ -1052,10 +1156,23 @@ export async function resolveActiveSubscription(identity) {
 
   const inactive = {
     active: false,
-    expiresAt: null,
+    expiresAt: lastInactive?.expiresAt ?? null,
     resolveSource: 'inactive',
     ...(lastInactive ?? {}),
   };
+
+  if (isSubscriptionPendingActivation(inactive)) {
+    const activated = await retryVerifyAfterPendingActivation(identity);
+    if (activated?.active === true) {
+      console.log('[SUBSCRIPTION_RESTORE_RESULT]', JSON.stringify({
+        active: true,
+        resolveSource: activated.resolveSource,
+        expiresAt: activated.expiresAt ?? null,
+      }));
+      return activated;
+    }
+  }
+
   console.log(
     '[SUBSCRIPTION_RESTORE_RESULT]',
     JSON.stringify({
