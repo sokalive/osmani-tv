@@ -58,8 +58,8 @@ else pass('gate reads context flag');
 if (!gate.includes('phoneGateEnabled')) fail('gate reads profile phoneGateEnabled');
 else pass('gate reads profile flag');
 
-if (!gate.includes('config.settings_changed')) fail('gate listens settings SSE');
-else pass('gate listens settings SSE');
+if (!gate.includes('phone_gate_changed')) fail('gate listens phone_gate SSE');
+else pass('gate listens phone_gate SSE');
 
 const settings = fs.readFileSync(path.join(root, 'api/settings.js'), 'utf8');
 if (!settings.includes('phoneNumberGateEnabled')) fail('settings parses phone gate flag');

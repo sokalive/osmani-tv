@@ -100,10 +100,17 @@ export default function PhoneNumberGate({ children }) {
       void refreshSettingsOnly('phone_gate_sse_modes');
       void runProfileCheck();
     });
+    const offPhoneGate = subscribeRealtimeEvent('phone_gate_changed', (payload) => {
+      const enabled =
+        payload?.phone_gate_enabled !== false && payload?.phoneGateEnabled !== false;
+      setRemoteGateEnabled(enabled);
+      void runProfileCheck();
+    });
     return () => {
       sub.remove();
       offSettings();
       offModes();
+      offPhoneGate();
     };
   }, [refreshSettingsOnly, runProfileCheck]);
 
