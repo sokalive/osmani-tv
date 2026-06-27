@@ -81,6 +81,7 @@ import { getDeviceIdentity } from './lib/deviceIdentity';
 import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
 import { useStartupSplash } from './hooks/useStartupSplash';
 import EmbeddedOtaBootGate from './components/EmbeddedOtaBootGate';
+import PhoneNumberGate from './components/PhoneNumberGate';
 import { logFirstLaunchBootDiagnostics } from './lib/firstLaunchBootDiagnostics';
 import {
   clearPendingManualGiftKey,
@@ -1504,11 +1505,13 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
               }}
               onStateChange={() => setNavigationRevision((n) => n + 1)}
             >
-              <RootNavigator />
-              <OsmaniDeepLinkGate
-                navigationRef={navigationRef}
-                pendingUrlRef={pendingOsmaniUrlRef}
-              />
+              <PhoneNumberGate>
+                <RootNavigator />
+                <OsmaniDeepLinkGate
+                  navigationRef={navigationRef}
+                  pendingUrlRef={pendingOsmaniUrlRef}
+                />
+              </PhoneNumberGate>
             </NavigationContainer>
             <GlobalEmergencyGate />
             <DeviceIntelligenceGate navigationRef={navigationRef} />
