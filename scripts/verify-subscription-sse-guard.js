@@ -35,9 +35,24 @@ if (!ctx.includes('sourceTransferClearLockUntilRef')) {
   fail('source transfer clear lock ref missing');
 } else pass('source transfer clear lock');
 
-if (!ctx.includes('applySourceTransferCompleted') || !ctx.includes("role === 'source'")) {
-  fail('transfer_completed must instantly clear source subscription');
-} else pass('transfer_completed instant source clear');
+if (!ctx.includes('isExplicitTransferRevokeReason')) fail('context must filter recovery transfer SSE');
+else pass('context filters recovery transfer SSE');
+
+if (!ctx.includes('devicesShareIdentity')) fail('context must ignore same-device alias transfers');
+else pass('same-device alias guard');
+
+if (!ctx.includes('showSuccessModal: userInitiated')) {
+  fail('transfer success modal must require user-initiated transfer');
+} else pass('transfer modal user-initiated only');
+
+if (!guard.includes('isExplicitTransferRevokeReason')) fail('guard must export transfer reason filter');
+else pass('explicit transfer reason filter');
+
+if (!guard.includes('devicesShareIdentity')) fail('guard must export devicesShareIdentity');
+else pass('devicesShareIdentity export');
+
+if (!guard.includes('isUserConfirmedTransferReason')) fail('guard must export user transfer reason');
+else pass('user transfer reason export');
 
 if (ctx.includes('resolveSubscriptionLossModalReason')) {
   pass('subscription_revoked uses confirmed loss modal reason');

@@ -19,6 +19,7 @@ function normalizeAppFlags(body) {
     emergencyMode: Boolean(body.emergencyMode),
     maintenanceMode: Boolean(body.maintenanceMode),
     requireUpdateBeforeChannelPlayback: Boolean(patch?.requireUpdateBeforeChannelPlayback),
+    phoneNumberGateEnabled: patch?.phoneNumberGateEnabled !== false,
   };
 }
 
@@ -35,15 +36,28 @@ function updatePlaybackGateFromObject(o) {
   return coerceBool(v);
 }
 
+function phoneGateFromObject(o) {
+  const v = pickDefined(o, [
+    'phone_number_gate_enabled',
+    'phoneNumberGateEnabled',
+    'phone_gate_enabled',
+    'phoneGateEnabled',
+  ]);
+  if (v === undefined) return undefined;
+  return coerceBool(v);
+}
+
 /**
  * Viewer-safe app flags beyond free/emergency/maintenance.
  * @param {Record<string, unknown>} o
  */
 function parseViewerSettingsPatchFromObject(o) {
-  /** @type {{ requireUpdateBeforeChannelPlayback?: boolean }} */
+  /** @type {{ requireUpdateBeforeChannelPlayback?: boolean; phoneNumberGateEnabled?: boolean }} */
   const patch = {};
   const gate = updatePlaybackGateFromObject(o);
   if (gate !== undefined) patch.requireUpdateBeforeChannelPlayback = gate;
+  const phoneGate = phoneGateFromObject(o);
+  if (phoneGate !== undefined) patch.phoneNumberGateEnabled = phoneGate;
   return patch;
 }
 
@@ -92,6 +106,9 @@ export function parseViewerSettingsPatch(payload) {
     const gate = parseViewerSettingsPatchFromObject(o);
     if (gate.requireUpdateBeforeChannelPlayback !== undefined) {
       out.requireUpdateBeforeChannelPlayback = gate.requireUpdateBeforeChannelPlayback;
+    }
+    if (gate.phoneNumberGateEnabled !== undefined) {
+      out.phoneNumberGateEnabled = gate.phoneNumberGateEnabled;
     }
   }
   return Object.keys(out).length ? out : null;
@@ -168,10 +185,13 @@ function triStateModesFromObject(o) {
 export function parseAppSettingsRealtimePatch(payload) {
   const patch = parseViewerSettingsPatch(payload);
   if (!patch) return null;
-  const { requireUpdateBeforeChannelPlayback, ...modes } = patch;
+  const { requireUpdateBeforeChannelPlayback, phoneNumberGateEnabled, ...modes } = patch;
   const out = { ...modes };
   if (requireUpdateBeforeChannelPlayback !== undefined) {
     out.requireUpdateBeforeChannelPlayback = requireUpdateBeforeChannelPlayback;
+  }
+  if (phoneNumberGateEnabled !== undefined) {
+    out.phoneNumberGateEnabled = phoneNumberGateEnabled;
   }
   return Object.keys(out).length ? out : null;
 }

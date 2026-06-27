@@ -48,17 +48,26 @@ export async function fetchDevicePhoneProfile() {
       }
       if (!res.ok) {
         lastError = body?.error || `HTTP ${res.status}`;
-        continue;
+        return { ok: false, hasPhone: false, error: lastError, status: res.status };
       }
       const hasPhone = body?.has_phone === true || body?.hasPhone === true;
       const phoneNumber = String(body?.phone_number ?? body?.phoneNumber ?? '').trim();
       const phoneE164 = String(body?.phone_e164 ?? body?.phoneE164 ?? '').trim();
-      console.log('[PHONE_GATE]', 'profile', { hasPhone, source: body?.source ?? null });
+      const phoneGateEnabled =
+        body?.phone_gate_enabled !== false &&
+        body?.phoneGateEnabled !== false &&
+        body?.phone_number_gate_enabled !== false;
+      console.log('[PHONE_GATE]', 'profile', {
+        hasPhone,
+        phoneGateEnabled,
+        source: body?.source ?? null,
+      });
       return {
         ok: true,
         hasPhone,
         phoneNumber,
         phoneE164,
+        phoneGateEnabled,
         source: body?.source ?? null,
       };
     } catch (e) {

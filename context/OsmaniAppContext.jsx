@@ -33,8 +33,12 @@ import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import {
+  devicesShareIdentity,
   isConfirmedSubscriptionLoss,
+  isExplicitTransferRevokeReason,
+  isUserConfirmedTransferReason,
   logSubscriptionLossModalDecision,
+  pickTransferSseReason,
   resolveSubscriptionLossModalReason,
   subscriptionTransferSseRole,
   unwrapSubscriptionSsePayload,
@@ -61,6 +65,7 @@ const defaultSettings = {
   emergencyMode: false,
   maintenanceMode: false,
   requireUpdateBeforeChannelPlayback: false,
+  phoneNumberGateEnabled: true,
 };
 /** SSE names that carry free / emergency / maintenance — must not share the catalog debouncer. */
 const RUNTIME_MODE_SSE_NAMES = Object.freeze(['app_settings_changed', ...ADMIN_RUNTIME_MODE_SSE_EVENTS]);
@@ -992,10 +997,7 @@ export function OsmaniAppProvider({ children }) {
         console.log('[SUBSCRIPTION_REVOKED]', 'sse', payload, { role });
         const hadActiveBefore = isSubscribedRef.current;
         const inner = unwrapSubscriptionSsePayload(payload);
-        const sseReason =
-          inner && typeof inner === 'object' && typeof inner.reason === 'string'
-            ? inner.reason
-            : null;
+        const sseReason = pickTransferSseReason(inner, 'subscription_revoked');
         const r = await reverifySubscription('sse:subscription_revoked');
         if (r?.active === true) {
           logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'cleared', {
@@ -1015,6 +1017,24 @@ export function OsmaniAppProvider({ children }) {
           });
           return;
         }
+        if (
+          isExplicitTransferRevokeReason(sseReason) &&
+          (role === 'source' || role === 'device')
+        ) {
+          const userInitiated =
+            Boolean(sourceTransferSessionRef.current?.code) ||
+            isUserConfirmedTransferReason(sseReason);
+          logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'skipped', {
+            role,
+            hadActiveBefore,
+            sseReason,
+            skip: userInitiated ? 'user_transfer_clear' : 'silent_transfer_clear',
+          });
+          await handleRemoteTransferAway(payload, 'subscription_revoked', {
+            showSuccessModal: userInitiated,
+          });
+          return;
+        }
         if (!isConfirmedSubscriptionLoss(r)) {
           logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'skipped', {
             role,
@@ -1022,20 +1042,6 @@ export function OsmaniAppProvider({ children }) {
             sseReason,
             skip: 'not_confirmed_loss',
           });
-          return;
-        }
-        const isTransfer =
-          sseReason === 'transferred' ||
-          sseReason === 'transfer' ||
-          String(sseReason ?? '').toLowerCase().includes('transfer');
-        if (isTransfer && role === 'source') {
-          logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'skipped', {
-            role,
-            hadActiveBefore,
-            sseReason,
-            skip: 'source_transfer',
-          });
-          await applySourceTransferCompleted('sse:subscription_revoked');
           return;
         }
         const modalReason = resolveSubscriptionLossModalReason(r);
@@ -1064,16 +1070,29 @@ export function OsmaniAppProvider({ children }) {
       void (async () => {
         const role = await subscriptionTransferSseRole(payload, 'transfer_completed');
         if (role === 'none' || role === 'other') return;
-        console.log('[TRANSFER_COMPLETED]', 'sse', payload, { role });
-        if (role === 'source') {
-          const hadActiveBefore = isSubscribedRef.current;
-          if (!hadActiveBefore) return;
-          await applySourceTransferCompleted('sse:transfer_completed');
+        const inner = unwrapSubscriptionSsePayload(payload);
+        const sseReason = pickTransferSseReason(inner, 'transfer_completed');
+        console.log('[TRANSFER_COMPLETED]', 'sse', payload, { role, sseReason });
+        if (role === 'source' || role === 'device') {
+          if (sseReason && !isExplicitTransferRevokeReason(sseReason)) {
+            console.log('[TRANSFER_COMPLETED]', 'ignored_non_transfer_reason', { sseReason, role });
+            void reverifySubscription('sse:transfer_completed:ignored');
+            return;
+          }
+          const userInitiated =
+            Boolean(sourceTransferSessionRef.current?.code) ||
+            isUserConfirmedTransferReason(sseReason);
+          await handleRemoteTransferAway(payload, 'transfer_completed', {
+            showSuccessModal: userInitiated,
+          });
           return;
         }
         sourceTransferSessionRef.current = null;
         setPendingTransfer(null);
-        void reverifySubscription('sse:transfer_completed');
+        const r = await reverifySubscription('sse:transfer_completed');
+        if (r?.active === true) {
+          setRevokedReason(null);
+        }
       })();
     });
     // `transfer_approved` fires on the TARGET device once the source
@@ -1191,7 +1210,7 @@ export function OsmaniAppProvider({ children }) {
       offRuntimeModes.forEach((off) => off());
       offCatalogAliases.forEach((off) => off());
     };
-  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted]);
+  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway]);
 
   // Foreground sync: refresh catalog + reverify periodically while app is active.
   useEffect(() => {
@@ -1280,19 +1299,46 @@ export function OsmaniAppProvider({ children }) {
   }, []);
 
   /**
-   * Source Phone A: instant loss of premium access + success popup, then background verify.
+   * Source Phone A: instant loss of premium access; success popup only when user initiated transfer.
    */
   const applySourceTransferCompleted = useCallback(
-    async (reason = 'transfer_completed') => {
+    async (reason = 'transfer_completed', opts = {}) => {
+      const showSuccessModal = opts.showSuccessModal !== false;
       sourceTransferClearLockUntilRef.current = Date.now() + SOURCE_TRANSFER_CLEAR_LOCK_MS;
       const hadActive = isSubscribedRef.current;
       sourceTransferSessionRef.current = null;
       setPendingTransfer(null);
       await clearLocalActiveSubscription(reason);
-      if (hadActive) setSourceTransferSuccessVisible(true);
+      if (hadActive && showSuccessModal) setSourceTransferSuccessVisible(true);
       void reverifySubscription(`bg:${reason}`);
     },
     [clearLocalActiveSubscription, reverifySubscription],
+  );
+
+  const handleRemoteTransferAway = useCallback(
+    async (payload, eventName, { showSuccessModal = false } = {}) => {
+      const inner = unwrapSubscriptionSsePayload(payload);
+      const sseReason = pickTransferSseReason(inner, eventName);
+      const sourceId = pickSourceDeviceId(inner) || pickPayloadString(inner, ['device_id', 'deviceId']);
+      const targetId = pickPayloadString(inner, [
+        'target_device_id',
+        'targetDeviceId',
+        'to_device_id',
+        'toDeviceId',
+      ]);
+      if (sourceId && targetId && (await devicesShareIdentity(sourceId, targetId))) {
+        console.log('[TRANSFER_SSE]', eventName, 'ignored_same_device_identity', { sseReason });
+        return;
+      }
+      const userInitiated =
+        Boolean(sourceTransferSessionRef.current?.code) || isUserConfirmedTransferReason(sseReason);
+      const hadActiveBefore = isSubscribedRef.current;
+      if (!hadActiveBefore) return;
+      await applySourceTransferCompleted(`sse:${eventName}`, {
+        showSuccessModal: showSuccessModal && userInitiated,
+      });
+    },
+    [applySourceTransferCompleted],
   );
 
   const dismissSourceTransferSuccess = useCallback(() => {
@@ -1432,6 +1478,7 @@ export function OsmaniAppProvider({ children }) {
       paymentModalRequest,
       requestPaymentModal,
       requireUpdateBeforeChannelPlayback: settings.requireUpdateBeforeChannelPlayback,
+      phoneNumberGateEnabled: settings.phoneNumberGateEnabled !== false,
       channelUpdateGateVisible,
       requestChannelUpdateGate,
       presentChannelUpdateGate,

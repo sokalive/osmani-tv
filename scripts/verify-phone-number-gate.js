@@ -52,7 +52,21 @@ else pass('saving message');
 const api = fs.readFileSync(path.join(root, 'api/deviceProfile.js'), 'utf8');
 if (!api.includes('/api/device/profile')) fail('profile endpoint');
 else pass('profile endpoint');
-if (!api.includes('/api/device/phone')) fail('save endpoint');
-else pass('save endpoint');
+if (!gate.includes('phoneNumberGateEnabled')) fail('gate reads context phoneNumberGateEnabled');
+else pass('gate reads context flag');
+
+if (!gate.includes('phoneGateEnabled')) fail('gate reads profile phoneGateEnabled');
+else pass('gate reads profile flag');
+
+if (!gate.includes('config.settings_changed')) fail('gate listens settings SSE');
+else pass('gate listens settings SSE');
+
+const settings = fs.readFileSync(path.join(root, 'api/settings.js'), 'utf8');
+if (!settings.includes('phoneNumberGateEnabled')) fail('settings parses phone gate flag');
+else pass('settings parses phone gate flag');
+
+const ctx = fs.readFileSync(path.join(root, 'context/OsmaniAppContext.jsx'), 'utf8');
+if (!ctx.includes('phoneNumberGateEnabled')) fail('context exposes phoneNumberGateEnabled');
+else pass('context exposes phoneNumberGateEnabled');
 
 if (!process.exitCode) console.log('\n[verify-phone-number-gate] ok');

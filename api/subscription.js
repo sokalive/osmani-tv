@@ -50,7 +50,6 @@ function pickInactiveReason(body) {
     body.revoke_reason,
     body.revokeReason,
     body.status,
-    body.code,
     data?.reason,
     data?.inactive_reason,
     data?.inactiveReason,

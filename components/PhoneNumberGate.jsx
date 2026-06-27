@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -12,8 +13,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchDevicePhoneProfile, saveDevicePhoneNumber } from '../api/deviceProfile';
 import { registerDeviceIntelligence } from '../api/usersIntelligence';
+import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { readLocalPhoneSavedFlag, writeLocalPhoneSaved } from '../lib/devicePhoneCache';
 import { isValidInternationalPhone } from '../lib/internationalPhone';
+import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 
 const BG = '#0C0608';
 const ACCENT = '#FFCB3D';
@@ -24,18 +27,33 @@ const MUTED = '#A1A8B5';
  * @param {{ children: React.ReactNode }} props
  */
 export default function PhoneNumberGate({ children }) {
+  const { phoneNumberGateEnabled, refreshSettingsOnly } = useOsmaniApp();
   const [phase, setPhase] = useState('checking');
   const [statusMessage, setStatusMessage] = useState('Inakagua nambari ya simu…');
   const [errorMessage, setErrorMessage] = useState('');
   const [phoneInput, setPhoneInput] = useState('');
   const [saving, setSaving] = useState(false);
+  const [remoteGateEnabled, setRemoteGateEnabled] = useState(true);
+
+  const gateEnabled = phoneNumberGateEnabled !== false && remoteGateEnabled !== false;
 
   const runProfileCheck = useCallback(async () => {
+    if (!gateEnabled) {
+      setPhase('ready');
+      return;
+    }
     setPhase('checking');
     setStatusMessage('Inakagua nambari ya simu…');
     setErrorMessage('');
 
     const result = await fetchDevicePhoneProfile();
+    if (result.phoneGateEnabled === false) {
+      setRemoteGateEnabled(false);
+      setPhase('ready');
+      return;
+    }
+    setRemoteGateEnabled(true);
+
     if (result.ok && result.hasPhone) {
       await writeLocalPhoneSaved(result.phoneNumber || '');
       setPhase('ready');
@@ -47,6 +65,12 @@ export default function PhoneNumberGate({ children }) {
       return;
     }
 
+    if (result.status === 404) {
+      setPhase('error');
+      setErrorMessage('Huduma ya nambari ya simu haijawashwa kwenye seva. Jaribu tena baadae.');
+      return;
+    }
+
     const localSaved = await readLocalPhoneSavedFlag();
     if (localSaved) {
       setPhase('ready');
@@ -55,11 +79,33 @@ export default function PhoneNumberGate({ children }) {
 
     setPhase('error');
     setErrorMessage(result.error || 'Imeshindikana kuangalia nambari ya simu.');
-  }, []);
+  }, [gateEnabled]);
 
   useEffect(() => {
     void runProfileCheck();
   }, [runProfileCheck]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void refreshSettingsOnly('phone_gate_resume');
+        void runProfileCheck();
+      }
+    });
+    const offSettings = subscribeRealtimeEvent('config.settings_changed', () => {
+      void refreshSettingsOnly('phone_gate_sse');
+      void runProfileCheck();
+    });
+    const offModes = subscribeRealtimeEvent('app_settings_changed', () => {
+      void refreshSettingsOnly('phone_gate_sse_modes');
+      void runProfileCheck();
+    });
+    return () => {
+      sub.remove();
+      offSettings();
+      offModes();
+    };
+  }, [refreshSettingsOnly, runProfileCheck]);
 
   const onSubmitPhone = useCallback(async () => {
     if (saving) return;
@@ -84,7 +130,7 @@ export default function PhoneNumberGate({ children }) {
     }
   }, [phoneInput, saving]);
 
-  if (phase === 'ready') {
+  if (!gateEnabled || phase === 'ready') {
     return children;
   }
 
