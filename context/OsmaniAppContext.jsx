@@ -52,6 +52,7 @@ import {
   extractPlanSnapshotFromDetails,
   mergeSubscriptionDetails,
 } from '../lib/subscriptionDetailsMerge';
+import { enrichCanonicalSubscriptionTiming } from '../lib/subscriptionCanonical';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
@@ -337,8 +338,8 @@ export function OsmaniAppProvider({ children }) {
           setAvailablePlans(effectiveResult.plans);
         }
         const detailSource = effectiveResult;
-        const detailsPayload = active
-          ? {
+        const rawDetailsPayload = active
+          ? enrichCanonicalSubscriptionTiming({
               amount: detailSource.amount ?? null,
               currency: detailSource.currency ?? null,
               planName: detailSource.planName ?? null,
@@ -347,13 +348,16 @@ export function OsmaniAppProvider({ children }) {
               plan_duration_days: detailSource.plan_duration_days ?? detailSource.planDurationDays ?? null,
               startedAt: detailSource.startedAt ?? null,
               expiresAt,
+              remainingSeconds: detailSource.remainingSeconds ?? detailSource.remaining_seconds ?? null,
+              remainingDays: detailSource.remainingDays ?? detailSource.remaining_days ?? null,
               serverTime: detailSource.serverTime ?? null,
               serverTimeFetchedAt,
               plans: Array.isArray(detailSource.plans) ? detailSource.plans : [],
               manualGiftAckKey: detailSource.manualGiftAckKey ?? null,
               transportPreserved: effectiveResult.transportPreserved === true,
-            }
+            })
           : null;
+        const detailsPayload = rawDetailsPayload;
         let mergedDetails = null;
         setSubscriptionDetails((prev) => {
           if (!active) return null;
@@ -377,9 +381,21 @@ export function OsmaniAppProvider({ children }) {
         if (active) {
           setRevokedReason(null);
           let planSnapshot = extractPlanSnapshotFromDetails(mergedDetails);
-          if (!planSnapshot) {
+          if (!planSnapshot && effectiveResult.transportPreserved === true) {
             const cachedSnap = await readSubscriptionCache();
             planSnapshot = cachedSnap.planSnapshot ?? null;
+          }
+          const cached = await readSubscriptionCache();
+          const cacheExpiresMs = cached?.expiresAt ? Date.parse(String(cached.expiresAt)) : NaN;
+          const verifyExpiresMs = expiresAt ? Date.parse(String(expiresAt)) : NaN;
+          const backendNewer =
+            Number.isFinite(verifyExpiresMs) &&
+            (!Number.isFinite(cacheExpiresMs) || verifyExpiresMs > cacheExpiresMs);
+          if (backendNewer && effectiveResult.transportPreserved !== true) {
+            console.log('[SUBSCRIPTION_CACHE]', reason, 'overwrite_newer_expiry', {
+              cacheExpiresAt: cached?.expiresAt ?? null,
+              verifyExpiresAt: expiresAt,
+            });
           }
           await writeSubscriptionCache({
             active: true,

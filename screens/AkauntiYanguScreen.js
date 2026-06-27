@@ -18,7 +18,8 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import AccountUpdateSection from '../components/AccountUpdateSection';
+import UpdateAppSection from '../components/UpdateAppSection';
+import AccountUpdateSectionBoundary from '../components/AccountUpdateSectionBoundary';
 import HamishaKifurushiModal from '../components/HamishaKifurushiModal';
 import PremiumModal from '../components/PremiumModal';
 import { redeemOfferCode } from '../api/subscription';
@@ -33,11 +34,15 @@ import {
 } from '../lib/offerCodeCooldown';
 import { getDeviceLabel } from '../lib/deviceLabel';
 import { computeSubscriptionProgress, getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
+import {
+  resolveCanonicalExpiresAt,
+  resolveDisplayDurationDays,
+} from '../lib/subscriptionCanonical';
 import { formatSubscriptionRemainingCountdown } from '../lib/formatSubscriptionRemaining';
-import { getTabBarTotalHeight } from '../lib/tabBarLayout';
+import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
 
 /** Extra scroll padding above pinned Update App footer */
-const ACCOUNT_SCROLL_EXTRA = 12;
+const ACCOUNT_SCROLL_EXTRA = 24;
 const COLORS = {
   background: '#0C0608',
   card: '#1A1D23',
@@ -124,14 +129,7 @@ function resolveSubscriptionPaymentLabel(details) {
 
 /** Package length in days from verify payload (null when absent). */
 function resolvePlanDurationDays(details) {
-  if (!details) return null;
-  const raw =
-    details.planDurationDays ??
-    details.plan_duration_days ??
-    details.planDuration ??
-    details.duration_days;
-  const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').trim());
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+  return resolveDisplayDurationDays(details);
 }
 
 function formatOfferCooldownMmSs(totalSeconds) {
@@ -146,8 +144,7 @@ export default function AkauntiYanguScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const insets = useSafeAreaInsets();
-  const bottomPad = getTabBarTotalHeight(insets) + ACCOUNT_SCROLL_EXTRA;
-  const updateFooterPad = getTabBarTotalHeight(insets) + 8;
+  const bottomPad = getScrollContentBottomPadding(insets) + ACCOUNT_SCROLL_EXTRA;
   const [hamishaModalVisible, setHamishaModalVisible] = useState(false);
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [offerCodeInput, setOfferCodeInput] = useState('');
@@ -163,9 +160,10 @@ export default function AkauntiYanguScreen() {
   const [cooldownEndMs, setCooldownEndMs] = useState(null);
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);
   const [deviceIdFull, setDeviceIdFull] = useState('');
-  /** Last good display values — survive sparse verify/cache refresh payloads. */
+  /** Bumps on each Account tab focus — remounts Update App section (post-OTA cache bust). */
+  const [accountUpdateSectionKey, setAccountUpdateSectionKey] = useState(0);
+  /** Last good payment label — survive sparse verify/cache refresh payloads. */
   const lastPaymentLabelRef = useRef(null);
-  const lastDurationDaysRef = useRef(null);
   const {
     isSubscribed,
     subscriptionExpiresAt,
@@ -197,7 +195,6 @@ export default function AkauntiYanguScreen() {
   useEffect(() => {
     if (!isSubscribed) {
       lastPaymentLabelRef.current = null;
-      lastDurationDaysRef.current = null;
     }
   }, [isSubscribed, subscriptionVersion]);
 
@@ -207,9 +204,12 @@ export default function AkauntiYanguScreen() {
     }
     const pay = resolveSubscriptionPaymentLabel(subscriptionDetails);
     if (pay) lastPaymentLabelRef.current = pay;
-    const days = resolvePlanDurationDays(subscriptionDetails);
-    if (days != null) lastDurationDaysRef.current = String(days);
   }, [isSubscribed, subscriptionDetails]);
+
+  const canonicalExpiresAt = useMemo(
+    () => resolveCanonicalExpiresAt(subscriptionDetails, subscriptionExpiresAt),
+    [subscriptionDetails, subscriptionExpiresAt],
+  );
 
   const deviceLabel = useMemo(() => getDeviceLabel(), []);
   const deviceShort =
@@ -220,13 +220,15 @@ export default function AkauntiYanguScreen() {
     () =>
       computeSubscriptionProgress({
         startedAt: subscriptionDetails?.startedAt ?? null,
-        expiresAt: subscriptionDetails?.expiresAt ?? subscriptionExpiresAt ?? null,
+        periodStartAt: subscriptionDetails?.periodStartAt ?? null,
+        expiresAt: canonicalExpiresAt,
         planDurationDays: subscriptionDetails?.planDurationDays ?? null,
+        displayDurationDays: subscriptionDetails?.displayDurationDays ?? null,
         serverTime: subscriptionDetails?.serverTime ?? null,
         serverTimeFetchedAt: subscriptionDetails?.serverTimeFetchedAt ?? null,
         nowMsOverride: tickNowMs,
       }),
-    [subscriptionDetails, subscriptionExpiresAt, tickNowMs],
+    [subscriptionDetails, canonicalExpiresAt, tickNowMs],
   );
 
   // Card 1: Malipo / Kifurushi — sticky when refresh omits amount/plans (cache/transport).
@@ -243,27 +245,22 @@ export default function AkauntiYanguScreen() {
   // Card 2: Muda Uliobaki wa Kifurushi — live countdown to expiry (server-anchored).
   const remainingCountdownValue = useMemo(() => {
     if (!isSubscribed) return '—';
-    const expiresAt = subscriptionDetails?.expiresAt ?? subscriptionExpiresAt ?? null;
-    if (!expiresAt) return '—';
+    if (!canonicalExpiresAt) return '—';
     const remainingMs = getServerAnchoredRemainingMs({
-      expiresAt,
+      expiresAt: canonicalExpiresAt,
       serverTime: subscriptionDetails?.serverTime ?? null,
       serverTimeFetchedAt: subscriptionDetails?.serverTimeFetchedAt ?? null,
       nowMsOverride: tickNowMs,
     });
     if (remainingMs == null) return '—';
     return formatSubscriptionRemainingCountdown(remainingMs);
-  }, [isSubscribed, subscriptionDetails, subscriptionExpiresAt, tickNowMs]);
+  }, [isSubscribed, subscriptionDetails, canonicalExpiresAt, tickNowMs]);
 
-  // Card 3: Muda wa Kifurushi — sticky when refresh omits planDurationDays.
+  // Card 3: Muda wa Kifurushi — backend-aligned period length (not stale catalog alone).
   const durationValue = useMemo(() => {
     if (!isSubscribed) return '—';
     const days = resolvePlanDurationDays(subscriptionDetails);
-    if (days != null) {
-      lastDurationDaysRef.current = String(days);
-      return lastDurationDaysRef.current;
-    }
-    return lastDurationDaysRef.current ?? '—';
+    return days != null ? String(days) : '—';
   }, [isSubscribed, subscriptionDetails]);
 
   // Card 5 (status)
@@ -305,6 +302,7 @@ export default function AkauntiYanguScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setAccountUpdateSectionKey((k) => k + 1);
       void refreshSubscription();
       void syncCooldownFromStorage();
       (async () => {
@@ -370,11 +368,9 @@ export default function AkauntiYanguScreen() {
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <StatusBar style="light" />
-      <View style={styles.screenBody}>
       <ScrollView
-        style={styles.scrollFlex}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad + 150 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPad }]}
       >
         <View style={styles.header}>
           <Pressable
@@ -446,7 +442,7 @@ export default function AkauntiYanguScreen() {
             />
             <StatCard
               icon="calendar-outline"
-              value={formatSubscriptionExpiry(subscriptionExpiresAt)}
+              value={formatSubscriptionExpiry(canonicalExpiresAt)}
               label="Kuisha Tarehe"
             />
           </View>
@@ -548,11 +544,11 @@ export default function AkauntiYanguScreen() {
             </LinearGradient>
           </Pressable>
         </View>
+
+        <AccountUpdateSectionBoundary key={accountUpdateSectionKey}>
+          <UpdateAppSection />
+        </AccountUpdateSectionBoundary>
       </ScrollView>
-      <View style={[styles.updateFooter, { paddingBottom: updateFooterPad }]}>
-        <AccountUpdateSection />
-      </View>
-      </View>
 
       <HamishaKifurushiModal
         visible={hamishaModalVisible}
@@ -574,19 +570,6 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: COLORS.background,
-  },
-  screenBody: {
-    flex: 1,
-  },
-  scrollFlex: {
-    flex: 1,
-  },
-  updateFooter: {
-    paddingHorizontal: HORIZONTAL_PADDING,
-    paddingTop: 8,
-    backgroundColor: COLORS.background,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(56,189,248,0.15)',
   },
   scrollContent: {
     paddingHorizontal: HORIZONTAL_PADDING,

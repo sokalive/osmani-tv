@@ -197,6 +197,34 @@ function pickStartedAt(body) {
   return v != null ? String(v) : null;
 }
 
+function pickRemainingSeconds(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  return pickNumber(
+    body.remaining_seconds,
+    body.remainingSeconds,
+    data?.remaining_seconds,
+    data?.remainingSeconds,
+    sub?.remaining_seconds,
+    sub?.remainingSeconds,
+  );
+}
+
+function pickRemainingDays(body) {
+  if (!isPlainObject(body)) return null;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const sub = isPlainObject(body.subscription) ? body.subscription : null;
+  return pickNumber(
+    body.remaining_days,
+    body.remainingDays,
+    data?.remaining_days,
+    data?.remainingDays,
+    sub?.remaining_days,
+    sub?.remainingDays,
+  );
+}
+
 function pickServerTime(body) {
   if (!isPlainObject(body)) return null;
   const data = isPlainObject(body.data) ? body.data : null;
@@ -734,6 +762,8 @@ function normalizeVerifyResponse(body, fallback = {}) {
   const planId = pickPlanId(body);
   const active = pickActive(body);
   const inactiveReason = active ? null : pickInactiveReason(body);
+  const remainingSeconds = pickRemainingSeconds(body);
+  const remainingDays = pickRemainingDays(body);
   return {
     active,
     expiresAt: pickExpiresAt(body),
@@ -745,6 +775,10 @@ function normalizeVerifyResponse(body, fallback = {}) {
     planId: planId != null ? String(planId) : null,
     planDurationDays,
     plan_duration_days: planDurationDays,
+    remainingSeconds,
+    remaining_seconds: remainingSeconds,
+    remainingDays,
+    remaining_days: remainingDays,
     plans: pickPlans(body),
     deviceId: pickStringList(body.device_id, body.deviceId),
     phone: pickPhoneFromApiBody(body),

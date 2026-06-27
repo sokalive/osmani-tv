@@ -45,8 +45,13 @@ assertContains(
 );
 assertContains(
   'screens/AkauntiYanguScreen.js',
-  'lastDurationDaysRef',
-  'duration card sticky ref during sparse refresh',
+  'resolveDisplayDurationDays',
+  'duration card uses canonical display days',
+);
+assertContains(
+  'lib/subscriptionCanonical.js',
+  'enrichCanonicalSubscriptionTiming',
+  'canonical timing enrichment',
 );
 
 const PACKAGES = [
