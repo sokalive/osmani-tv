@@ -178,6 +178,8 @@ export function OsmaniAppProvider({ children }) {
   const verifyInFlightRef = useRef(false);
   const refreshInFlightRef = useRef(0);
   const refreshPromiseRef = useRef(null);
+  /** Prevents cold-start disk cache hydrate from overwriting fresher catalog network sync. */
+  const catalogNetworkHydratedRef = useRef({ channels: false, banners: false });
   const verifyPromiseRef = useRef(null);
   const recoverBootPromiseRef = useRef(null);
   const lastVerifyKeyRef = useRef(0);
@@ -640,11 +642,21 @@ export function OsmaniAppProvider({ children }) {
     (async () => {
       await dropLegacyBannersCache();
       const cachedChannels = await readChannelsCache();
-      if (!cancelled && cachedChannels?.channels?.length) {
+      if (
+        !cancelled &&
+        !catalogNetworkHydratedRef.current.channels &&
+        cachedChannels?.channels?.length
+      ) {
         setRawChannels(sortChannelsByAdminOrder(cachedChannels.channels));
       }
       const cached = await readBannersCache();
-      if (cancelled || !cached?.banners?.length) return;
+      if (
+        cancelled ||
+        catalogNetworkHydratedRef.current.banners ||
+        !cached?.banners?.length
+      ) {
+        return;
+      }
       const enriched = enrichBannersForViewer(cached.banners);
       setRawBanners(enriched);
       logBannerRuntimeDiagnostics(enriched);
@@ -734,9 +746,11 @@ export function OsmaniAppProvider({ children }) {
     if (shouldShowLoading) setLoading(true);
     setError(null);
     try {
-      const [list, bannersResult, flags, trialFlags] = await Promise.all([
+      let [list, bannersResult, flags, trialFlags] = await Promise.all([
         withTimeout(getChannels(catalogOpts), STARTUP_FETCH_TIMEOUT_MS, 'startup-channels'),
-        withTimeout(getBanners(catalogOpts), STARTUP_FETCH_TIMEOUT_MS, 'startup-banners').catch(() => null),
+        withTimeout(getBanners(catalogOpts), STARTUP_FETCH_TIMEOUT_MS, 'startup-banners').catch(
+          () => null,
+        ),
         withTimeout(tryGetViewerAppSettings(), STARTUP_FETCH_TIMEOUT_MS, 'startup-settings').catch(
           () => null,
         ),
@@ -746,6 +760,13 @@ export function OsmaniAppProvider({ children }) {
           'startup-trial-watch',
         ).catch(() => null),
       ]);
+      if (forceNetwork && bannersResult == null) {
+        bannersResult = await withTimeout(
+          getBanners({ force: true }),
+          STARTUP_FETCH_TIMEOUT_MS,
+          'startup-banners-retry',
+        ).catch(() => null);
+      }
       if (flags && !skipSettingsFromHttp) {
         setSettings((prev) => ({ ...prev, ...flags }));
       }
@@ -757,6 +778,7 @@ export function OsmaniAppProvider({ children }) {
         setTrialWatchSettings(TRIAL_WATCH_FAIL_CLOSED);
       }
       const nextChannels = sortChannelsByAdminOrder(Array.isArray(list) ? list : []);
+      catalogNetworkHydratedRef.current.channels = true;
       setRawChannels(nextChannels);
       await writeChannelsCache(nextChannels);
       devLog('[CATALOG_SYNC]', 'channels', {
@@ -770,13 +792,14 @@ export function OsmaniAppProvider({ children }) {
         forceNetwork,
       });
       const nextBanners = Array.isArray(bannersResult) ? bannersResult : null;
-      setRawBanners((prev) => (nextBanners != null ? nextBanners : prev));
-      setIsOffline(false);
       if (nextBanners != null) {
+        catalogNetworkHydratedRef.current.banners = true;
+        setRawBanners(nextBanners);
         await dropLegacyBannersCache();
         await writeBannersCache(nextBanners);
         logBannerRuntimeDiagnostics(nextBanners);
       }
+      setIsOffline(false);
     } catch (e) {
       let catalogCount = rawChannelsRef.current.length;
       if (catalogCount === 0 && preserveDataOnError) {
