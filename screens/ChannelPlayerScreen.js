@@ -1207,21 +1207,23 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         pingTimerRef.current = null;
         console.log('[player][analytics] heartbeat timer cleared on cleanup');
       }
-      if (!stopSentRef.current) {
-        stopSentRef.current = true;
-        console.log('[player][analytics] sending session end on cleanup', {
-          device_id: sessionDeviceIdRef.current,
-          channel_id: sessionChannelIdRef.current,
-        });
-        void stopLiveSession(
-          sessionDeviceIdRef.current,
-          sessionChannelIdRef.current,
-          channelWatchMeta(),
-        );
-      }
-      // Detach channel from the app-level presence session so the
-      // admin watcher count drops without waiting for the next tick.
-      clearActiveChannel();
+      void (async () => {
+        if (!stopSentRef.current) {
+          stopSentRef.current = true;
+          console.log('[player][analytics] sending session end on cleanup', {
+            device_id: sessionDeviceIdRef.current,
+            channel_id: sessionChannelIdRef.current,
+          });
+          await stopLiveSession(
+            sessionDeviceIdRef.current,
+            sessionChannelIdRef.current,
+            channelWatchMeta(),
+          );
+        }
+        // Detach channel from the app-level presence session so the
+        // admin watcher count drops without waiting for the next tick.
+        clearActiveChannel();
+      })();
     };
   }, [channel?.id, channel?.channel_id, channel?.name, channelWatchMeta]);
 
@@ -1273,14 +1275,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           clearInterval(pingTimerRef.current);
           pingTimerRef.current = null;
         }
-        if (!stopSentRef.current) {
-          stopSentRef.current = true;
-          void stopLiveSession(
-            sessionDeviceIdRef.current,
-            sessionChannelIdRef.current,
-            channelWatchMeta(),
-          );
-        }
+        void (async () => {
+          if (!stopSentRef.current) {
+            stopSentRef.current = true;
+            await stopLiveSession(
+              sessionDeviceIdRef.current,
+              sessionChannelIdRef.current,
+              channelWatchMeta(),
+            );
+          }
+          clearActiveChannel();
+        })();
       }, PLAYER_ANALYTICS_BG_GRACE_MS);
     });
     return () => {

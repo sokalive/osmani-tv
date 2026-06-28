@@ -393,7 +393,7 @@ export async function pingAppPresence(args) {
       country: loc.country,
       timestamp: new Date().toISOString(),
     },
-    { retries: [0] },
+    { retries: SESSION_HEARTBEAT_RETRIES_MS },
   );
 }
 
@@ -423,7 +423,7 @@ export async function stopAppPresence(args) {
       country: loc.country,
       ended_at: new Date().toISOString(),
     },
-    { retries: [0, 600] },
+    { retries: SESSION_HEARTBEAT_RETRIES_MS },
   );
 }
 
