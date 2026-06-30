@@ -224,6 +224,8 @@ export default function AkauntiYanguScreen() {
         expiresAt: canonicalExpiresAt,
         planDurationDays: subscriptionDetails?.planDurationDays ?? null,
         displayDurationDays: subscriptionDetails?.displayDurationDays ?? null,
+        remainingSeconds:
+          subscriptionDetails?.remainingSeconds ?? subscriptionDetails?.remaining_seconds ?? null,
         serverTime: subscriptionDetails?.serverTime ?? null,
         serverTimeFetchedAt: subscriptionDetails?.serverTimeFetchedAt ?? null,
         nowMsOverride: tickNowMs,

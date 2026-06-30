@@ -126,6 +126,59 @@ const api = fs.readFileSync(path.join(root, 'api', 'subscription.js'), 'utf8');
 if (!api.includes('pickRemainingSeconds')) fail('api must parse remaining_seconds');
 else pass('api parses remaining_seconds');
 
+// Custom admin expiry: 7-day package, 20-day backend period
+const adminLong = enrichCanonicalSubscriptionTiming({
+  active: true,
+  expiresAt: '2026-07-17T10:00:00.000Z',
+  startedAt: '2026-06-27T10:00:00.000Z',
+  planDurationDays: 7,
+  remainingSeconds: 20 * 86400,
+});
+if (resolveDisplayDurationDays(adminLong) !== 20) {
+  fail(`admin 20d on 7d package expected 20, got ${resolveDisplayDurationDays(adminLong)}`);
+} else pass('admin extended expiry uses backend span not catalog');
+
+// Custom admin expiry: 30-day package, 3-day backend period
+const adminShort = enrichCanonicalSubscriptionTiming({
+  active: true,
+  expiresAt: '2026-06-30T10:00:00.000Z',
+  startedAt: '2026-06-27T10:00:00.000Z',
+  planDurationDays: 30,
+  remainingSeconds: 3 * 86400,
+});
+if (resolveDisplayDurationDays(adminShort) !== 3) {
+  fail(`admin 3d on 30d package expected 3, got ${resolveDisplayDurationDays(adminShort)}`);
+} else pass('admin shortened expiry uses backend span not catalog');
+
+const shortProgress = computeSubscriptionProgress({
+  startedAt: adminShort.startedAt,
+  periodStartAt: adminShort.periodStartAt,
+  expiresAt: adminShort.expiresAt,
+  planDurationDays: 30,
+  displayDurationDays: adminShort.displayDurationDays,
+  remainingSeconds: adminShort.remainingSeconds,
+  serverTime: '2026-06-27T10:00:00.000Z',
+  serverTimeFetchedAt: Date.parse('2026-06-27T10:00:00.000Z'),
+  nowMsOverride: Date.parse('2026-06-27T10:00:00.000Z'),
+});
+if (!shortProgress.ok || shortProgress.remainingDays !== 3) {
+  fail(`short admin progress expected 3 days remaining, got ${shortProgress.remainingDays}`);
+} else pass('short admin progress bar uses backend expiry');
+
+// Exact hour/minute countdown
+const exactServer = Date.parse('2026-06-27T14:00:00.000Z');
+const exactExpires = '2026-06-27T16:37:00.000Z';
+const exactRemMs = getServerAnchoredRemainingMs({
+  expiresAt: exactExpires,
+  serverTime: new Date(exactServer).toISOString(),
+  serverTimeFetchedAt: exactServer,
+  nowMsOverride: exactServer,
+});
+const expectedExactMs = Date.parse(exactExpires) - exactServer;
+if (Math.abs(exactRemMs - expectedExactMs) > 1000) {
+  fail('exact hour/minute countdown ms mismatch');
+} else pass('exact hour/minute countdown from backend expires_at');
+
 if (!process.exitCode) {
   console.log('\n[verify-subscription-canonical-display] ok');
 }

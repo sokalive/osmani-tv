@@ -183,8 +183,7 @@ function pickExpiresAt(body) {
 
 /**
  * Extract the subscription start timestamp. Backends may name this many
- * things, and some never include it. Caller MUST be prepared to derive it
- * from `expiresAt - planDurationDays` when missing.
+ * things; derive from `expiresAt - remainingSeconds` when missing.
  */
 function pickStartedAt(body) {
   if (!isPlainObject(body)) return null;
