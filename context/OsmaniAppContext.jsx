@@ -53,13 +53,17 @@ import {
 } from '../lib/subscriptionCacheHydrate';
 import { isStaleActiveSubscriptionCache } from '../lib/subscriptionCacheRepair';
 import {
+  purgeUnreliableSubscriptionCache,
+  SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS,
+} from '../lib/subscriptionRecoveryBoot';
+import {
   extractPlanSnapshotFromDetails,
   mergeSubscriptionDetails,
 } from '../lib/subscriptionDetailsMerge';
 import { enrichCanonicalSubscriptionTiming } from '../lib/subscriptionCanonical';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
-const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
+const COLD_START_SUBSCRIPTION_TIMEOUT_MS = SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS;
 /** Fast recover on boot — v24 migration must finish before premium taps decide "unpaid". */
 const RECOVER_BOOT_TIMEOUT_MS = 5_000;
 const SUBSCRIPTION_VERIFY_TIMEOUT_MS = 12_000;
@@ -165,6 +169,7 @@ export function OsmaniAppProvider({ children }) {
 
   /** True once cold-start subscription recover+verify has completed (success or fail). */
   const [subscriptionSyncLoaded, setSubscriptionSyncLoaded] = useState(false);
+  const [subscriptionRecoveryComplete, setSubscriptionRecoveryComplete] = useState(false);
   const subscriptionReadyResolveRef = useRef(null);
   const subscriptionReadyPromiseRef = useRef(null);
   if (!subscriptionReadyPromiseRef.current) {
@@ -904,11 +909,17 @@ export function OsmaniAppProvider({ children }) {
     void refreshTrialWatchSettings('boot').then(() => logStartupStep('remote_config', 'ok'));
   }, [refreshTrialWatchSettings]);
 
-  // Cold-start: hydrate cache → fast recover (v24 migration) → mark sync ready → background verify.
+  // Cold-start: purge stale cache → optional hydrate → backend identity recovery → sync ready.
   useEffect(() => {
     let cancelled = false;
     logStartupStep('subscription_verify', 'start');
     recoverBootPromiseRef.current = (async () => {
+      try {
+        await purgeUnreliableSubscriptionCache();
+      } catch (e) {
+        console.log('[SUBSCRIPTION_RECOVERY]', 'purge_failed', e?.message ?? e);
+      }
+
       try {
         await hydrateSubscriptionFromCache('cold-start-cache');
       } catch (e) {
@@ -921,81 +932,44 @@ export function OsmaniAppProvider({ children }) {
 
       try {
         logStartupStep('device_identity', 'start');
-        const identity = await getDeviceIdentity();
+        await getDeviceIdentity();
         logStartupStep('device_identity', 'ok');
-        const { deviceId, deviceFingerprint } = identity;
-        const r = await withTimeout(
-          recoverSubscription(deviceId, deviceFingerprint, {
-            installInstanceId: identity.installInstanceId,
-            packageName: identity.packageName,
-            packageAndroidId: identity.packageAndroidId,
-            legacyPackageAndroidId: identity.legacyPackageAndroidId,
-            stableHardwareId: identity.stableHardwareId,
-            displayedAccountId: identity.displayedAccountId,
-            androidId: identity.androidId,
-            legacyDeviceFingerprint: identity.legacyDeviceFingerprint,
-            legacyPackageName: identity.legacyPackageName,
-            migration_bridge: true,
-          }),
-          RECOVER_BOOT_TIMEOUT_MS,
-          'cold-start-recover',
-        );
-        console.log('[SUBSCRIPTION_RECOVER]', 'cold-start', {
-          active: r?.active,
-          expiresAt: r?.expiresAt,
-          recoverRefreshed: r?.recoverRefreshed === true,
-        });
-        if (r?.active === true || r?.recoverRefreshed === true) {
-          isSubscribedRef.current = true;
-          setIsSubscribed(true);
-          setSubscriptionExpiresAt(r.expiresAt ?? null);
-          const details = subscriptionDetailsFromVerifyResult({ ...r, active: true });
-          setSubscriptionDetails(details ?? subscriptionDetailsFromCache({ active: true, expiresAt: r.expiresAt }));
-          setSubscriptionVersion((v) => v + 1);
-          const planSnapshot =
-            extractPlanSnapshotFromDetails(details) ??
-            (r.expiresAt || r.remainingSeconds != null || r.remaining_seconds != null
-              ? {
-                  expiresAt: r.expiresAt ?? null,
-                  remainingSeconds: r.remainingSeconds ?? r.remaining_seconds ?? null,
-                  remainingDays: r.remainingDays ?? r.remaining_days ?? null,
-                  planDurationDays: r.planDurationDays ?? r.plan_duration_days ?? null,
-                }
-              : null);
-          await writeSubscriptionCache({
-            active: true,
-            expiresAt: r.expiresAt ?? null,
-            deviceId,
-            fingerprint: deviceFingerprint,
-            planSnapshot,
-          });
-        }
-      } catch (e) {
-        console.log('[SUBSCRIPTION_COLD_START]', 'recover_timeout_or_error', e?.message ?? e);
-        logStartupStep('subscription_verify', 'fail', {
-          phase: 'recover',
-          message: String(e?.message ?? e),
-        });
-      }
 
-      try {
         const cachedBeforeVerify = await readSubscriptionCache();
         if (isStaleActiveSubscriptionCache(cachedBeforeVerify)) {
           console.log('[SUBSCRIPTION_CACHE]', 'repair_stale_active_before_verify', {
             expiresAt: cachedBeforeVerify.expiresAt ?? null,
           });
         }
-        await withTimeout(
-          reverifySubscription('cold-start'),
-          COLD_START_SUBSCRIPTION_TIMEOUT_MS,
-          'cold-start-verify',
+
+        let verifyResult = await withTimeout(
+          reverifySubscription('boot-recovery'),
+          SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS,
+          'boot-recovery',
         );
+        if (
+          verifyResult?.active !== true &&
+          isSubscriptionTransportFailure(verifyResult)
+        ) {
+          await new Promise((r) => setTimeout(r, 1200));
+          verifyResult = await withTimeout(
+            reverifySubscription('boot-recovery-retry'),
+            SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS,
+            'boot-recovery-retry',
+          );
+        }
+        console.log('[SUBSCRIPTION_RECOVERY]', 'boot_complete', {
+          active: verifyResult?.active === true,
+          resolveSource: verifyResult?.resolveSource ?? null,
+          expiresAt: verifyResult?.expiresAt ?? null,
+        });
       } catch (e) {
         console.log('[SUBSCRIPTION_COLD_START]', 'verify_timeout_or_error', e?.message ?? e);
       }
 
       if (!cancelled) {
         setSubscriptionSyncLoaded(true);
+        setSubscriptionRecoveryComplete(true);
         logStartupStep('subscription_verify', 'ok', { phase: 'sync_ready' });
         if (subscriptionReadyResolveRef.current) {
           subscriptionReadyResolveRef.current(true);
@@ -1571,6 +1545,7 @@ export function OsmaniAppProvider({ children }) {
       trialWatchSettings,
       trialWatchSettingsLoaded,
       subscriptionSyncLoaded,
+      subscriptionRecoveryComplete,
       premiumPlaybackReady,
       getPremiumAccessSnapshot,
       awaitPremiumAccessSnapshot,
@@ -1622,6 +1597,7 @@ export function OsmaniAppProvider({ children }) {
       trialWatchSettings,
       trialWatchSettingsLoaded,
       subscriptionSyncLoaded,
+      subscriptionRecoveryComplete,
       premiumPlaybackReady,
       getPremiumAccessSnapshot,
       awaitPremiumAccessSnapshot,

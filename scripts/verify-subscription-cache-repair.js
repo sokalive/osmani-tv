@@ -47,12 +47,9 @@ if (!hydrate.includes('subscriptionDetailsFromVerifyResult')) {
 } else pass('subscriptionDetailsFromVerifyResult export');
 
 const ctx = fs.readFileSync(path.join(root, 'context', 'OsmaniAppContext.jsx'), 'utf8');
-if (!ctx.includes("reverifySubscription('cold-start')")) {
-  fail('cold start must await verify before sync loaded');
-} else pass('cold-start verify before sync loaded');
-if (ctx.includes("reverifySubscription('cold-start-bg')")) {
-  fail('duplicate cold-start-bg verify should be removed');
-} else pass('no duplicate cold-start-bg verify');
+if (!ctx.includes("reverifySubscription('boot-recovery')")) {
+  fail('cold start must await boot-recovery verify before sync loaded');
+} else pass('boot-recovery verify before sync loaded');
 if (!ctx.includes('skipped_stale_active_snapshot')) fail('stale hydrate skip log');
 else pass('stale hydrate skip wired');
 

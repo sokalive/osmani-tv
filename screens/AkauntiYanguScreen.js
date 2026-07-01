@@ -150,11 +150,12 @@ export default function AkauntiYanguScreen() {
   const [offerCodeInput, setOfferCodeInput] = useState('');
 
   useEffect(() => {
+    if (!subscriptionRecoveryComplete) return;
     if (route?.params?.openPremiumAfterExpiry === true) {
       setPremiumModalVisible(true);
       navigation.setParams({ openPremiumAfterExpiry: false });
     }
-  }, [navigation, route?.params?.openPremiumAfterExpiry]);
+  }, [navigation, route?.params?.openPremiumAfterExpiry, subscriptionRecoveryComplete]);
 
   const [redeemBusy, setRedeemBusy] = useState(false);
   const [cooldownEndMs, setCooldownEndMs] = useState(null);
@@ -169,6 +170,7 @@ export default function AkauntiYanguScreen() {
     subscriptionExpiresAt,
     subscriptionDetails,
     subscriptionSyncLoaded,
+    subscriptionRecoveryComplete,
     subscriptionVersion,
     refreshSubscription,
   } = useOsmaniApp();

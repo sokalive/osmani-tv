@@ -300,6 +300,7 @@ function ChannelCatalogScreen({
     awaitRecoverBoot,
     getPremiumAccessSnapshot,
     subscriptionSyncLoaded,
+    subscriptionRecoveryComplete,
     trialWatchSettingsLoaded,
     premiumPlaybackReady,
     requireUpdateBeforeChannelPlayback,
@@ -383,6 +384,7 @@ function ChannelCatalogScreen({
 
   useEffect(() => {
     if (!enableHomeExpiryReminder) return;
+    if (!subscriptionRecoveryComplete) return;
     if (route?.params?.openPremiumAfterExpiry === true) {
       void (async () => {
         if (guardDeviceIntelligence().ok === false) return;
@@ -397,6 +399,7 @@ function ChannelCatalogScreen({
     route?.params?.openPremiumAfterExpiry,
     awaitPremiumAccessSnapshot,
     guardDeviceIntelligence,
+    subscriptionRecoveryComplete,
   ]);
 
   useEffect(() => {
@@ -1620,6 +1623,7 @@ function SubscriptionLifecycleGates() {
   const {
     revokedReason,
     dismissRevoked,
+    subscriptionRecoveryComplete,
     sourceTransferSuccessVisible,
     applySourceTransferCompleted,
     dismissSourceTransferSuccess,
@@ -1689,7 +1693,12 @@ function SubscriptionLifecycleGates() {
         onDismiss={dismissSourceTransferSuccess}
       />
       <TransferredAwayModal
-        visible={Boolean(revokedReason) && revokedReason !== 'transferred' && !plansOpen}
+        visible={
+          subscriptionRecoveryComplete &&
+          Boolean(revokedReason) &&
+          revokedReason !== 'transferred' &&
+          !plansOpen
+        }
         reason={revokedReason ?? 'expired'}
         recovering={recovering}
         onRecover={onRecover}

@@ -8,6 +8,7 @@ import {
 import { isTransientServerError } from '../lib/catalogConnectivity';
 import { LEGACY_ANDROID_PACKAGE } from '../lib/deviceIdentity';
 import { cacheSecurityPhone, getSecurityPhoneForReport, pickPhoneFromApiBody } from '../lib/security/securityPhone';
+import { readLocalPhoneDigits } from '../lib/devicePhoneCache';
 import { formatTanzaniaPhoneForApi, normalizeTanzaniaMobilePhone } from '../lib/tanzaniaPhone';
 import { createTransferRequestError } from '../lib/transferRequestErrors';
 
@@ -900,6 +901,12 @@ async function buildIdentityContext(identityContext = {}) {
   try {
     const phone = await getSecurityPhoneForReport();
     if (phone) return { ...identityContext, phone };
+  } catch {
+    /* ignore */
+  }
+  try {
+    const localDigits = await readLocalPhoneDigits();
+    if (localDigits) return { ...identityContext, phone: localDigits };
   } catch {
     /* ignore */
   }
