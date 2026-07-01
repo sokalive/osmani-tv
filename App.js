@@ -85,6 +85,7 @@ import EmbeddedOtaBootGate from './components/EmbeddedOtaBootGate';
 import PhoneNumberGate from './components/PhoneNumberGate';
 import StartupErrorBoundary from './components/StartupErrorBoundary';
 import { logFirstLaunchBootDiagnostics } from './lib/firstLaunchBootDiagnostics';
+import { logStartupStep } from './lib/startupStepLog';
 import {
   clearPendingManualGiftKey,
   readManualGiftAck,
@@ -300,11 +301,19 @@ function ChannelCatalogScreen({
     getPremiumAccessSnapshot,
     subscriptionSyncLoaded,
     trialWatchSettingsLoaded,
+    premiumPlaybackReady,
     requireUpdateBeforeChannelPlayback,
     requestChannelUpdateGate,
   } = useOsmaniApp();
   const security = useSecurity();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
+
+  useEffect(() => {
+    if (navigatorTabKey === 'home') {
+      logStartupStep('home_screen', 'ok', { premiumPlaybackReady });
+    }
+  }, [navigatorTabKey, premiumPlaybackReady]);
+
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [homeFloaterVisible, setHomeFloaterVisible] = useState(false);
@@ -1456,9 +1465,11 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
   useEffect(() => {
     const onUnhandled = (event) => {
       try {
-        console.error('[STARTUP_CRASH]', 'unhandled_rejection', {
-          reason: String(event?.reason?.message ?? event?.reason ?? 'unknown'),
-        });
+        const reason = event?.reason;
+        const message = String(reason?.message ?? reason ?? 'unknown');
+        const stack = typeof reason?.stack === 'string' ? reason.stack : null;
+        logStartupStep('unhandled_rejection', 'fail', { message, stack });
+        console.error('[STARTUP_CRASH]', 'unhandled_rejection', { message, stack });
       } catch {
         /* ignore */
       }
@@ -1466,15 +1477,53 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
     if (typeof globalThis?.addEventListener === 'function') {
       globalThis.addEventListener('unhandledrejection', onUnhandled);
     }
+    logStartupStep('app_init', 'start');
     logFirstLaunchBootDiagnostics('app_boot_ready');
-    void trackInstallOnce();
-    void startPresence();
-    startRealtimeSync();
-    startUpdateClient();
-    const stopExpoUpdates = startExpoUpdatesClient();
-    const stopOneSignal = setupOneSignal({
-      onOpenUrl: dispatchOsmaniDeepLink,
-    });
+    logStartupStep('analytics_install', 'start');
+    void trackInstallOnce()
+      .then(() => logStartupStep('analytics_install', 'ok'))
+      .catch((e) =>
+        logStartupStep('analytics_install', 'fail', {
+          message: String(e?.message ?? e),
+        }),
+      );
+    logStartupStep('presence', 'start');
+    void startPresence()
+      .then(() => logStartupStep('presence', 'ok'))
+      .catch((e) => logStartupStep('presence', 'fail', { message: String(e?.message ?? e) }));
+    logStartupStep('live_sync', 'start');
+    try {
+      startRealtimeSync();
+      logStartupStep('live_sync', 'ok');
+    } catch (e) {
+      logStartupStep('live_sync', 'fail', { message: String(e?.message ?? e) });
+    }
+    logStartupStep('update_check', 'start');
+    try {
+      startUpdateClient();
+      logStartupStep('update_check', 'ok');
+    } catch (e) {
+      logStartupStep('update_check', 'fail', { message: String(e?.message ?? e) });
+    }
+    logStartupStep('expo_updates', 'start');
+    let stopExpoUpdates = () => {};
+    try {
+      stopExpoUpdates = startExpoUpdatesClient();
+      logStartupStep('expo_updates', 'ok');
+    } catch (e) {
+      logStartupStep('expo_updates', 'fail', { message: String(e?.message ?? e) });
+    }
+    logStartupStep('onesignal', 'start');
+    let stopOneSignal = () => {};
+    try {
+      stopOneSignal = setupOneSignal({
+        onOpenUrl: dispatchOsmaniDeepLink,
+      });
+      logStartupStep('onesignal', 'ok');
+    } catch (e) {
+      logStartupStep('onesignal', 'fail', { message: String(e?.message ?? e) });
+    }
+    logStartupStep('app_init', 'ok');
     const pushResumeSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         void ensureOneSignalPushRegistration('app-resume');

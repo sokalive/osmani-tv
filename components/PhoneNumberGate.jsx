@@ -17,6 +17,7 @@ import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { readLocalPhoneSavedFlag, writeLocalPhoneSaved } from '../lib/devicePhoneCache';
 import { isValidInternationalPhone } from '../lib/internationalPhone';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
+import { logStartupStep } from '../lib/startupStepLog';
 
 const BG = '#0C0608';
 const ACCENT = '#FFCB3D';
@@ -39,17 +40,26 @@ export default function PhoneNumberGate({ children }) {
 
   const runProfileCheck = useCallback(async () => {
     if (!gateEnabled) {
+      logStartupStep('phone_gate', 'skip', { reason: 'gate_disabled' });
       setPhase('ready');
       return;
     }
     setPhase('checking');
     setStatusMessage('Inakagua nambari ya simu…');
     setErrorMessage('');
+    logStartupStep('phone_gate', 'start');
 
     try {
+      logStartupStep('device_profile', 'start');
       const result = await fetchDevicePhoneProfile();
+      logStartupStep('device_profile', result.ok ? 'ok' : 'fail', {
+        hasPhone: result.hasPhone,
+        status: result.status ?? null,
+        error: result.error ?? null,
+      });
       if (result.phoneGateEnabled === false) {
         setRemoteGateEnabled(false);
+        logStartupStep('phone_gate', 'skip', { reason: 'remote_gate_off' });
         setPhase('ready');
         return;
       }
@@ -57,6 +67,7 @@ export default function PhoneNumberGate({ children }) {
 
       if (result.ok && result.hasPhone) {
         await writeLocalPhoneSaved(result.phoneNumber || '');
+        logStartupStep('phone_gate', 'ok', { reason: 'has_phone' });
         setPhase('ready');
         return;
       }
@@ -74,14 +85,20 @@ export default function PhoneNumberGate({ children }) {
 
       const localSaved = await readLocalPhoneSavedFlag();
       if (localSaved) {
+        logStartupStep('phone_gate', 'ok', { reason: 'local_saved_fallback' });
         setPhase('ready');
         return;
       }
 
       setPhase('error');
       setErrorMessage(result.error || 'Imeshindikana kuangalia nambari ya simu.');
+      logStartupStep('phone_gate', 'fail', { reason: 'profile_error', error: result.error });
     } catch (e) {
       console.error('[PHONE_GATE]', 'check_unhandled', e?.message ?? e);
+      logStartupStep('phone_gate', 'fail', {
+        message: String(e?.message ?? e),
+        stack: typeof e?.stack === 'string' ? e.stack : null,
+      });
       try {
         const localSaved = await readLocalPhoneSavedFlag();
         if (localSaved) {

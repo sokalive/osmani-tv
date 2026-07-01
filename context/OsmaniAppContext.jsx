@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { AppState } from 'react-native';
 import { getBanners, getChannels, getServerHealth, invalidateCatalogCache } from '../api';
 import { devLog } from '../lib/devLog';
+import { logStartupStep } from '../lib/startupStepLog';
 import { sortChannelsByAdminOrder } from '../lib/channelOrder';
 import { parseAppSettingsRealtimePatch, tryGetViewerAppSettings } from '../api/settings';
 import { tryGetViewerTrialWatchSettings } from '../api/trialWatchSettings';
@@ -893,21 +894,29 @@ export function OsmaniAppProvider({ children }) {
   }, [refresh]);
 
   useEffect(() => {
-    void refreshTrialWatchSettings('boot');
+    logStartupStep('remote_config', 'start');
+    void refreshTrialWatchSettings('boot').then(() => logStartupStep('remote_config', 'ok'));
   }, [refreshTrialWatchSettings]);
 
   // Cold-start: hydrate cache → fast recover (v24 migration) → mark sync ready → background verify.
   useEffect(() => {
     let cancelled = false;
+    logStartupStep('subscription_verify', 'start');
     recoverBootPromiseRef.current = (async () => {
       try {
         await hydrateSubscriptionFromCache('cold-start-cache');
       } catch (e) {
         console.log('[SUBSCRIPTION_COLD_START]', 'cache_hydrate_error', e?.message ?? e);
+        logStartupStep('subscription_verify', 'fail', {
+          phase: 'cache_hydrate',
+          message: String(e?.message ?? e),
+        });
       }
 
       try {
+        logStartupStep('device_identity', 'start');
         const identity = await getDeviceIdentity();
+        logStartupStep('device_identity', 'ok');
         const { deviceId, deviceFingerprint } = identity;
         const r = await withTimeout(
           recoverSubscription(deviceId, deviceFingerprint, {
@@ -945,10 +954,15 @@ export function OsmaniAppProvider({ children }) {
         }
       } catch (e) {
         console.log('[SUBSCRIPTION_COLD_START]', 'recover_timeout_or_error', e?.message ?? e);
+        logStartupStep('subscription_verify', 'fail', {
+          phase: 'recover',
+          message: String(e?.message ?? e),
+        });
       }
 
       if (!cancelled) {
         setSubscriptionSyncLoaded(true);
+        logStartupStep('subscription_verify', 'ok', { phase: 'sync_ready' });
         if (subscriptionReadyResolveRef.current) {
           subscriptionReadyResolveRef.current(true);
           subscriptionReadyResolveRef.current = null;

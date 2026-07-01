@@ -69,6 +69,22 @@ else pass('StartupErrorBoundary wired');
 if (!app.includes('unhandled_rejection')) fail('App must log unhandled rejections');
 else pass('unhandled rejection logger');
 
+const catalogStart = app.indexOf('function ChannelCatalogScreen');
+const catalogEnd = app.indexOf('function GlobalEmergencyGate');
+const catalogBody = app.slice(catalogStart, catalogEnd);
+const destructureMatch = catalogBody.match(/const \{([^}]+)\} = useOsmaniApp\(\)/);
+if (!destructureMatch) fail('ChannelCatalogScreen must destructure useOsmaniApp');
+else {
+  const destructured = destructureMatch[1];
+  if (catalogBody.includes('premiumPlaybackReady') && !destructured.includes('premiumPlaybackReady')) {
+    fail('ChannelCatalogScreen uses premiumPlaybackReady but does not destructure it from useOsmaniApp');
+  } else pass('ChannelCatalogScreen premiumPlaybackReady destructured');
+}
+
+if (!fs.existsSync(path.join(root, 'lib/startupStepLog.js'))) {
+  fail('lib/startupStepLog.js missing');
+} else pass('startup step logger exists');
+
 const wa = read('api/whatsappSettings.js');
 if (wa.includes('throw new Error') && wa.includes('Could not load WhatsApp')) {
   fail('whatsapp settings viewer must not throw on fetch failure');

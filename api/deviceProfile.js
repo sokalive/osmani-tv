@@ -1,5 +1,6 @@
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
+import { logStartupStep } from '../lib/startupStepLog';
 import { normalizeInternationalPhone } from '../lib/internationalPhone';
 
 const RETRY_DELAYS_MS = [0, 800, 1800];
@@ -26,9 +27,12 @@ function phoneSaveUrl() {
 export async function fetchDevicePhoneProfile() {
   let identity;
   try {
+    logStartupStep('device_identity', 'start', { context: 'device_profile' });
     identity = await getDeviceIdentity();
+    logStartupStep('device_identity', 'ok', { context: 'device_profile' });
   } catch (e) {
     const msg = e?.message || 'Device identity unavailable';
+    logStartupStep('device_identity', 'fail', { context: 'device_profile', message: msg });
     console.log('[PHONE_GATE]', 'identity_failed', msg);
     return { ok: false, hasPhone: false, error: msg };
   }

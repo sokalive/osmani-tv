@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { logStartupStep } from '../lib/startupStepLog';
 
 /**
  * Top-level render guard — logs fatal UI errors instead of hard-crashing the process.
@@ -19,9 +20,19 @@ export default class StartupErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     try {
+      const message = String(error?.message ?? error ?? 'unknown');
+      const stack = typeof error?.stack === 'string' ? error.stack : null;
+      const componentStack = info?.componentStack ?? null;
+      logStartupStep('render_crash', 'fail', {
+        message,
+        stack,
+        componentStack,
+        file: 'StartupErrorBoundary',
+      });
       console.error('[STARTUP_CRASH]', {
-        message: String(error?.message ?? error ?? 'unknown'),
-        componentStack: info?.componentStack ?? null,
+        message,
+        stack,
+        componentStack,
       });
     } catch {
       /* ignore */
