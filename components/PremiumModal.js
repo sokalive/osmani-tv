@@ -26,7 +26,6 @@ import {
   getCheckoutPaymentProviders,
   getPaymentProviders,
   getPaymentStatus,
-  getPlans,
   resolveCheckoutStartPayment,
 } from '../api/payment';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
@@ -35,6 +34,14 @@ import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { verifySubscription } from '../api/subscription';
 import { formatUserFacingApiError } from '../lib/catalogConnectivity';
+import {
+  getCachedPaymentPlansSync,
+  normalizePaymentPlansList,
+  PAYMENT_PLANS_FIRST_SPINNER_MAX_MS,
+  pickDefaultPaymentPlan,
+  refreshPaymentPlansCache,
+  seedPaymentPlansCacheFromVerify,
+} from '../lib/paymentPlansCache';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { cacheSecurityPhone } from '../lib/security/securityPhone';
@@ -127,38 +134,15 @@ function latestExpiryIso(...candidates) {
   return bestStr;
 }
 
-function normalizePlanRow(raw) {
-  const active = raw?.is_active === true || raw?.isActive === true;
-  return {
-    id: String(raw?.id ?? raw?.plan_id ?? '').trim(),
-    name: String(raw?.name ?? raw?.title ?? '').trim(),
-    price: Number(raw?.price ?? raw?.amount ?? 0),
-    duration: String(
-      raw?.duration_days ??
-        raw?.durationDays ??
-        raw?.days ??
-        raw?.validity_days ??
-        raw?.validityDays ??
-        raw?.period_days ??
-        raw?.periodDays ??
-        raw?.duration ??
-        raw?.duration_label ??
-        raw?.duration_text ??
-        '',
-    ).trim(),
-    isActive: active,
-  };
-}
-
 /**
  * @param {{ visible: boolean; onClose: () => void; onUnlockSuccess?: () => void }} props
  */
 export default function PremiumModal({ visible, onClose, onUnlockSuccess, channelName = 'Chaneli Uliyofungua' }) {
   const insets = useSafeAreaInsets();
-  const { refreshSubscription, unlockChannels } = useOsmaniApp();
+  const { refreshSubscription, unlockChannels, availablePlans } = useOsmaniApp();
   const [step, setStep] = useState(1);
-  const [plans, setPlans] = useState([]);
-  const [plansLoading, setPlansLoading] = useState(false);
+  const [plans, setPlans] = useState(() => getCachedPaymentPlansSync() ?? []);
+  const [plansLoading, setPlansLoading] = useState(() => !getCachedPaymentPlansSync()?.length);
   const [plansError, setPlansError] = useState('');
   const [selectedPlan, setSelectedPlan] = useState(null);
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -227,7 +211,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     clearTimers();
     doneRef.current = false;
     setStep(1);
-    setPlans([]);
     setPlansError('');
     setSelectedPlan(null);
     setPhoneNumber('');
@@ -275,28 +258,55 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
-    (async () => {
-      setPlansLoading(true);
+    let spinnerCapTimer = null;
+
+    const applyPlans = (list) => {
+      if (!list?.length || cancelled) return;
+      setPlans(list);
+      setSelectedPlan((prev) => pickDefaultPaymentPlan(list, prev));
+      setPlansLoading(false);
       setPlansError('');
-      try {
-        const raw = await getPlans();
-        if (cancelled) return;
-        const list = Array.isArray(raw) ? raw.map(normalizePlanRow).filter((p) => p.isActive === true) : [];
-        setPlans(list);
-        setSelectedPlan((prev) => {
-          if (prev && list.some((x) => x.id === prev.id)) return prev;
-          return list[0] ?? null;
-        });
-      } catch (e) {
-        if (!cancelled) setPlansError(formatUserFacingApiError(e));
-      } finally {
-        if (!cancelled) setPlansLoading(false);
+    };
+
+    const cached = getCachedPaymentPlansSync();
+    if (cached?.length) {
+      applyPlans(cached);
+    } else if (Array.isArray(availablePlans) && availablePlans.length > 0) {
+      const fromVerify = normalizePaymentPlansList(availablePlans);
+      if (fromVerify.length) {
+        applyPlans(fromVerify);
+        void seedPaymentPlansCacheFromVerify(availablePlans);
       }
-    })();
+    }
+
+    if (!getCachedPaymentPlansSync()?.length && !availablePlans?.length) {
+      setPlansLoading(true);
+      spinnerCapTimer = setTimeout(() => {
+        if (!cancelled) setPlansLoading(false);
+      }, PAYMENT_PLANS_FIRST_SPINNER_MAX_MS);
+    } else {
+      setPlansLoading(false);
+    }
+
+    void refreshPaymentPlansCache({ reason: 'modal-open' }).then((list) => {
+      if (cancelled) return;
+      if (spinnerCapTimer) clearTimeout(spinnerCapTimer);
+      if (list?.length) applyPlans(list);
+      setPlansLoading(false);
+    }).catch((e) => {
+      if (cancelled) return;
+      if (spinnerCapTimer) clearTimeout(spinnerCapTimer);
+      setPlansLoading(false);
+      if (!getCachedPaymentPlansSync()?.length) {
+        setPlansError(formatUserFacingApiError(e));
+      }
+    });
+
     return () => {
       cancelled = true;
+      if (spinnerCapTimer) clearTimeout(spinnerCapTimer);
     };
-  }, [visible]);
+  }, [visible, availablePlans]);
 
   /** Sync active checkout gateway (zenopay | sonicpesa | auraxpay) from admin API. */
   const reloadCheckoutConfig = useCallback(async () => {

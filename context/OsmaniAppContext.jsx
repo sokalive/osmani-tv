@@ -63,6 +63,11 @@ import {
   mergeSubscriptionDetails,
 } from '../lib/subscriptionDetailsMerge';
 import { enrichCanonicalSubscriptionTiming } from '../lib/subscriptionCanonical';
+import {
+  hydratePaymentPlansCacheFromStorage,
+  refreshPaymentPlansCache,
+  seedPaymentPlansCacheFromVerify,
+} from '../lib/paymentPlansCache';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS;
@@ -416,6 +421,7 @@ export function OsmaniAppProvider({ children }) {
         );
         if (Array.isArray(effectiveResult.plans) && effectiveResult.plans.length > 0) {
           setAvailablePlans(effectiveResult.plans);
+          void seedPaymentPlansCacheFromVerify(effectiveResult.plans);
         }
         const detailSource = effectiveResult;
         const rawDetailsPayload = active
@@ -943,6 +949,10 @@ export function OsmaniAppProvider({ children }) {
       }),
     );
     void refresh({ showGlobalLoading: false, preserveDataOnError: true, forceNetwork: true });
+    void (async () => {
+      await hydratePaymentPlansCacheFromStorage();
+      void refreshPaymentPlansCache({ reason: 'boot' });
+    })();
   }, [refresh]);
 
   useEffect(() => {
