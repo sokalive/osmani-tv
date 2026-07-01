@@ -49,7 +49,9 @@ import { withTimeout } from '../lib/asyncTimeout';
 import {
   readHydratableSubscriptionCache,
   subscriptionDetailsFromCache,
+  subscriptionDetailsFromVerifyResult,
 } from '../lib/subscriptionCacheHydrate';
+import { isStaleActiveSubscriptionCache } from '../lib/subscriptionCacheRepair';
 import {
   extractPlanSnapshotFromDetails,
   mergeSubscriptionDetails,
@@ -204,7 +206,11 @@ export function OsmaniAppProvider({ children }) {
       console.log('[SUBSCRIPTION_CACHE]', reason, 'skipped_hydrate_after_source_transfer');
       return false;
     }
-    const { cached } = await readHydratableSubscriptionCache();
+    const { cached, skippedStale } = await readHydratableSubscriptionCache();
+    if (skippedStale) {
+      console.log('[SUBSCRIPTION_CACHE]', reason, 'skipped_stale_active_snapshot');
+      return false;
+    }
     if (!cached?.active) return false;
     isSubscribedRef.current = true;
     setIsSubscribed(true);
@@ -943,13 +949,25 @@ export function OsmaniAppProvider({ children }) {
           isSubscribedRef.current = true;
           setIsSubscribed(true);
           setSubscriptionExpiresAt(r.expiresAt ?? null);
-          setSubscriptionDetails(subscriptionDetailsFromCache({ active: true, expiresAt: r.expiresAt }));
+          const details = subscriptionDetailsFromVerifyResult({ ...r, active: true });
+          setSubscriptionDetails(details ?? subscriptionDetailsFromCache({ active: true, expiresAt: r.expiresAt }));
           setSubscriptionVersion((v) => v + 1);
+          const planSnapshot =
+            extractPlanSnapshotFromDetails(details) ??
+            (r.expiresAt || r.remainingSeconds != null || r.remaining_seconds != null
+              ? {
+                  expiresAt: r.expiresAt ?? null,
+                  remainingSeconds: r.remainingSeconds ?? r.remaining_seconds ?? null,
+                  remainingDays: r.remainingDays ?? r.remaining_days ?? null,
+                  planDurationDays: r.planDurationDays ?? r.plan_duration_days ?? null,
+                }
+              : null);
           await writeSubscriptionCache({
             active: true,
             expiresAt: r.expiresAt ?? null,
             deviceId,
             fingerprint: deviceFingerprint,
+            planSnapshot,
           });
         }
       } catch (e) {
@@ -960,6 +978,22 @@ export function OsmaniAppProvider({ children }) {
         });
       }
 
+      try {
+        const cachedBeforeVerify = await readSubscriptionCache();
+        if (isStaleActiveSubscriptionCache(cachedBeforeVerify)) {
+          console.log('[SUBSCRIPTION_CACHE]', 'repair_stale_active_before_verify', {
+            expiresAt: cachedBeforeVerify.expiresAt ?? null,
+          });
+        }
+        await withTimeout(
+          reverifySubscription('cold-start'),
+          COLD_START_SUBSCRIPTION_TIMEOUT_MS,
+          'cold-start-verify',
+        );
+      } catch (e) {
+        console.log('[SUBSCRIPTION_COLD_START]', 'verify_timeout_or_error', e?.message ?? e);
+      }
+
       if (!cancelled) {
         setSubscriptionSyncLoaded(true);
         logStartupStep('subscription_verify', 'ok', { phase: 'sync_ready' });
@@ -967,16 +1001,6 @@ export function OsmaniAppProvider({ children }) {
           subscriptionReadyResolveRef.current(true);
           subscriptionReadyResolveRef.current = null;
         }
-      }
-
-      try {
-        await withTimeout(
-          reverifySubscription('cold-start-bg'),
-          COLD_START_SUBSCRIPTION_TIMEOUT_MS,
-          'cold-start-verify',
-        );
-      } catch (e) {
-        console.log('[SUBSCRIPTION_COLD_START]', 'verify_timeout_or_error', e?.message ?? e);
       }
     })();
 

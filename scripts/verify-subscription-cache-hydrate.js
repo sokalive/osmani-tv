@@ -28,6 +28,10 @@ if (!hydrate.includes('readHydratableSubscriptionCache')) {
   fail('subscription cache hydrate helper required');
 } else pass('cache hydrate helper present');
 
+if (!hydrate.includes('shouldHydrateSubscriptionCache')) {
+  fail('hydrate must skip stale active cache');
+} else pass('stale active cache skip');
+
 if (!context.includes('hydrateSubscriptionFromCache')) {
   fail('cold-start cache hydration required');
 } else pass('cold-start cache hydration');

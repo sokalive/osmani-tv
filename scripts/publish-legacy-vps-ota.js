@@ -13,7 +13,7 @@ const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const dryRun = process.argv.includes('--dry-run');
 
 for (const runtime of RUNTIMES) {
-  const msg = `remove-startup-loading-${runtime}`;
+  const msg = `fix-subscription-cache-repair-${runtime}`;
   console.log(`\n=== OTA runtime ${runtime} ===`);
   if (dryRun) {
     console.log(`[dry-run] OTA_RUNTIME_TARGET=${runtime} eas update --channel production`);

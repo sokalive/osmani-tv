@@ -980,6 +980,20 @@ async function fetchSubscriptionStatus(deviceId) {
   return normalizeVerifyResponse(body);
 }
 
+/**
+ * Viewer-safe subscription status (GET). Used for cache repair when verify is slow.
+ *
+ * @param {string} deviceId
+ */
+export async function getSubscriptionStatusForDevice(deviceId) {
+  try {
+    return await fetchSubscriptionStatus(deviceId);
+  } catch (e) {
+    console.log('[SUBSCRIPTION_STATUS]', 'error', e?.message ?? e);
+    return null;
+  }
+}
+
 async function refreshSubscriptionAfterRecover(deviceId, deviceFingerprint, identityContext = {}) {
   const ctx = await buildIdentityContext(identityContext);
   const verified = await verifySubscription(deviceId, deviceFingerprint, ctx).catch(() => null);
