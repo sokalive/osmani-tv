@@ -36,6 +36,9 @@ else pass('App.js tap logging');
 if (!app.includes('channelIsFreeAccess')) fail('App.js must use channelIsFreeAccess for sync snapshot');
 else pass('free channel sync snapshot');
 
+if (!app.includes('awaitPremiumAccessSnapshot()')) fail('premium tap must await subscription sync when not ready');
+else pass('awaitPremiumAccessSnapshot when premiumPlaybackReady false');
+
 if (!app.includes('getPremiumAccessSnapshot()')) fail('sync snapshot path missing');
 else pass('getPremiumAccessSnapshot fast path');
 

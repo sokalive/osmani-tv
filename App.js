@@ -769,14 +769,20 @@ function ChannelCatalogScreen({
       if (isPremiumChannel && !isSubscribed) {
         await awaitRecoverBoot();
       }
-      const snapshot = getPremiumAccessSnapshot();
-      logChannelCardTap('snapshot_immediate', {
-        channelKey,
-        isFree,
-        isPremiumChannel,
-        isSubscribed: snapshot.isSubscribed,
-        waitedMs: Date.now() - startedAt,
-      });
+      const snapshot =
+        premiumPlaybackReady || isFree
+          ? getPremiumAccessSnapshot()
+          : await awaitPremiumAccessSnapshot();
+      logChannelCardTap(
+        premiumPlaybackReady || isFree ? 'snapshot_sync' : 'snapshot_ready',
+        {
+          channelKey,
+          isFree,
+          isPremiumChannel,
+          isSubscribed: snapshot.isSubscribed,
+          waitedMs: Date.now() - startedAt,
+        },
+      );
       await openPremiumChannelFromSnapshot(snapshot, {
         playerChannel,
         cardIsPremium: isPremium,
@@ -795,6 +801,7 @@ function ChannelCatalogScreen({
     },
     [
       awaitRecoverBoot,
+      awaitPremiumAccessSnapshot,
       verifySubscriptionBeforePlay,
       navigation,
       security,
@@ -1039,6 +1046,8 @@ function ChannelCatalogScreen({
             onEmergency={onBannerEmergency}
             onPremiumRequired={onBannerPremiumRequired}
             verifySubscriptionBeforePlay={verifySubscriptionBeforePlay}
+            awaitPremiumAccessSnapshot={awaitPremiumAccessSnapshot}
+            premiumPlaybackReady={premiumPlaybackReady}
             getPremiumAccessSnapshot={getPremiumAccessSnapshot}
             awaitRecoverBoot={awaitRecoverBoot}
             openPaymentModal={openPremiumModal}
