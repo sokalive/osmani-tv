@@ -62,6 +62,10 @@ const gate = read('components/PhoneNumberGate.jsx');
 if (!gate.includes('check_unhandled')) fail('PhoneNumberGate must catch check errors');
 else pass('PhoneNumberGate check guard');
 
+if (gate.includes('phase === \'checking\'')) {
+  fail('PhoneNumberGate must not block on checking phase UI');
+} else pass('no phone checking phase UI');
+
 const app = read('App.js');
 if (!app.includes('StartupErrorBoundary')) fail('App must wrap StartupErrorBoundary');
 else pass('StartupErrorBoundary wired');

@@ -94,8 +94,12 @@ else pass('startupSplashBoot prefetches gate');
 if (!bootGate.includes('gate_mounted')) fail('gate_mounted diagnostic');
 else pass('gate_mounted diagnostic');
 
-if (!bootGate.includes('gate_blocking_ui')) fail('gate_blocking_ui diagnostic');
-else pass('gate_blocking_ui diagnostic');
+if (!bootGate.includes('gate_background')) fail('gate_background diagnostic');
+else pass('gate_background diagnostic');
+
+if (bootGate.includes('EmbeddedOtaLoadingScreen')) {
+  fail('boot gate must not render EmbeddedOtaLoadingScreen');
+} else pass('no blocking OTA loading screen');
 
 if (!bootGate.includes('shouldRunOtaBootGate')) fail('boot gate uses stale policy');
 else pass('boot gate uses stale policy');

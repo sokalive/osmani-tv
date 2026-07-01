@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   AppState,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -24,13 +25,14 @@ const ACCENT = '#FFCB3D';
 const MUTED = '#A1A8B5';
 
 /**
- * Mandatory phone capture before Home. Blocks navigation children until complete.
+ * Phone/profile verification runs silently in the background.
+ * Home renders immediately; phone capture appears only as a modal when required.
+ *
  * @param {{ children: React.ReactNode }} props
  */
 export default function PhoneNumberGate({ children }) {
   const { phoneNumberGateEnabled, refreshSettingsOnly } = useOsmaniApp();
-  const [phase, setPhase] = useState('checking');
-  const [statusMessage, setStatusMessage] = useState('Inakagua nambari ya simu…');
+  const [phoneModalVisible, setPhoneModalVisible] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [phoneInput, setPhoneInput] = useState('');
   const [saving, setSaving] = useState(false);
@@ -41,12 +43,10 @@ export default function PhoneNumberGate({ children }) {
   const runProfileCheck = useCallback(async () => {
     if (!gateEnabled) {
       logStartupStep('phone_gate', 'skip', { reason: 'gate_disabled' });
-      setPhase('ready');
+      setPhoneModalVisible(false);
       return;
     }
-    setPhase('checking');
-    setStatusMessage('Inakagua nambari ya simu…');
-    setErrorMessage('');
+
     logStartupStep('phone_gate', 'start');
 
     try {
@@ -57,10 +57,11 @@ export default function PhoneNumberGate({ children }) {
         status: result.status ?? null,
         error: result.error ?? null,
       });
+
       if (result.phoneGateEnabled === false) {
         setRemoteGateEnabled(false);
         logStartupStep('phone_gate', 'skip', { reason: 'remote_gate_off' });
-        setPhase('ready');
+        setPhoneModalVisible(false);
         return;
       }
       setRemoteGateEnabled(true);
@@ -68,30 +69,29 @@ export default function PhoneNumberGate({ children }) {
       if (result.ok && result.hasPhone) {
         await writeLocalPhoneSaved(result.phoneNumber || '');
         logStartupStep('phone_gate', 'ok', { reason: 'has_phone' });
-        setPhase('ready');
+        setPhoneModalVisible(false);
         return;
       }
 
       if (result.ok && !result.hasPhone) {
-        setPhase('required');
+        logStartupStep('phone_gate', 'ok', { reason: 'phone_required_modal' });
+        setPhoneModalVisible(true);
         return;
       }
 
       if (result.status === 404) {
-        setPhase('error');
-        setErrorMessage('Huduma ya nambari ya simu haijawashwa kwenye seva. Jaribu tena baadae.');
+        logStartupStep('phone_gate', 'skip', { reason: 'profile_404' });
+        setPhoneModalVisible(false);
         return;
       }
 
       const localSaved = await readLocalPhoneSavedFlag();
       if (localSaved) {
         logStartupStep('phone_gate', 'ok', { reason: 'local_saved_fallback' });
-        setPhase('ready');
+        setPhoneModalVisible(false);
         return;
       }
 
-      setPhase('error');
-      setErrorMessage(result.error || 'Imeshindikana kuangalia nambari ya simu.');
       logStartupStep('phone_gate', 'fail', { reason: 'profile_error', error: result.error });
     } catch (e) {
       console.error('[PHONE_GATE]', 'check_unhandled', e?.message ?? e);
@@ -102,14 +102,12 @@ export default function PhoneNumberGate({ children }) {
       try {
         const localSaved = await readLocalPhoneSavedFlag();
         if (localSaved) {
-          setPhase('ready');
+          setPhoneModalVisible(false);
           return;
         }
       } catch {
         /* ignore */
       }
-      setPhase('error');
-      setErrorMessage('Imeshindikana kuangalia nambari ya simu.');
     }
   }, [gateEnabled]);
 
@@ -154,7 +152,6 @@ export default function PhoneNumberGate({ children }) {
     }
     setSaving(true);
     setErrorMessage('');
-    setStatusMessage('Inahifadhi nambari ya simu…');
     try {
       const saved = await saveDevicePhoneNumber(phoneInput);
       if (!saved.ok) {
@@ -163,7 +160,8 @@ export default function PhoneNumberGate({ children }) {
       }
       await writeLocalPhoneSaved(saved.phoneNumber || '');
       void registerDeviceIntelligence();
-      setPhase('ready');
+      setPhoneModalVisible(false);
+      logStartupStep('phone_gate', 'ok', { reason: 'phone_saved' });
     } catch (e) {
       console.error('[PHONE_GATE]', 'save_unhandled', e?.message ?? e);
       setErrorMessage('Imeshindikana kuhifadhi nambari ya simu.');
@@ -172,73 +170,57 @@ export default function PhoneNumberGate({ children }) {
     }
   }, [phoneInput, saving]);
 
-  if (!gateEnabled || phase === 'ready') {
-    return children;
-  }
-
-  if (phase === 'checking') {
-    return (
-      <View style={styles.centerScreen}>
-        <ActivityIndicator color={ACCENT} size="large" />
-        <Text style={styles.statusText}>{statusMessage}</Text>
-      </View>
-    );
-  }
-
-  if (phase === 'error') {
-    return (
-      <View style={styles.centerScreen}>
-        <Text style={styles.title}>Hitilafu ya mtandao</Text>
-        <Text style={styles.message}>{errorMessage}</Text>
-        <Pressable style={styles.primaryBtn} onPress={() => void runProfileCheck()}>
-          <Text style={styles.primaryBtnText}>Jaribu tena</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
   return (
-    <SafeAreaView style={styles.screen}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <>
+      {children}
+      <Modal
+        visible={gateEnabled && phoneModalVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => {}}
       >
-        <View style={styles.content}>
-          <Text style={styles.title}>Nambari ya Simu</Text>
-          <Text style={styles.message}>
-            Weka nambari yako ya simu ili kuendelea kutumia Osmani TV. Unaweza kutumia nambari ya
-            nchi yoyote duniani.
-          </Text>
-          <TextInput
-            value={phoneInput}
-            onChangeText={(t) => {
-              setPhoneInput(t);
-              if (errorMessage) setErrorMessage('');
-            }}
-            placeholder="+255712345678 au 0712345678"
-            placeholderTextColor="#6B7280"
-            keyboardType="phone-pad"
-            autoComplete="tel"
-            textContentType="telephoneNumber"
-            editable={!saving}
-            style={styles.input}
-          />
-          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-          <Pressable
-            style={[styles.primaryBtn, saving ? styles.primaryBtnDisabled : null]}
-            disabled={saving}
-            onPress={() => void onSubmitPhone()}
+        <SafeAreaView style={styles.screen}>
+          <KeyboardAvoidingView
+            style={styles.flex}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            {saving ? (
-              <ActivityIndicator color="#111827" />
-            ) : (
-              <Text style={styles.primaryBtnText}>ENDELEA</Text>
-            )}
-          </Pressable>
-          {saving ? <Text style={styles.statusText}>Inahifadhi nambari ya simu…</Text> : null}
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            <View style={styles.content}>
+              <Text style={styles.title}>Nambari ya Simu</Text>
+              <Text style={styles.message}>
+                Weka nambari yako ya simu ili kuendelea kutumia Osmani TV. Unaweza kutumia nambari
+                ya nchi yoyote duniani.
+              </Text>
+              <TextInput
+                value={phoneInput}
+                onChangeText={(t) => {
+                  setPhoneInput(t);
+                  if (errorMessage) setErrorMessage('');
+                }}
+                placeholder="+255712345678 au 0712345678"
+                placeholderTextColor="#6B7280"
+                keyboardType="phone-pad"
+                autoComplete="tel"
+                textContentType="telephoneNumber"
+                editable={!saving}
+                style={styles.input}
+              />
+              {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+              <Pressable
+                style={[styles.primaryBtn, saving ? styles.primaryBtnDisabled : null]}
+                disabled={saving}
+                onPress={() => void onSubmitPhone()}
+              >
+                {saving ? (
+                  <ActivityIndicator color="#111827" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>ENDELEA</Text>
+                )}
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+    </>
   );
 }
 
@@ -247,14 +229,6 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: BG,
-  },
-  centerScreen: {
-    flex: 1,
-    backgroundColor: BG,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-    gap: 14,
   },
   content: {
     flex: 1,
@@ -289,12 +263,6 @@ const styles = StyleSheet.create({
     color: '#FCA5A5',
     fontSize: 13,
     textAlign: 'center',
-  },
-  statusText: {
-    color: MUTED,
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 4,
   },
   primaryBtn: {
     marginTop: 8,

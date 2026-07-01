@@ -44,10 +44,16 @@ if (!app.includes('PhoneNumberGate')) fail('App wires PhoneNumberGate');
 else pass('App wires PhoneNumberGate');
 
 const gate = fs.readFileSync(path.join(root, 'components/PhoneNumberGate.jsx'), 'utf8');
-if (!gate.includes('Inakagua nambari ya simu')) fail('checking message');
-else pass('checking message');
-if (!gate.includes('Inahifadhi nambari ya simu')) fail('saving message');
-else pass('saving message');
+if (gate.includes('Inakagua nambari ya simu')) {
+  fail('phone gate must not show blocking check loading message');
+} else pass('no blocking phone check loading message');
+if (!gate.includes('runProfileCheck')) fail('background profile check');
+else pass('background profile check');
+if (!gate.includes('<Modal')) fail('phone capture must use modal over Home');
+else pass('phone capture modal');
+if (!gate.includes('return children') && !gate.includes('{children}')) {
+  fail('phone gate must always render children');
+} else pass('children always rendered');
 
 const api = fs.readFileSync(path.join(root, 'api/deviceProfile.js'), 'utf8');
 if (!api.includes('/api/device/profile')) fail('profile endpoint');
