@@ -20,8 +20,8 @@ function pass(msg) {
   console.log('PASS:', msg);
 }
 
-const timeoutMatch = boot.match(/SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS\s*=\s*(\d+)/);
-const timeoutMs = timeoutMatch ? Number(timeoutMatch[1]) : 0;
+const timeoutMatch = boot.match(/SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS\s*=\s*([\d_]+)/);
+const timeoutMs = timeoutMatch ? Number(String(timeoutMatch[1]).replace(/_/g, '')) : 0;
 if (timeoutMs < 20_000) fail('boot recovery timeout must allow migration');
 else pass('boot recovery timeout');
 
