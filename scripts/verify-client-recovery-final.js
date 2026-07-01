@@ -200,7 +200,8 @@ function auditUiGating() {
   if (!akaunti.includes('subscriptionRecoveryComplete')) ok = false;
   if (!app.includes('subscriptionRecoveryComplete &&')) ok = false;
   if (!ctx.includes('setSubscriptionRecoveryComplete(true)')) ok = false;
-  if (!ctx.includes("reverifySubscription('boot-recovery')")) ok = false;
+  if (!ctx.includes("reverifySubscription('cold-start-bg')")) ok = false;
+  if (ctx.includes("reverifySubscription('boot-recovery')")) ok = false;
   report.production.uiGating = ok ? 'PASS' : 'FAIL';
   if (ok) pass('UI gates renewal/expiry until recovery complete; shows INAPAKIA during sync');
   else fail('UI gating incomplete');

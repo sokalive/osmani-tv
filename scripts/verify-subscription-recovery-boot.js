@@ -39,15 +39,20 @@ const api = fs.readFileSync(path.join(root, 'api', 'subscription.js'), 'utf8');
 const identity = fs.readFileSync(path.join(root, 'lib', 'deviceIdentity.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'App.js'), 'utf8');
 
-if (!ctx.includes('purgeUnreliableSubscriptionCache')) fail('boot must purge stale cache');
-else pass('boot purges stale cache');
+if (!ctx.includes('purgeUnreliableSubscriptionCache')) fail('boot must purge wrong-device cache');
+else pass('boot purges wrong-device cache');
 
-if (!ctx.includes("reverifySubscription('boot-recovery')")) {
-  fail('boot must run backend identity recovery via reverify');
-} else pass('boot-recovery reverify');
+if (!ctx.includes("recoverSubscription(deviceId, deviceFingerprint")) {
+  fail('boot must run fast recoverSubscription for identity migration');
+} else pass('cold-start recoverSubscription');
 
-if (!ctx.includes('boot-recovery-retry')) fail('transport retry on boot');
-else pass('boot transport retry');
+if (!ctx.includes("reverifySubscription('cold-start-bg')")) {
+  fail('boot must background-verify after sync ready');
+} else pass('cold-start-bg background verify');
+
+if (ctx.includes("reverifySubscription('boot-recovery')")) {
+  fail('boot must not block UI on boot-recovery verify');
+} else pass('no blocking boot-recovery verify');
 
 if (!ctx.includes('subscriptionRecoveryComplete')) fail('recovery complete flag');
 else pass('subscriptionRecoveryComplete state');

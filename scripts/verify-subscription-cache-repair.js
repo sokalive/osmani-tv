@@ -47,11 +47,18 @@ if (!hydrate.includes('subscriptionDetailsFromVerifyResult')) {
 } else pass('subscriptionDetailsFromVerifyResult export');
 
 const ctx = fs.readFileSync(path.join(root, 'context', 'OsmaniAppContext.jsx'), 'utf8');
-if (!ctx.includes("reverifySubscription('boot-recovery')")) {
-  fail('cold start must await boot-recovery verify before sync loaded');
-} else pass('boot-recovery verify before sync loaded');
-if (!ctx.includes('skipped_stale_active_snapshot')) fail('stale hydrate skip log');
-else pass('stale hydrate skip wired');
+if (!ctx.includes('setSubscriptionSyncLoaded(true)')) {
+  fail('cold start must mark sync loaded');
+} else pass('sync loaded flag');
+
+const syncLoadedIdx = ctx.indexOf('setSubscriptionSyncLoaded(true)');
+const bgVerifyIdx = ctx.indexOf("reverifySubscription('cold-start-bg')");
+if (syncLoadedIdx < 0 || bgVerifyIdx < 0 || syncLoadedIdx > bgVerifyIdx) {
+  fail('sync loaded must be set before background cold-start-bg verify');
+} else pass('sync ready before background verify');
+
+if (ctx.includes('skipped_stale_active_snapshot')) fail('must not skip stale active hydrate');
+else pass('hydrate stale active cache allowed');
 
 const api = fs.readFileSync(path.join(root, 'api', 'subscription.js'), 'utf8');
 if (!api.includes('getSubscriptionStatusForDevice')) fail('exported subscription-status helper');
