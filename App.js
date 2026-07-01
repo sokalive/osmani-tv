@@ -60,6 +60,7 @@ import { optimizeDisplayImageUrl, resolveMediaAssetUrl } from './lib/mediaDelive
 import { isCatalogInteractionBlocked } from './lib/catalogConnectivity';
 import { acknowledgeManualGift } from './api/subscription';
 import { trackInstallOnce } from './api/analytics';
+import { bootUserCenterSync, reportLoginHistory } from './api/userCenterSync';
 import { startPresence, stopPresence } from './lib/presenceTracker';
 import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startExpoUpdatesClient } from './lib/expoUpdatesClient';
@@ -1501,8 +1502,13 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
       );
     logStartupStep('presence', 'start');
     void startPresence()
-      .then(() => logStartupStep('presence', 'ok'))
-      .catch((e) => logStartupStep('presence', 'fail', { message: String(e?.message ?? e) }));
+      .then(() => {
+        logStartupStep('presence', 'ok');
+        bootUserCenterSync();
+      })
+      .catch((e) =>
+        logStartupStep('presence', 'fail', { message: String(e?.message ?? e) }),
+      );
     logStartupStep('live_sync', 'start');
     try {
       startRealtimeSync();
@@ -1539,6 +1545,7 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
     const pushResumeSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         void ensureOneSignalPushRegistration('app-resume');
+        void reportLoginHistory({ source: 'app_resume' });
       }
     });
     return () => {

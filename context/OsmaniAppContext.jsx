@@ -20,7 +20,7 @@ import {
   resolveActiveSubscription,
   writeSubscriptionCache,
 } from '../api/subscription';
-import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS, SUBSCRIPTION_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
+import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS, SUBSCRIPTION_SSE_EVENTS, USER_CENTER_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import {
   dropLegacyBannersCache,
   readBannersCache,
@@ -65,6 +65,8 @@ import {
   refreshPaymentPlansCache,
   seedPaymentPlansCacheFromVerify,
 } from '../lib/paymentPlansCache';
+import { reportUserCenterEvent } from '../api/userCenterSync';
+import { registerDeviceIntelligence } from '../api/usersIntelligence';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
@@ -1027,6 +1029,11 @@ export function OsmaniAppProvider({ children }) {
             setAvailablePlans(r.plans);
             void seedPaymentPlansCacheFromVerify(r.plans);
           }
+          void reportUserCenterEvent('subscription_recovery', {
+            active: r?.active === true,
+            recoverRefreshed: r?.recoverRefreshed === true,
+            source: 'cold-start-recover',
+          });
         }
       } catch (e) {
         console.log('[SUBSCRIPTION_COLD_START]', 'recover_timeout_or_error', e?.message ?? e);
@@ -1226,6 +1233,19 @@ export function OsmaniAppProvider({ children }) {
         console.log('[SUBSCRIPTION_SSE]', ev, payload);
         void reverifySubscription(`sse:${ev}`);
         scheduleAdminDrivenSoftSync(`sse:${ev}`);
+        if (ev === 'payment_success' || ev === 'payment_completed') {
+          void reportUserCenterEvent('payment_success', { source: 'sse', sse_event: ev });
+        }
+      }),
+    );
+    const offUserCenter = USER_CENTER_SSE_EVENTS.map((ev) =>
+      subscribeRealtimeEvent(ev, (payload) => {
+        console.log('[USER_CENTER_SSE]', ev, payload);
+        void registerDeviceIntelligence();
+        void reverifySubscription(`sse:${ev}`);
+        void refreshPaymentPlansCache({ reason: `sse:${ev}` });
+        scheduleAdminDrivenSoftSync(`sse:${ev}`);
+        void reportUserCenterEvent(ev, { source: 'sse', payload });
       }),
     );
     const offCompleted = subscribeRealtimeEvent('transfer_completed', (payload) => {
@@ -1365,6 +1385,7 @@ export function OsmaniAppProvider({ children }) {
     return () => {
       offRevoked();
       offSubscriptionLifecycle.forEach((off) => off());
+      offUserCenter.forEach((off) => off());
       offCompleted();
       offApproved();
       offRequested();

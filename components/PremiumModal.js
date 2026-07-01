@@ -44,6 +44,7 @@ import {
 } from '../lib/paymentPlansCache';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
+import { reportPaymentTelemetry } from '../api/userCenterSync';
 import { cacheSecurityPhone } from '../lib/security/securityPhone';
 import { formatSubscriptionExpiry } from '../lib/formatExpiry';
 
@@ -418,6 +419,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         const mergedForUi = latestExpiryIso(verified?.expiresAt, fetchExpires);
         setSuccessExpiresAt(mergedForUi ?? verified?.expiresAt ?? null);
         setStep(4);
+        void reportPaymentTelemetry('success', {
+          order_id: orderId ?? null,
+          plan_id: selectedPlan?.id ?? null,
+          provider: checkoutProvider,
+        });
         return;
       }
     } catch (e) {
@@ -469,6 +475,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           JSON.stringify({ provider: checkoutProvider, backendReason: reason }),
         );
       }
+      void reportPaymentTelemetry(/timeout/i.test(String(reason ?? '')) ? 'timeout' : 'failure', {
+        order_id: orderId ?? null,
+        provider: checkoutProvider,
+        reason: String(reason ?? ''),
+      });
       setStep(5);
     },
     [clearTimers, checkoutProvider],
@@ -623,6 +634,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           : 0;
       setRemainingSeconds(wait);
       setStep(3);
+      void reportPaymentTelemetry('started', {
+        order_id: oid,
+        plan_id: selectedPlan.id,
+        provider: activeProvider,
+        amount: selectedPlan.price,
+      });
     } catch (e) {
       const userMsg = e?.userMessage ?? e?.message ?? 'Imeshindwa kuanzisha malipo';
       if (e?.backendReason) {
@@ -642,6 +659,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       if (checkoutTestMode && e?.backendReason) {
         alertMsg = `${userMsg}\n\n[Jaribio] ${e.backendReason}`;
       }
+      void reportPaymentTelemetry('failure', {
+        plan_id: selectedPlan?.id ?? null,
+        provider: activeProvider,
+        reason: e?.backendReason ?? userMsg,
+      });
       Alert.alert('Malipo', alertMsg);
     } finally {
       setSubmitting(false);

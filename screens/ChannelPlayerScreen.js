@@ -20,6 +20,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../api/analytics';
+import { reportUserCenterEvent } from '../api/userCenterSync';
 import { resolveAnalyticsChannelId } from '../lib/analyticsChannelId';
 import { clearActiveChannel, setActiveChannel } from '../lib/presenceTracker';
 import { subscriptionTransferSseRole } from '../lib/subscriptionSseGuard';
@@ -1182,6 +1183,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       console.log('[player][analytics] session started with device_id:', session.deviceId, {
         watch_session_id: session.watchSessionId,
       });
+      void reportUserCenterEvent('playback_start', {
+        channel_id: channelId,
+        channel_name: channelName,
+        watch_session_id: session.watchSessionId,
+      });
 
       pingTimerRef.current = setInterval(() => {
         console.log('[player][analytics] heartbeat tick', {
@@ -1219,6 +1225,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             sessionChannelIdRef.current,
             channelWatchMeta(),
           );
+          void reportUserCenterEvent('playback_end', {
+            channel_id: sessionChannelIdRef.current,
+            watch_session_id: sessionWatchIdRef.current,
+          });
         }
         // Detach channel from the app-level presence session so the
         // admin watcher count drops without waiting for the next tick.
