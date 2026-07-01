@@ -46,39 +46,54 @@ export default function PhoneNumberGate({ children }) {
     setStatusMessage('Inakagua nambari ya simu…');
     setErrorMessage('');
 
-    const result = await fetchDevicePhoneProfile();
-    if (result.phoneGateEnabled === false) {
-      setRemoteGateEnabled(false);
-      setPhase('ready');
-      return;
-    }
-    setRemoteGateEnabled(true);
+    try {
+      const result = await fetchDevicePhoneProfile();
+      if (result.phoneGateEnabled === false) {
+        setRemoteGateEnabled(false);
+        setPhase('ready');
+        return;
+      }
+      setRemoteGateEnabled(true);
 
-    if (result.ok && result.hasPhone) {
-      await writeLocalPhoneSaved(result.phoneNumber || '');
-      setPhase('ready');
-      return;
-    }
+      if (result.ok && result.hasPhone) {
+        await writeLocalPhoneSaved(result.phoneNumber || '');
+        setPhase('ready');
+        return;
+      }
 
-    if (result.ok && !result.hasPhone) {
-      setPhase('required');
-      return;
-    }
+      if (result.ok && !result.hasPhone) {
+        setPhase('required');
+        return;
+      }
 
-    if (result.status === 404) {
+      if (result.status === 404) {
+        setPhase('error');
+        setErrorMessage('Huduma ya nambari ya simu haijawashwa kwenye seva. Jaribu tena baadae.');
+        return;
+      }
+
+      const localSaved = await readLocalPhoneSavedFlag();
+      if (localSaved) {
+        setPhase('ready');
+        return;
+      }
+
       setPhase('error');
-      setErrorMessage('Huduma ya nambari ya simu haijawashwa kwenye seva. Jaribu tena baadae.');
-      return;
+      setErrorMessage(result.error || 'Imeshindikana kuangalia nambari ya simu.');
+    } catch (e) {
+      console.error('[PHONE_GATE]', 'check_unhandled', e?.message ?? e);
+      try {
+        const localSaved = await readLocalPhoneSavedFlag();
+        if (localSaved) {
+          setPhase('ready');
+          return;
+        }
+      } catch {
+        /* ignore */
+      }
+      setPhase('error');
+      setErrorMessage('Imeshindikana kuangalia nambari ya simu.');
     }
-
-    const localSaved = await readLocalPhoneSavedFlag();
-    if (localSaved) {
-      setPhase('ready');
-      return;
-    }
-
-    setPhase('error');
-    setErrorMessage(result.error || 'Imeshindikana kuangalia nambari ya simu.');
   }, [gateEnabled]);
 
   useEffect(() => {
@@ -132,6 +147,9 @@ export default function PhoneNumberGate({ children }) {
       await writeLocalPhoneSaved(saved.phoneNumber || '');
       void registerDeviceIntelligence();
       setPhase('ready');
+    } catch (e) {
+      console.error('[PHONE_GATE]', 'save_unhandled', e?.message ?? e);
+      setErrorMessage('Imeshindikana kuhifadhi nambari ya simu.');
     } finally {
       setSaving(false);
     }

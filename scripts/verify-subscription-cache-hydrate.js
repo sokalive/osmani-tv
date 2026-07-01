@@ -98,8 +98,8 @@ else pass('plan snapshot AsyncStorage key');
 if (!account.includes('lastPaymentLabelRef')) fail('account sticky payment ref');
 else pass('account sticky payment ref');
 
-if (!account.includes('lastDurationDaysRef')) fail('account sticky duration ref');
-else pass('account sticky duration ref');
+if (account.includes('lastDurationDaysRef')) fail('sticky duration ref must be removed');
+else pass('no sticky duration cache');
 
 const { mergeSubscriptionDetails } = require('../lib/subscriptionDetailsMerge');
 const merged = mergeSubscriptionDetails(

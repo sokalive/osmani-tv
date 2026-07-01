@@ -24,7 +24,15 @@ function phoneSaveUrl() {
  * @returns {Promise<{ ok: boolean; hasPhone: boolean; phoneNumber?: string; phoneE164?: string; source?: string | null; error?: string }>}
  */
 export async function fetchDevicePhoneProfile() {
-  const identity = await getDeviceIdentity();
+  let identity;
+  try {
+    identity = await getDeviceIdentity();
+  } catch (e) {
+    const msg = e?.message || 'Device identity unavailable';
+    console.log('[PHONE_GATE]', 'identity_failed', msg);
+    return { ok: false, hasPhone: false, error: msg };
+  }
+
   const deviceId = identity.subscriptionDeviceId || identity.deviceId;
   const installInstanceId = identity.installInstanceId;
   const url = profileUrl(deviceId, installInstanceId);
@@ -89,7 +97,14 @@ export async function saveDevicePhoneNumber(rawPhone) {
     return { ok: false, error: 'Nambari ya simu si sahihi.' };
   }
 
-  const identity = await getDeviceIdentity();
+  let identity;
+  try {
+    identity = await getDeviceIdentity();
+  } catch (e) {
+    const msg = e?.message || 'Device identity unavailable';
+    console.log('[PHONE_GATE]', 'save_identity_failed', msg);
+    return { ok: false, error: msg };
+  }
   const deviceId = identity.subscriptionDeviceId || identity.deviceId;
   const payload = {
     device_id: deviceId,

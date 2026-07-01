@@ -49,7 +49,6 @@ export async function getWhatsappSettingsForViewer() {
   }
 
   const extra = lastError ? ` — ${lastError}` : '';
-  throw new Error(
-    `Could not load WhatsApp settings (${lastStatus || 'network'})${extra}`,
-  );
+  console.log('[WHATSAPP_SETTINGS]', 'viewer_fetch_failed', { lastStatus, lastError });
+  return { enabled: false, url: '' };
 }

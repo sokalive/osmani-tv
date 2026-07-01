@@ -83,6 +83,7 @@ import { useGlobalSecureScreen } from './lib/security/useGlobalSecureScreen';
 import { useStartupSplash } from './hooks/useStartupSplash';
 import EmbeddedOtaBootGate from './components/EmbeddedOtaBootGate';
 import PhoneNumberGate from './components/PhoneNumberGate';
+import StartupErrorBoundary from './components/StartupErrorBoundary';
 import { logFirstLaunchBootDiagnostics } from './lib/firstLaunchBootDiagnostics';
 import {
   clearPendingManualGiftKey,
@@ -1453,6 +1454,18 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
   useGlobalSecureScreen();
 
   useEffect(() => {
+    const onUnhandled = (event) => {
+      try {
+        console.error('[STARTUP_CRASH]', 'unhandled_rejection', {
+          reason: String(event?.reason?.message ?? event?.reason ?? 'unknown'),
+        });
+      } catch {
+        /* ignore */
+      }
+    };
+    if (typeof globalThis?.addEventListener === 'function') {
+      globalThis.addEventListener('unhandledrejection', onUnhandled);
+    }
     logFirstLaunchBootDiagnostics('app_boot_ready');
     void trackInstallOnce();
     void startPresence();
@@ -1469,6 +1482,9 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
     });
     return () => {
       pushResumeSub.remove();
+      if (typeof globalThis?.removeEventListener === 'function') {
+        globalThis.removeEventListener('unhandledrejection', onUnhandled);
+      }
       void stopPresence();
       stopRealtimeSync();
       stopUpdateClient();
@@ -1486,6 +1502,7 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
   }, []);
 
   return (
+    <StartupErrorBoundary>
     <OsmaniAppProvider>
         <DeviceIntelligenceProvider>
           <SecurityProvider>
@@ -1537,6 +1554,7 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
           </SecurityProvider>
         </DeviceIntelligenceProvider>
       </OsmaniAppProvider>
+    </StartupErrorBoundary>
   );
 }
 
