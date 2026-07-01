@@ -12,6 +12,7 @@ import {
 } from '../lib/trialWatchSettings.shared';
 import {
   clearSubscriptionCache,
+  getSubscriptionStatusForDevice,
   isSubscriptionPendingActivation,
   isSubscriptionTransportFailure,
   readSubscriptionCache,
@@ -48,6 +49,7 @@ import {
 import { withTimeout } from '../lib/asyncTimeout';
 import {
   readHydratableSubscriptionCache,
+  isSameDeviceSubscriptionCache,
   subscriptionDetailsFromCache,
   subscriptionDetailsFromVerifyResult,
 } from '../lib/subscriptionCacheHydrate';
@@ -65,8 +67,9 @@ import { enrichCanonicalSubscriptionTiming } from '../lib/subscriptionCanonical'
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS;
 /** Fast recover on boot — v24 migration must finish before premium taps decide "unpaid". */
-const RECOVER_BOOT_TIMEOUT_MS = 5_000;
-const SUBSCRIPTION_VERIFY_TIMEOUT_MS = 12_000;
+const RECOVER_BOOT_TIMEOUT_MS = 8_000;
+/** Multi-candidate verify + status + recover must finish on slow mobile networks. */
+const SUBSCRIPTION_VERIFY_TIMEOUT_MS = 45_000;
 const TRIAL_WATCH_BOOT_TIMEOUT_MS = 5_000;
 
 const defaultSettings = {
@@ -267,6 +270,11 @@ export function OsmaniAppProvider({ children }) {
         let effectiveResult = r;
         const transferLockActive = sourceTransferClearLockUntilRef.current > Date.now();
 
+        const cacheSameDevice = async () => {
+          const cached = await readSubscriptionCache();
+          return { cached, sameDevice: isSameDeviceSubscriptionCache(cached, identity) };
+        };
+
         if (transferLockActive && active) {
           const src = String(r.resolveSource ?? '');
           if (src !== 'inactive') {
@@ -285,12 +293,8 @@ export function OsmaniAppProvider({ children }) {
           if (transferLockActive) {
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'skipped_transport_cache_after_source_transfer');
           } else {
-          const cached = await readSubscriptionCache();
-          const sameDevice =
-            !cached.deviceId ||
-            cached.deviceId === deviceId ||
-            (identity.androidId && cached.deviceId === identity.androidId);
-          if (cached.active && sameDevice) {
+          const { cached, sameDevice } = await cacheSameDevice();
+          if (cached?.active && sameDevice) {
             active = true;
             expiresAt = cached.expiresAt ?? null;
             effectiveResult = {
@@ -305,18 +309,45 @@ export function OsmaniAppProvider({ children }) {
             });
           }
           }
+        }
+
+        if (
+          !active &&
+          !transferLockActive &&
+          (isSubscriptionTransportFailure(r) || String(r.resolveSource ?? '').includes('timeout'))
+        ) {
+          const statusIds = [
+            identity.packageAndroidId,
+            identity.legacyPackageAndroidId,
+            identity.subscriptionDeviceId,
+            deviceId,
+          ];
+          const seen = new Set();
+          for (const rawId of statusIds) {
+            const sid = String(rawId ?? '').trim();
+            if (!sid || seen.has(sid)) continue;
+            seen.add(sid);
+            const statusHit = await getSubscriptionStatusForDevice(sid);
+            console.log('[SUBSCRIPTION_STATUS]', reason, 'transport_fallback_probe', {
+              deviceId: `${sid.slice(0, 8)}…`,
+              active: statusHit?.active === true,
+              expiresAt: statusHit?.expiresAt ?? null,
+            });
+            if (statusHit?.active === true) {
+              active = true;
+              expiresAt = statusHit.expiresAt ?? null;
+              effectiveResult = { ...statusHit, resolveSource: 'status:transport_fallback' };
+              break;
+            }
+          }
         } else if (
           !transferLockActive &&
           !active &&
           r.resolveSource === 'inactive' &&
           isSubscriptionPendingActivation(r)
         ) {
-          const cached = await readSubscriptionCache();
-          const sameDevice =
-            !cached.deviceId ||
-            cached.deviceId === deviceId ||
-            (identity.androidId && cached.deviceId === identity.androidId);
-          if (cached.active && sameDevice) {
+          const { cached, sameDevice } = await cacheSameDevice();
+          if (cached?.active && sameDevice) {
             active = true;
             expiresAt = cached.expiresAt ?? null;
             effectiveResult = {
@@ -335,12 +366,8 @@ export function OsmaniAppProvider({ children }) {
           r.resolveSource !== 'inactive' &&
           isSubscribedRef.current
         ) {
-          const cached = await readSubscriptionCache();
-          const sameDevice =
-            !cached.deviceId ||
-            cached.deviceId === deviceId ||
-            (identity.androidId && cached.deviceId === identity.androidId);
-          if (cached.active && sameDevice) {
+          const { cached, sameDevice } = await cacheSameDevice();
+          if (cached?.active && sameDevice) {
             active = true;
             expiresAt = cached.expiresAt ?? null;
             effectiveResult = {
@@ -373,6 +400,20 @@ export function OsmaniAppProvider({ children }) {
         const serverTimeFetchedAt = Date.now();
         setIsSubscribed(active);
         setSubscriptionExpiresAt(active ? expiresAt : null);
+        console.log(
+          '[SUBSCRIPTION_STATE]',
+          JSON.stringify({
+            phase: reason,
+            isSubscribed: active,
+            subscriptionStatus: active ? 'ACTIVE' : 'INACTIVE',
+            expiresAt: active ? expiresAt : null,
+            remainingSeconds: effectiveResult.remainingSeconds ?? effectiveResult.remaining_seconds ?? null,
+            remainingDays: effectiveResult.remainingDays ?? effectiveResult.remaining_days ?? null,
+            resolveSource: r.resolveSource ?? null,
+            subscriptionSyncLoaded,
+            subscriptionRecoveryComplete,
+          }),
+        );
         if (Array.isArray(effectiveResult.plans) && effectiveResult.plans.length > 0) {
           setAvailablePlans(effectiveResult.plans);
         }

@@ -1049,14 +1049,14 @@ async function tryResolveForDeviceId(candidateDeviceId, identity, role) {
     return { ...verified, resolveSource: `transport:${role}`, restoreRole: role };
   }
 
+  const statusAfter = await fetchSubscriptionStatus(candidateDeviceId);
+  if (statusAfter?.active === true) {
+    return { ...statusAfter, resolveSource: `status:${role}`, restoreRole: role };
+  }
+
   const recovered = await recoverSubscription(candidateDeviceId, fingerprint, ctx);
   if (recovered.active === true) {
     return { ...recovered, resolveSource: `recover:${role}`, restoreRole: role };
-  }
-
-  const statusAfter = await fetchSubscriptionStatus(candidateDeviceId);
-  if (statusAfter?.active === true) {
-    return { ...statusAfter, resolveSource: `status_after_recover:${role}`, restoreRole: role };
   }
 
   return {
@@ -1110,9 +1110,45 @@ async function retryVerifyAfterPendingActivation(identity, attempts = 5) {
 }
 
 /**
+ * Fast GET status for known device ids (admin SSAID / migration ids).
+ * @param {string[]} deviceIds
+ */
+async function fastStatusProbe(deviceIds) {
+  const seen = new Set();
+  for (const raw of deviceIds) {
+    const id = String(raw ?? '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const status = await fetchSubscriptionStatus(id);
+    if (status?.active === true) {
+      return { ...status, resolveSource: 'status:fast_probe', restoreRole: 'fast_status' };
+    }
+  }
+  return null;
+}
+
+/**
  * Full resolve chain for package migration / reinstall — recover before giving up.
  */
 export async function resolveActiveSubscription(identity) {
+  const fastHit = await fastStatusProbe([
+    identity.packageAndroidId,
+    identity.legacyPackageAndroidId,
+    identity.subscriptionDeviceId,
+    identity.deviceId,
+  ]);
+  if (fastHit) {
+    console.log(
+      '[SUBSCRIPTION_RESTORE_RESULT]',
+      JSON.stringify({
+        active: true,
+        resolveSource: fastHit.resolveSource,
+        expiresAt: fastHit.expiresAt ?? null,
+      }),
+    );
+    return fastHit;
+  }
+
   const candidates = Array.isArray(identity.identityCandidates)
     ? identity.identityCandidates
     : [{ role: 'primary', deviceId: identity.deviceId }];

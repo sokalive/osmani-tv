@@ -22,7 +22,7 @@ function pass(msg) {
 
 const timeoutMatch = boot.match(/SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS\s*=\s*([\d_]+)/);
 const timeoutMs = timeoutMatch ? Number(String(timeoutMatch[1]).replace(/_/g, '')) : 0;
-if (timeoutMs < 20_000) fail('boot recovery timeout must allow migration');
+if (timeoutMs < 40_000) fail('boot recovery timeout must allow migration');
 else pass('boot recovery timeout');
 
 if (!boot.includes('backendConfirmsActiveSubscription')) fail('active helper');
