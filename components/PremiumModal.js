@@ -69,9 +69,9 @@ const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
 
 const POLL_MS = 1500;
-const PAYMENT_ACTIVATION_RETRY_MS = 500;
-const PAYMENT_ACTIVATION_MAX_ATTEMPTS = 12;
-const PAYMENT_ACTIVATION_MAX_ATTEMPTS_CONFIRMED = 30;
+const PAYMENT_ACTIVATION_RETRY_MS = 750;
+const PAYMENT_ACTIVATION_MAX_ATTEMPTS = 1;
+const PAYMENT_ACTIVATION_MAX_ATTEMPTS_CONFIRMED = 6;
 
 /**
  * Local fallback used only when GET /api/payment-providers fails or
@@ -222,7 +222,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const doneRef = useRef(false);
   const payInFlightRef = useRef(false);
   const identityPrefetchRef = useRef(null);
-  const activationInFlightRef = useRef(false);
 
   const animateStepChange = useCallback(() => {
     fadeAnim.setValue(0);
@@ -284,7 +283,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setPaymentProgressStep(1);
     payInFlightRef.current = false;
     identityPrefetchRef.current = null;
-    activationInFlightRef.current = false;
     fadeAnim.setValue(1);
     slideAnim.setValue(0);
   }, [visible, clearTimers, fadeAnim, slideAnim]);
@@ -461,7 +459,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     async (verified, fetchExpires = null) => {
       if (doneRef.current) return;
       doneRef.current = true;
-      activationInFlightRef.current = false;
       setPaymentProgressStep(3);
       clearTimers();
       closeSse();
@@ -493,14 +490,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   );
 
   /**
-   * Try to activate subscription after gateway success or SSE.
-   * Does NOT stop polling/SSE until activation succeeds — avoids stuck waiting UI.
+   * Stable a99a906 activation: fast probe, optional refresh+fetch merge, auto-close on success.
+   * Does NOT clear timers until finalizePaymentSuccess — polling/SSE keep retrying when pending.
    */
-  const attemptPaymentActivation = useCallback(
+  const moveToSuccessStep = useCallback(
     async ({ paymentConfirmed = false, source = 'poll' } = {}) => {
       if (doneRef.current) return;
-      if (activationInFlightRef.current) return;
-      activationInFlightRef.current = true;
       if (paymentConfirmed) setPaymentProgressStep(2);
 
       const maxAttempts = paymentConfirmed
@@ -508,19 +503,25 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         : PAYMENT_ACTIVATION_MAX_ATTEMPTS;
 
       try {
-        let verified = null;
-        let fetchExpires = null;
         const identity = await getDeviceIdentity();
         const { deviceId, deviceFingerprint } = identity;
+        let verified = null;
+        let fetchExpires = null;
 
         for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
           if (doneRef.current) return;
 
           const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, identity);
-          verified = probed.verified;
           fetchExpires = probed.fetchExpires ?? fetchExpires;
 
-          if (!verified) {
+          if (probed.verified && isSubscriptionActive(probed.verified)) {
+            await finalizePaymentSuccess(probed.verified, fetchExpires);
+            void refreshSubscription().catch(() => {});
+            return;
+          }
+
+          const shouldSlowRefresh = paymentConfirmed ? attempt >= 1 : attempt >= 0;
+          if (shouldSlowRefresh) {
             verified = await refreshSubscription();
             try {
               const sub = await fetchSubscription(deviceId);
@@ -536,12 +537,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
             } catch {
               // optional enrichment
             }
+
+            if (verified && isSubscriptionActive(verified)) {
+              await finalizePaymentSuccess(verified, fetchExpires);
+              void refreshSubscription().catch(() => {});
+              return;
+            }
           }
 
-          if (verified && isSubscriptionActive(verified)) {
-            await finalizePaymentSuccess(verified, fetchExpires);
-            return;
-          }
           if (attempt < maxAttempts - 1) {
             await new Promise((resolve) => setTimeout(resolve, PAYMENT_ACTIVATION_RETRY_MS));
           }
@@ -555,17 +558,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         });
       } catch (e) {
         console.log('[PAYMENT_SUCCESS_VERIFY]', 'activation_error', e?.message ?? e);
-      } finally {
-        activationInFlightRef.current = false;
       }
     },
     [refreshSubscription, finalizePaymentSuccess],
   );
-
-  /** ENDELEA fallback (legacy step 4) — auto-close path uses finalizePaymentSuccess. */
-  const moveToSuccessStep = useCallback(async () => {
-    await attemptPaymentActivation({ paymentConfirmed: true, source: 'legacy' });
-  }, [attemptPaymentActivation]);
 
   /** ENDELEA: always await fresh API via context; branch only on returned object (never stale context). */
   const handleCompleted = useCallback(async () => {
@@ -627,30 +623,33 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           handleFailed(reason);
           return;
         }
-        if (status === 'SUCCESS') {
-          await attemptPaymentActivation({ paymentConfirmed: true, source: 'poll-success' });
-          return;
-        }
 
         let peek = null;
+        let fetchExpires = null;
         try {
-          const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-          const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, {
-            subscriptionDeviceId: deviceId,
-          });
+          const identity = await getDeviceIdentity();
+          const { deviceId, deviceFingerprint } = identity;
+          const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, identity);
           peek = probed.verified;
+          fetchExpires = probed.fetchExpires;
         } catch {
           peek = null;
         }
         if (doneRef.current) return;
         if (peek && isSubscriptionActive(peek)) {
-          await attemptPaymentActivation({ paymentConfirmed: false, source: 'poll-verify' });
+          await finalizePaymentSuccess(peek, fetchExpires);
+          void refreshSubscription().catch(() => {});
+          return;
+        }
+
+        if (status === 'SUCCESS') {
+          await moveToSuccessStep({ paymentConfirmed: true, source: 'poll-success' });
         }
       } catch {
         // transient network — keep polling
       }
     },
-    [attemptPaymentActivation, handleFailed],
+    [moveToSuccessStep, handleFailed, finalizePaymentSuccess, refreshSubscription],
   );
 
   useEffect(() => {
@@ -683,15 +682,17 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
     const onMessage = (event) => {
       if (doneRef.current) return;
-      try {
-        const payload = JSON.parse(event?.data ?? '{}');
-        const payloadActive = payload?.isActive === true || payload?.active === true;
-        if (!payloadActive) return;
-        console.log('[PremiumModal]', 'subscription_stream_active');
-        void attemptPaymentActivation({ paymentConfirmed: true, source: 'subscription-stream' });
-      } catch {
-        // ignore malformed stream payloads
-      }
+      void (async () => {
+        try {
+          const payload = JSON.parse(event?.data ?? '{}');
+          const payloadActive = payload?.isActive === true || payload?.active === true;
+          if (!payloadActive) return;
+          console.log('[PremiumModal]', 'subscription_stream_active');
+          await moveToSuccessStep({ paymentConfirmed: true, source: 'subscription-stream' });
+        } catch {
+          // ignore malformed stream payloads
+        }
+      })();
     };
 
     stream.addEventListener('message', onMessage);
@@ -707,7 +708,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       }
       closeSse();
     };
-  }, [visible, step, waitingDeviceId, closeSse, attemptPaymentActivation]);
+  }, [visible, step, waitingDeviceId, closeSse, moveToSuccessStep]);
 
   /** Admin / gateway payment_success SSE — activate immediately without waiting for next poll. */
   useEffect(() => {
@@ -724,13 +725,13 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       subscribeRealtimeEvent(ev, () => {
         if (doneRef.current) return;
         console.log('[PremiumModal]', 'payment_sse', ev);
-        void attemptPaymentActivation({ paymentConfirmed: true, source: `sse:${ev}` });
+        void moveToSuccessStep({ paymentConfirmed: true, source: `sse:${ev}` });
       }),
     );
     return () => {
       offs.forEach((off) => off());
     };
-  }, [visible, step, attemptPaymentActivation]);
+  }, [visible, step, moveToSuccessStep]);
 
   const handleCancel = () => {
     clearTimers();
