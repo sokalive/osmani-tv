@@ -48,6 +48,7 @@ import { reportPaymentTelemetry } from '../api/userCenterSync';
 import { cacheSecurityPhone } from '../lib/security/securityPhone';
 import { formatSubscriptionExpiry } from '../lib/formatExpiry';
 import EmergencyModal from './EmergencyModal';
+import PaymentWaitingStep from './PaymentWaitingStep';
 
 const ACCENT = '#FACC15';
 const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
@@ -82,13 +83,6 @@ const FALLBACK_NETWORKS = [
   { id: 'airtel', name: 'Airtel', logoUrl: null, active: true },
   { id: 'halopesa', name: 'HaloPesa', logoUrl: null, active: true },
 ];
-
-function formatCountdown(totalSeconds) {
-  const s = Math.max(0, Math.floor(totalSeconds));
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${m}:${sec.toString().padStart(2, '0')}`;
-}
 
 function formatPriceTz(n) {
   const num = Number(n);
@@ -163,6 +157,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [phoneGuardTitle, setPhoneGuardTitle] = useState('Taarifa');
   const [phoneGuardMessage, setPhoneGuardMessage] = useState('');
   const [checkoutLogoUrl, setCheckoutLogoUrl] = useState(null);
+  const [paymentProgressStep, setPaymentProgressStep] = useState(1);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -171,6 +166,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const countdownTimerRef = useRef(null);
   const sseRef = useRef(null);
   const doneRef = useRef(false);
+  const payInFlightRef = useRef(false);
+  const identityPrefetchRef = useRef(null);
 
   const animateStepChange = useCallback(() => {
     fadeAnim.setValue(0);
@@ -229,6 +226,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setPhoneGuardVisible(false);
     setPhoneGuardTitle('Taarifa');
     setPhoneGuardMessage('');
+    setPaymentProgressStep(1);
+    payInFlightRef.current = false;
+    identityPrefetchRef.current = null;
     fadeAnim.setValue(1);
     slideAnim.setValue(0);
   }, [visible, clearTimers, fadeAnim, slideAnim]);
@@ -358,6 +358,18 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible, reloadCheckoutConfig]);
 
+  /** Prefetch device identity on step 2 so Lipia begins checkout without extra await. */
+  useEffect(() => {
+    if (!visible || step !== 2) return undefined;
+    let cancelled = false;
+    void getDeviceIdentity().then((identity) => {
+      if (!cancelled) identityPrefetchRef.current = identity;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, step]);
+
   /** When modal opens, always sync subscription from server (do not trust stale context). */
   useEffect(() => {
     if (!visible) return undefined;
@@ -391,6 +403,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   /** After payment gateway / verify confirms active: apply context + success UI only when verify succeeds. */
   const moveToSuccessStep = useCallback(async () => {
     if (doneRef.current) return;
+    setPaymentProgressStep(3);
     clearTimers();
     closeSse();
     let verified = null;
@@ -502,6 +515,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           handleFailed(reason);
           return;
         }
+        if (status === 'SUCCESS') {
+          setPaymentProgressStep(2);
+        }
 
         let peek = null;
         try {
@@ -608,6 +624,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
   const handleStep2Pay = async () => {
     console.log('PAYMENT TRIGGERED');
+    if (submitting || payInFlightRef.current) return;
     if (!isPhoneValid) {
       Alert.alert('', 'Weka namba sahihi ya simu');
       return;
@@ -616,14 +633,16 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       Alert.alert('', 'Chagua mpango');
       return;
     }
+    payInFlightRef.current = true;
     setSubmitting(true);
-    let activeProvider = checkoutProvider;
+    const activeProvider = checkoutProvider;
+    const normalizedPhone = phoneNumber.replace(/\s/g, '');
     try {
-      const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-      const freshCfg = await reloadCheckoutConfig();
-      activeProvider = freshCfg?.payment_provider ?? checkoutProvider;
+      const identity = identityPrefetchRef.current ?? (await getDeviceIdentity());
+      identityPrefetchRef.current = identity;
+      const { deviceId, deviceFingerprint } = identity;
       const payPayload = {
-        phone: phoneNumber.replace(/\s/g, ''),
+        phone: normalizedPhone,
         plan_id: selectedPlan.id,
         amount: selectedPlan.price,
         device_id: deviceId,
@@ -641,6 +660,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           ? Math.floor(expiresInSeconds)
           : 0;
       setRemainingSeconds(wait);
+      setPaymentProgressStep(1);
       setStep(3);
       void reportPaymentTelemetry('started', {
         order_id: oid,
@@ -700,6 +720,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       Alert.alert('Malipo', alertMsg);
     } finally {
       setSubmitting(false);
+      payInFlightRef.current = false;
     }
   };
 
@@ -752,9 +773,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                   contentContainerStyle={
                     step === 2
                       ? [styles.modalScrollContentStep2Centered]
-                      : compactResultStep
-                        ? styles.modalScrollContentCompactResult
-                        : styles.modalScrollContent
+                      : step === 3
+                        ? styles.modalScrollContentStep3
+                        : compactResultStep
+                          ? styles.modalScrollContentCompactResult
+                          : styles.modalScrollContent
                   }
                   bounces={false}
                 >
@@ -954,38 +977,15 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                     )}
 
                     {step === 3 && (
-                      <View style={styles.step3Wrap}>
-                        <View style={styles.loaderHaloWrap}>
-                          <Animated.View
-                            style={[
-                              styles.loaderRing,
-                              { transform: [{ rotate: ringSpin }] },
-                            ]}
-                          />
-                          <View style={styles.loaderInner}>
-                            <Ionicons name="card" size={26} color={ACCENT} />
-                          </View>
-                        </View>
-                        <Text style={styles.waitTitle}>Inasubiri uthibitisho wa malipo</Text>
-                        <Text style={styles.waitPin}>
-                          Thibitisha malipo kwenye simu yako (PIN).
-                        </Text>
-                        <View style={styles.amountPill}>
-                          <Ionicons name="wallet" size={14} color={ACCENT} />
-                          <Text style={styles.amountPillText}>{selectedAmountDisplay}</Text>
-                        </View>
-                        <Text style={styles.countdown}>
-                          {remainingSeconds > 0 ? formatCountdown(remainingSeconds) : '--:--'}
-                        </Text>
-                        {orderId ? (
-                          <View style={styles.orderPill}>
-                            <Text style={styles.orderPillLabel}>Order ID</Text>
-                            <Text style={styles.orderPillValue} numberOfLines={1}>
-                              {orderId}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
+                      <PaymentWaitingStep
+                        selectedAmountDisplay={selectedAmountDisplay}
+                        orderId={orderId}
+                        remainingSeconds={remainingSeconds}
+                        checkoutProvider={checkoutProvider}
+                        checkoutLogoUrl={checkoutLogoUrl}
+                        paymentProgressStep={paymentProgressStep}
+                        ringSpin={ringSpin}
+                      />
                     )}
 
                     {step === 4 && (
@@ -1147,6 +1147,9 @@ const styles = StyleSheet.create({
   },
   modalScrollContent: {
     paddingBottom: 100,
+  },
+  modalScrollContentStep3: {
+    paddingBottom: 120,
   },
   modalScrollContentCompactResult: {
     paddingBottom: 24,
