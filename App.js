@@ -319,6 +319,7 @@ function ChannelCatalogScreen({
 
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
+  const pendingChannelAfterPaymentRef = useRef(null);
   const [homeFloaterVisible, setHomeFloaterVisible] = useState(false);
   const [manualGiftVisible, setManualGiftVisible] = useState(false);
   const [offlineModalVisible, setOfflineModalVisible] = useState(false);
@@ -660,8 +661,9 @@ function ChannelCatalogScreen({
     }
   }, [syncPendingGiftBlocking]);
 
-  const openPremiumModal = useCallback(() => {
+  const openPremiumModal = useCallback((pendingChannel) => {
     if (guardDeviceIntelligence().ok === false) return;
+    if (pendingChannel) pendingChannelAfterPaymentRef.current = pendingChannel;
     setPremiumModalVisible(true);
   }, [guardDeviceIntelligence]);
 
@@ -780,7 +782,7 @@ function ChannelCatalogScreen({
         playerChannel,
         cardIsPremium: isPremium,
         navigation,
-        openPaymentModal: openPremiumModal,
+        openPaymentModal: () => openPremiumModal(playerChannel),
         verifySubscriptionBeforePlay,
         security,
         Alert,
@@ -1221,6 +1223,12 @@ function ChannelCatalogScreen({
         visible={premiumModalVisible}
         onClose={() => setPremiumModalVisible(false)}
         onUnlockSuccess={() => {
+          const channel = pendingChannelAfterPaymentRef.current;
+          pendingChannelAfterPaymentRef.current = null;
+          if (channel) {
+            navigation.navigate('ChannelPlayer', { channel, trialWatchBootstrap: null });
+            return;
+          }
           navigation.navigate('Home');
         }}
       />

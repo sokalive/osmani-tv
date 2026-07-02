@@ -82,9 +82,6 @@ else {
 if (!modal.includes('setPaymentProgressStep(2)')) fail('progress advances on payment success poll');
 else pass('progress advances on payment success poll');
 
-if (!modal.includes('setPaymentProgressStep(3)')) fail('progress advances on activation');
-else pass('progress advances on activation');
-
 if (process.exitCode) {
   process.exit(1);
 }

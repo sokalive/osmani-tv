@@ -366,7 +366,10 @@ function BannerCarousel({
         playerChannel,
         cardIsPremium: isPremium,
         navigation,
-        openPaymentModal: openPaymentModal ?? onPremiumRequired ?? (() => {}),
+        openPaymentModal: () => {
+          const fn = openPaymentModal ?? onPremiumRequired ?? (() => {});
+          fn(playerChannel);
+        },
         verifySubscriptionBeforePlay,
         security,
         Alert,
