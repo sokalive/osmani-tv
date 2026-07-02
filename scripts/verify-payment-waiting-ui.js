@@ -46,8 +46,9 @@ else pass('short GHAIRI tip');
 if (waiting.includes('warningCard')) fail('long warning card removed');
 else pass('long warning card removed');
 
-if (!modal.includes('scrollEnabled={step !== 3}')) fail('step 3 scroll disabled');
-else pass('step 3 scroll disabled');
+if (!modal.includes('scrollEnabled={step !== 3 && step !== 4}')) {
+  fail('step 3/4 scroll disabled');
+} else pass('step 3/4 scroll disabled');
 
 if (!waiting.includes('Hatua za Malipo')) fail('progress steps card');
 else pass('progress steps card');

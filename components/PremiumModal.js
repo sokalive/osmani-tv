@@ -6,7 +6,6 @@ import {
   Dimensions,
   Easing,
   Image,
-  InteractionManager,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -54,9 +53,10 @@ import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { reportPaymentTelemetry } from '../api/userCenterSync';
 import { cacheSecurityPhone } from '../lib/security/securityPhone';
-import { formatSubscriptionExpiry } from '../lib/formatExpiry';
 import EmergencyModal from './EmergencyModal';
 import PaymentWaitingStep from './PaymentWaitingStep';
+import PaymentSuccessStep from './PaymentSuccessStep';
+import { buildPaymentSuccessDetails } from '../lib/paymentSuccessDisplay';
 
 const ACCENT = '#FACC15';
 const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
@@ -127,8 +127,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [waitingDeviceId, setWaitingDeviceId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [failureReason, setFailureReason] = useState('');
-  const [successExpiresAt, setSuccessExpiresAt] = useState(null);
-  const [finalizingSuccess, setFinalizingSuccess] = useState(false);
+  const [successDetails, setSuccessDetails] = useState(null);
   const [providers, setProviders] = useState(FALLBACK_NETWORKS);
   const [logoErrors, setLogoErrors] = useState({});
   const [checkoutProvider, setCheckoutProvider] = useState('zenopay');
@@ -201,8 +200,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setWaitingDeviceId('');
     setSubmitting(false);
     setFailureReason('');
-    setSuccessExpiresAt(null);
-    setFinalizingSuccess(false);
+    setSuccessDetails(null);
     setPhoneGuardVisible(false);
     setPhoneGuardTitle('Taarifa');
     setPhoneGuardMessage('');
@@ -380,7 +378,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
-  /** Payment confirmed — unlock, close modal immediately, no extra tap. */
+  /** Payment verified active — unlock, show success dialog (no navigation until FUNGUA CHANNEL). */
   const finalizePaymentSuccess = useCallback(
     async (verified, fetchExpires = null) => {
       if (doneRef.current) return;
@@ -388,32 +386,64 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       setPaymentProgressStep(3);
       clearTimers();
       closeSse();
-      const mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
-      const subscription = {
-        ...verified,
+
+      let subscription = verified;
+      try {
+        const fresh = await refreshSubscription();
+        if (fresh && isSubscriptionActive(fresh)) {
+          subscription = fresh;
+        }
+      } catch {
+        // keep verified snapshot
+      }
+
+      const mergedExpires = latestExpiryIso(subscription?.expiresAt, fetchExpires);
+      const forUnlock = {
+        ...subscription,
         active: true,
         isActive: true,
-        expiresAt: mergedExpires ?? verified?.expiresAt ?? null,
+        expiresAt: mergedExpires ?? subscription?.expiresAt ?? null,
       };
-      unlockChannels(subscription);
+      unlockChannels(forUnlock);
+
+      setSuccessDetails(
+        buildPaymentSuccessDetails(forUnlock, {
+          name: selectedPlan?.name ?? null,
+          price: selectedPlan?.price ?? null,
+        }),
+      );
+
       void reportPaymentTelemetry('success', {
         order_id: orderId ?? null,
         plan_id: selectedPlan?.id ?? null,
         provider: checkoutProvider,
       });
-      console.log('[PremiumModal]', 'payment_complete_auto_close', {
+      console.log('[PremiumModal]', 'payment_success_dialog', {
         orderId: orderId ?? null,
-        expiresAt: subscription.expiresAt ?? null,
+        planName: forUnlock?.planName ?? selectedPlan?.name ?? null,
+        expiresAt: forUnlock?.expiresAt ?? null,
       });
-      try {
-        onUnlockSuccess?.();
-      } catch (e) {
-        console.log('[PremiumModal]', 'onUnlockSuccess_error', e?.message ?? e);
-      }
-      onClose?.();
+      setStep(4);
     },
-    [clearTimers, closeSse, unlockChannels, orderId, selectedPlan, checkoutProvider, onUnlockSuccess, onClose],
+    [
+      clearTimers,
+      closeSse,
+      unlockChannels,
+      refreshSubscription,
+      orderId,
+      selectedPlan,
+      checkoutProvider,
+    ],
   );
+
+  const handleOpenChannel = useCallback(() => {
+    try {
+      onUnlockSuccess?.();
+    } catch (e) {
+      console.log('[PremiumModal]', 'onUnlockSuccess_error', e?.message ?? e);
+    }
+    onClose?.();
+  }, [onUnlockSuccess, onClose]);
 
   /**
    * MFALME-style single activation tick per poll/SSE event (no blocking multi-minute loops).
@@ -455,29 +485,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     },
     [refreshSubscription, finalizePaymentSuccess],
   );
-
-  /** ENDELEA: always await fresh API via context; branch only on returned object (never stale context). */
-  const handleCompleted = useCallback(async () => {
-    setFinalizingSuccess(true);
-    try {
-      const subscription = await refreshSubscription();
-      console.log('[PAYMENT_CONTINUE_VERIFY]', subscription);
-      if (isSubscriptionActive(subscription)) {
-        unlockChannels(subscription);
-        onUnlockSuccess?.();
-        await new Promise((resolve) => {
-          InteractionManager.runAfterInteractions(() => resolve(null));
-        });
-        onClose?.();
-      } else {
-        Alert.alert('Kifurushi', 'Sub bado haija-activate, jaribu tena sekunde chache');
-      }
-    } catch (e) {
-      Alert.alert('Kifurushi', e?.message ?? 'Imeshindwa kusasisha kifurushi');
-    } finally {
-      setFinalizingSuccess(false);
-    }
-  }, [refreshSubscription, unlockChannels, onUnlockSuccess, onClose]);
 
   const handleFailed = useCallback(
     (reason) => {
@@ -802,7 +809,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setStep(2);
   };
 
-  const compactResultStep = step === 4 || step === 5;
+  const compactResultStep = step === 5;
+  const successSheetHeight = Math.min(620, Math.round(WINDOW_HEIGHT * 0.72));
   const compactSheetHeight = Math.min(460, Math.round(WINDOW_HEIGHT * 0.56));
 
   return (
@@ -818,9 +826,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           <View
             style={[
               styles.sheet,
-              compactResultStep
-                ? { height: compactSheetHeight, maxHeight: compactSheetHeight }
-                : { height: MODAL_MAX_HEIGHT, maxHeight: MODAL_MAX_HEIGHT },
+              step === 4
+                ? { height: successSheetHeight, maxHeight: successSheetHeight }
+                : compactResultStep
+                  ? { height: compactSheetHeight, maxHeight: compactSheetHeight }
+                  : { height: MODAL_MAX_HEIGHT, maxHeight: MODAL_MAX_HEIGHT },
             ]}
           >
             <SafeAreaView
@@ -831,7 +841,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                 <ScrollView
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
-                  scrollEnabled={step !== 3}
+                  scrollEnabled={step !== 3 && step !== 4}
                   style={styles.modalScroll}
                   contentContainerStyle={
                     step === 2
@@ -1052,42 +1062,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                     )}
 
                     {step === 4 && (
-                      <View style={styles.resultWrap}>
-                        <View style={styles.successIconHalo}>
-                          <View style={styles.successIconCircle}>
-                            <Ionicons name="checkmark" size={28} color="#0F172A" />
-                          </View>
-                        </View>
-                        <Text style={styles.successTitle}>Malipo yamefanikiwa</Text>
-                        <Text style={styles.successBody}>
-                          Kifurushi chako kinaisha:{' '}
-                          <Text style={styles.successHighlight}>
-                            {formatSubscriptionExpiry(successExpiresAt)}
-                          </Text>
-                        </Text>
-                        <Text style={styles.successFootnote}>
-                          Sasa unaweza kutazama channel zote live muda wote. Kumbuka kulipia kifurushi chako kabla
-                          ya muda kuisha.
-                        </Text>
-                        <Pressable
-                          style={[styles.ctaWrap, styles.resultCta, finalizingSuccess && styles.ctaDisabled]}
-                          disabled={finalizingSuccess}
-                          onPress={() => void handleCompleted()}
-                        >
-                          <LinearGradient
-                            colors={ACCENT_GRADIENT}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.ctaGradient}
-                          >
-                            {finalizingSuccess ? (
-                              <ActivityIndicator color="#111827" />
-                            ) : (
-                              <Text style={styles.ctaText}>ENDELEA</Text>
-                            )}
-                          </LinearGradient>
-                        </Pressable>
-                      </View>
+                      <PaymentSuccessStep
+                        details={successDetails}
+                        onOpenChannel={handleOpenChannel}
+                      />
                     )}
 
                     {step === 5 && (

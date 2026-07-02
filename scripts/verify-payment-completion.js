@@ -65,11 +65,17 @@ if (!schedBlock || schedBlock[0].includes('clearTimers();')) {
   fail('schedulePostPaymentActivationPolls must not clear timers before success');
 } else pass('polling survives failed activation attempt');
 
-if (!modal.includes('onUnlockSuccess?.()')) fail('auto onUnlockSuccess');
-else pass('auto onUnlockSuccess');
+if (!modal.includes('onUnlockSuccess?.()')) fail('onUnlockSuccess on FUNGUA CHANNEL');
+else pass('onUnlockSuccess on FUNGUA CHANNEL');
 
-if (!modal.includes('onClose?.()')) fail('auto onClose after success');
-else pass('auto onClose after success');
+if (!modal.includes('handleOpenChannel')) fail('handleOpenChannel');
+else pass('handleOpenChannel');
+
+if (!modal.includes('PaymentSuccessStep')) fail('PaymentSuccessStep');
+else pass('PaymentSuccessStep');
+
+if (modal.includes('ENDELEA')) fail('no ENDELEA on payment success');
+else pass('no ENDELEA on payment success');
 
 if (!modal.includes("source: 'poll-success'")) fail('poll success activation source');
 else pass('poll success activation source');
