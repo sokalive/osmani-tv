@@ -30,19 +30,29 @@ const waiting = read('components/PaymentWaitingStep.js');
 if (!waiting.includes('Inasubiri Uthibitisho wa Malipo')) fail('waiting title');
 else pass('waiting title');
 
-if (!waiting.includes('Tumetuma ombi la malipo kwenye simu yako')) fail('waiting body lead');
-else pass('waiting body lead');
+if (!waiting.includes('yanayoonekana kwenye simu yako')) fail('USSD/PIN popup wording');
+else pass('USSD/PIN popup wording');
 
-if (!waiting.includes('Tafadhali Usibonyeze')) fail('GHAIRI warning card');
-else pass('GHAIRI warning card');
+if (waiting.includes('Tumetuma ombi la malipo') || waiting.includes('ujumbe wa malipo uliotumwa')) {
+  fail('must not refer to SMS/message sent');
+} else pass('no SMS/message wording');
 
-if (!waiting.includes('Muhimu')) fail('Muhimu tips card');
-else pass('Muhimu tips card');
+if (!waiting.includes('Thibitisha malipo kwa PIN yako')) fail('short Muhimu tip 1');
+else pass('short Muhimu tip 1');
+
+if (!waiting.includes('Usibonyeze GHAIRI kabla malipo hayajakamilika')) fail('short GHAIRI tip');
+else pass('short GHAIRI tip');
+
+if (waiting.includes('warningCard')) fail('long warning card removed');
+else pass('long warning card removed');
+
+if (!modal.includes('scrollEnabled={step !== 3}')) fail('step 3 scroll disabled');
+else pass('step 3 scroll disabled');
 
 if (!waiting.includes('Hatua za Malipo')) fail('progress steps card');
 else pass('progress steps card');
 
-if (!waiting.includes('Ombi la Malipo Limetumwa')) fail('progress step 1 label');
+if (!waiting.includes('Ombi Limetumwa')) fail('progress step 1 label');
 else pass('progress step 1 label');
 
 if (!modal.includes('PaymentWaitingStep')) fail('PremiumModal uses PaymentWaitingStep');

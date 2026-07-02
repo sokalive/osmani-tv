@@ -769,6 +769,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                 <ScrollView
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
+                  scrollEnabled={step !== 3}
                   style={styles.modalScroll}
                   contentContainerStyle={
                     step === 2
@@ -1149,7 +1150,9 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   modalScrollContentStep3: {
-    paddingBottom: 120,
+    paddingBottom: 88,
+    flexGrow: 1,
+    justifyContent: 'flex-start',
   },
   modalScrollContentCompactResult: {
     paddingBottom: 24,
