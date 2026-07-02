@@ -29,7 +29,7 @@ import {
   resolveCheckoutStartPayment,
 } from '../api/payment';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
-import { formatCheckoutPaymentError } from '../lib/paymentCheckoutErrors';
+import { formatCheckoutPaymentError, PhoneSubscriptionConflictError } from '../lib/paymentCheckoutErrors';
 import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { verifySubscription } from '../api/subscription';
@@ -47,6 +47,7 @@ import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { reportPaymentTelemetry } from '../api/userCenterSync';
 import { cacheSecurityPhone } from '../lib/security/securityPhone';
 import { formatSubscriptionExpiry } from '../lib/formatExpiry';
+import EmergencyModal from './EmergencyModal';
 
 const ACCENT = '#FACC15';
 const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
@@ -158,6 +159,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [logoErrors, setLogoErrors] = useState({});
   const [checkoutProvider, setCheckoutProvider] = useState('zenopay');
   const [checkoutTestMode, setCheckoutTestMode] = useState(false);
+  const [phoneGuardVisible, setPhoneGuardVisible] = useState(false);
+  const [phoneGuardMessage, setPhoneGuardMessage] = useState('');
   const [checkoutLogoUrl, setCheckoutLogoUrl] = useState(null);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -222,6 +225,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setFailureReason('');
     setSuccessExpiresAt(null);
     setFinalizingSuccess(false);
+    setPhoneGuardVisible(false);
+    setPhoneGuardMessage('');
     fadeAnim.setValue(1);
     slideAnim.setValue(0);
   }, [visible, clearTimers, fadeAnim, slideAnim]);
@@ -610,10 +615,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       return;
     }
     setSubmitting(true);
+    let activeProvider = checkoutProvider;
     try {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
       const freshCfg = await reloadCheckoutConfig();
-      const activeProvider = freshCfg?.payment_provider ?? checkoutProvider;
+      activeProvider = freshCfg?.payment_provider ?? checkoutProvider;
       const payPayload = {
         phone: phoneNumber.replace(/\s/g, ''),
         plan_id: selectedPlan.id,
@@ -641,6 +647,28 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         amount: selectedPlan.price,
       });
     } catch (e) {
+      if (e instanceof PhoneSubscriptionConflictError || e?.name === 'PhoneSubscriptionConflictError') {
+        const userMsg = e.userMessage ?? e.message ?? 'Namba hii tayari ina kifurushi hai.';
+        setPhoneGuardMessage(userMsg);
+        setPhoneGuardVisible(true);
+        console.log(
+          '[PremiumModal]',
+          'phone_subscription_guard',
+          JSON.stringify({
+            code: e.code,
+            provider: e.provider ?? activeProvider,
+            httpStatus: e.httpStatus,
+            path: e.path,
+          }),
+        );
+        void reportPaymentTelemetry('phone_subscription_conflict', {
+          plan_id: selectedPlan?.id ?? null,
+          provider: e.provider ?? activeProvider,
+          code: e.code ?? null,
+          reason: e.backendReason ?? null,
+        });
+        return;
+      }
       const userMsg = e?.userMessage ?? e?.message ?? 'Imeshindwa kuanzisha malipo';
       if (e?.backendReason) {
         console.log(
@@ -690,6 +718,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const compactSheetHeight = Math.min(460, Math.round(WINDOW_HEIGHT * 0.56));
 
   return (
+    <>
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleCancel}>
       <KeyboardAvoidingView
         style={styles.overlay}
@@ -1051,6 +1080,15 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         </View>
       </KeyboardAvoidingView>
     </Modal>
+    <EmergencyModal
+      visible={phoneGuardVisible}
+      title="Taarifa"
+      message={phoneGuardMessage}
+      iconName="warning"
+      primaryLabel="Sawa"
+      onSawa={() => setPhoneGuardVisible(false)}
+    />
+    </>
   );
 }
 

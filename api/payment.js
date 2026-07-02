@@ -1,5 +1,6 @@
 import { parseCheckoutProvidersResponse } from '../lib/checkoutPaymentProviders';
-import { formatCheckoutPaymentError, extractPaymentBackendReason, logPaymentCheckoutFailure, CheckoutPaymentError } from '../lib/paymentCheckoutErrors';
+import { formatCheckoutPaymentError, extractPaymentBackendReason, logPaymentCheckoutFailure, CheckoutPaymentError, PhoneSubscriptionConflictError } from '../lib/paymentCheckoutErrors';
+import { isPhoneSubscriptionConflict, parsePhoneSubscriptionConflict } from '../lib/phoneSubscriptionGuard';
 import { resolveMediaAssetUrl } from '../lib/mediaDelivery';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { fetchAdminApiJson, fetchAdminApiResponse } from '../lib/catalogApiFetch';
@@ -224,6 +225,9 @@ async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
       tag: 'payment-create-order',
     });
     last = attempt;
+    if (isPhoneSubscriptionConflict(attempt.res.status, attempt.parsed)) {
+      break;
+    }
     const routeMissing = attempt.res.status === 404;
     if (routeMissing && i < paths.length - 1) continue;
     break;
@@ -231,6 +235,28 @@ async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
 
   const { res, parsed: body, url } = last;
   if (!res.ok) {
+    if (isPhoneSubscriptionConflict(res.status, body)) {
+      const conflict = parsePhoneSubscriptionConflict(body);
+      const backendReason = extractPaymentBackendReason(body, res.status);
+      logPaymentCheckoutFailure({
+        phase: 'phone-subscription-guard',
+        provider,
+        path: url,
+        httpStatus: res.status,
+        backendReason,
+        code: conflict.code,
+        existing_device_id: conflict.existingDeviceId,
+        remaining_days: conflict.remainingDays,
+      });
+      throw new PhoneSubscriptionConflictError(conflict.messageSw, {
+        code: conflict.code,
+        backendReason,
+        httpStatus: res.status,
+        provider,
+        path: url,
+        conflict,
+      });
+    }
     const backendReason = extractPaymentBackendReason(body, res.status);
     const providerHttpStatus = Number(body?.httpStatus ?? body?.providerHttpStatus);
     logPaymentCheckoutFailure({
