@@ -74,7 +74,7 @@ import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBa
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
-import { resolveChannelTapAccessSnapshot } from './lib/premiumChannelTapSnapshot';
+import { awaitPremiumSnapshotCapped } from './lib/premiumTapGate';
 import { instructionVideoVisibleForInstall, isInstructionVideoChannel } from './lib/instructionVideoChannel';
 import { readNativeAndroidVersionCode } from './lib/playVpsApiHost';
 import { logChannelCardTap } from './lib/channelCardTapDiagnostics';
@@ -767,61 +767,15 @@ function ChannelCatalogScreen({
         return;
       }
       const isFree = freeMode || channelIsFreeAccess(playerChannel, { freeMode });
-      const isPremiumChannel = isPremium && !isFree && !freeMode;
-
-      const { snapshot, paymentImmediate } = await resolveChannelTapAccessSnapshot({
-        getPremiumAccessSnapshot,
-        awaitPremiumAccessSnapshot,
-        premiumPlaybackReady,
-        isFreeChannel: isFree,
+      const snapshot = isFree
+        ? getPremiumAccessSnapshot()
+        : await awaitPremiumSnapshotCapped(getPremiumAccessSnapshot, awaitPremiumAccessSnapshot);
+      logChannelCardTap(isFree || snapshot.premiumPlaybackReady ? 'snapshot_sync' : 'snapshot_ready', {
+        channelKey,
+        isFree,
+        isSubscribed: snapshot.isSubscribed,
+        waitedMs: Date.now() - startedAt,
       });
-
-      if (!paymentImmediate && isPremiumChannel && !isSubscribed) {
-        await awaitRecoverBoot();
-        const refreshed = await resolveChannelTapAccessSnapshot({
-          getPremiumAccessSnapshot,
-          awaitPremiumAccessSnapshot,
-          premiumPlaybackReady,
-          isFreeChannel: isFree,
-        });
-        logChannelCardTap(
-          refreshed.paymentImmediate ? 'snapshot_payment_immediate' : 'snapshot_ready',
-          {
-            channelKey,
-            isFree,
-            isPremiumChannel,
-            isSubscribed: refreshed.snapshot.isSubscribed,
-            waitedMs: Date.now() - startedAt,
-          },
-        );
-        await openPremiumChannelFromSnapshot(refreshed.snapshot, {
-          playerChannel,
-          cardIsPremium: isPremium,
-          navigation,
-          openPaymentModal: openPremiumModal,
-          verifySubscriptionBeforePlay,
-          security,
-          Alert,
-          requireUpdateBeforeChannelPlayback,
-          onChannelUpdateRequired: requestChannelUpdateGate,
-        });
-        logChannelCardTap('navigation_finished', {
-          channelKey,
-          totalMs: Date.now() - startedAt,
-        });
-        return;
-      }
-
-      logChannelCardTap(
-        paymentImmediate ? 'snapshot_payment_immediate' : premiumPlaybackReady || isFree ? 'snapshot_sync' : 'snapshot_ready',
-        {
-          channelKey,
-          isFree,
-          isPremiumChannel,
-          isSubscribed: snapshot.isSubscribed,
-          waitedMs: Date.now() - startedAt,
-        },
-      );
       await openPremiumChannelFromSnapshot(snapshot, {
         playerChannel,
         cardIsPremium: isPremium,
@@ -830,8 +784,6 @@ function ChannelCatalogScreen({
         verifySubscriptionBeforePlay,
         security,
         Alert,
-        requireUpdateBeforeChannelPlayback,
-        onChannelUpdateRequired: requestChannelUpdateGate,
       });
       logChannelCardTap('navigation_finished', {
         channelKey,
@@ -839,7 +791,6 @@ function ChannelCatalogScreen({
       });
     },
     [
-      awaitRecoverBoot,
       awaitPremiumAccessSnapshot,
       verifySubscriptionBeforePlay,
       navigation,
@@ -850,9 +801,6 @@ function ChannelCatalogScreen({
       getPremiumAccessSnapshot,
       subscriptionSyncLoaded,
       trialWatchSettingsLoaded,
-      isSubscribed,
-      requireUpdateBeforeChannelPlayback,
-      requestChannelUpdateGate,
     ],
   );
 

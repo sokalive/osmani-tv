@@ -21,7 +21,7 @@ import {
   findRawChannelById,
 } from '../lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from '../lib/premiumChannelNavigation';
-import { resolveChannelTapAccessSnapshot } from '../lib/premiumChannelTapSnapshot';
+import { awaitPremiumSnapshotCapped } from '../lib/premiumTapGate';
 
 const COLORS = {
   white: '#FFFFFF',
@@ -358,37 +358,10 @@ function BannerCarousel({
         raw?.accessType === 'premium' ||
         Boolean(raw?.accessPremium === true || raw?.access_premium === true);
       const isPremium = freeMode ? false : isPremiumApi;
-      const isFree = freeMode || !isPremium;
-
-      const { snapshot, paymentImmediate } = await resolveChannelTapAccessSnapshot({
+      const snapshot = await awaitPremiumSnapshotCapped(
         getPremiumAccessSnapshot,
         awaitPremiumAccessSnapshot,
-        premiumPlaybackReady,
-        isFreeChannel: isFree,
-      });
-
-      if (!paymentImmediate && isPremium && !freeMode && !isSubscribed) {
-        await awaitRecoverBoot?.();
-        const refreshed = await resolveChannelTapAccessSnapshot({
-          getPremiumAccessSnapshot,
-          awaitPremiumAccessSnapshot,
-          premiumPlaybackReady,
-          isFreeChannel: isFree,
-        });
-        await openPremiumChannelFromSnapshot(refreshed.snapshot, {
-          playerChannel,
-          cardIsPremium: isPremium,
-          navigation,
-          openPaymentModal: openPaymentModal ?? onPremiumRequired ?? (() => {}),
-          verifySubscriptionBeforePlay,
-          security,
-          Alert,
-          requireUpdateBeforeChannelPlayback,
-          onChannelUpdateRequired,
-        });
-        return;
-      }
-
+      );
       await openPremiumChannelFromSnapshot(snapshot, {
         playerChannel,
         cardIsPremium: isPremium,
@@ -397,8 +370,6 @@ function BannerCarousel({
         verifySubscriptionBeforePlay,
         security,
         Alert,
-        requireUpdateBeforeChannelPlayback,
-        onChannelUpdateRequired,
       });
     },
     [
@@ -411,14 +382,9 @@ function BannerCarousel({
       onPremiumRequired,
       verifySubscriptionBeforePlay,
       awaitPremiumAccessSnapshot,
-      premiumPlaybackReady,
       getPremiumAccessSnapshot,
-      awaitRecoverBoot,
-      isSubscribed,
       openPaymentModal,
       security,
-      requireUpdateBeforeChannelPlayback,
-      onChannelUpdateRequired,
     ],
   );
 

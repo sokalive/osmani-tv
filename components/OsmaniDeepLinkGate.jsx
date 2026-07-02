@@ -23,14 +23,12 @@ export default function OsmaniDeepLinkGate({ navigationRef, pendingUrlRef }) {
     freeMode,
     maintenanceMode,
     emergencyMode,
-    awaitRecoverBoot,
+    premiumPlaybackReady,
+    awaitPremiumAccessSnapshot,
     getPremiumAccessSnapshot,
-    isSubscribed,
     requestPaymentModal,
     requestEmergencyModal,
     gateForPlayback,
-    requireUpdateBeforeChannelPlayback,
-    requestChannelUpdateGate,
   } = useOsmaniApp();
   const security = useSecurity();
 
@@ -62,15 +60,13 @@ export default function OsmaniDeepLinkGate({ navigationRef, pendingUrlRef }) {
         freeMode,
         maintenanceMode,
         emergencyMode,
-        awaitRecoverBoot,
+        premiumPlaybackReady,
+        awaitPremiumAccessSnapshot,
         getPremiumAccessSnapshot,
-        isSubscribed,
         requestPaymentModal,
         requestEmergencyModal,
         verifySubscriptionBeforePlay: gateForPlayback,
         security,
-        requireUpdateBeforeChannelPlayback,
-        onChannelUpdateRequired: requestChannelUpdateGate,
       });
 
       if (result.reason === 'nav_not_ready') {
@@ -96,15 +92,13 @@ export default function OsmaniDeepLinkGate({ navigationRef, pendingUrlRef }) {
       freeMode,
       maintenanceMode,
       emergencyMode,
-      isSubscribed,
-      awaitRecoverBoot,
+      premiumPlaybackReady,
+      awaitPremiumAccessSnapshot,
       getPremiumAccessSnapshot,
       requestPaymentModal,
       requestEmergencyModal,
       gateForPlayback,
       security,
-      requireUpdateBeforeChannelPlayback,
-      requestChannelUpdateGate,
     ],
   );
 

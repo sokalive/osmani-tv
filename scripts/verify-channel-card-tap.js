@@ -25,6 +25,7 @@ function pass(msg) {
 
 const app = read('App.js');
 const nav = read('lib/premiumChannelNavigation.js');
+const gate = read('lib/premiumTapGate.js');
 const diag = read('lib/channelCardTapDiagnostics.js');
 
 if (!diag.includes('[CHANNEL_CARD_TAP]')) fail('diagnostics prefix');
@@ -36,19 +37,13 @@ else pass('App.js tap logging');
 if (!app.includes('channelIsFreeAccess')) fail('App.js must use channelIsFreeAccess for sync snapshot');
 else pass('free channel sync snapshot');
 
-const tap = read('lib/premiumChannelTapSnapshot.js');
+if (!app.includes('awaitPremiumSnapshotCapped')) fail('App.js must use capped premium tap snapshot');
+else pass('capped premium tap snapshot');
 
-if (!app.includes('resolveChannelTapAccessSnapshot')) fail('App.js must use payment-immediate tap snapshot');
-else pass('payment-immediate tap snapshot helper');
+if (!gate.includes('PREMIUM_GATE_MAX_MS')) fail('premiumTapGate must cap boot wait');
+else pass('premiumTapGate 800ms cap');
 
-if (!app.includes('snapshot_payment_immediate')) fail('App.js must log payment-immediate snapshot');
-else pass('payment-immediate tap logging');
-
-if (!tap.includes('await awaitPremiumAccessSnapshot()')) {
-  fail('subscribed tap must still await snapshot when sync says active');
-} else pass('awaitPremiumAccessSnapshot for subscribed boot path');
-
-if (!tap.includes('getPremiumAccessSnapshot()')) fail('sync snapshot path missing');
+if (!app.includes('getPremiumAccessSnapshot()')) fail('sync snapshot path missing');
 else pass('getPremiumAccessSnapshot fast path');
 
 if (app.includes('if (item.isPremium && !freeMode && !premiumPlaybackReady)')) {
@@ -58,8 +53,15 @@ if (app.includes('if (item.isPremium && !freeMode && !premiumPlaybackReady)')) {
 if (!app.includes('delayPressIn={0}')) fail('Pressable delayPressIn=0 for Android tap reliability');
 else pass('delayPressIn=0 on cards');
 
-if (!nav.includes('shouldApplyTrialWatch')) fail('skip async trial when trial disabled');
-else pass('sync trial gate before payment modal');
+if (!nav.includes('void openPaymentModal()')) fail('payment modal must open synchronously');
+else pass('sync payment modal open');
+
+if (!nav.includes('TRIAL_GATE_MAX_MS')) fail('trial gate must be capped before payment modal');
+else pass('capped trial gate before payment modal');
+
+if (nav.includes('shouldBlockChannelForUpdate')) {
+  fail('channel update gate must not block premium tap before payment modal');
+} else pass('no channel update gate on tap path');
 
 if (process.exitCode) process.exit(1);
 console.log('\n[verify-channel-card-tap] ok');
