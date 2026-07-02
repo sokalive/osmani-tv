@@ -254,6 +254,7 @@ async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
         httpStatus: res.status,
         provider,
         path: url,
+        title: conflict.title,
         conflict,
       });
     }

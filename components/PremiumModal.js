@@ -160,6 +160,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [checkoutProvider, setCheckoutProvider] = useState('zenopay');
   const [checkoutTestMode, setCheckoutTestMode] = useState(false);
   const [phoneGuardVisible, setPhoneGuardVisible] = useState(false);
+  const [phoneGuardTitle, setPhoneGuardTitle] = useState('Taarifa');
   const [phoneGuardMessage, setPhoneGuardMessage] = useState('');
   const [checkoutLogoUrl, setCheckoutLogoUrl] = useState(null);
 
@@ -226,6 +227,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setSuccessExpiresAt(null);
     setFinalizingSuccess(false);
     setPhoneGuardVisible(false);
+    setPhoneGuardTitle('Taarifa');
     setPhoneGuardMessage('');
     fadeAnim.setValue(1);
     slideAnim.setValue(0);
@@ -649,6 +651,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     } catch (e) {
       if (e instanceof PhoneSubscriptionConflictError || e?.name === 'PhoneSubscriptionConflictError') {
         const userMsg = e.userMessage ?? e.message ?? 'Namba hii tayari ina kifurushi hai.';
+        setPhoneGuardTitle(e.title ?? 'Taarifa');
         setPhoneGuardMessage(userMsg);
         setPhoneGuardVisible(true);
         console.log(
@@ -659,6 +662,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
             provider: e.provider ?? activeProvider,
             httpStatus: e.httpStatus,
             path: e.path,
+            title: e.title ?? null,
+            displaySource: e.conflict?.displaySource ?? null,
           }),
         );
         void reportPaymentTelemetry('phone_subscription_conflict', {
@@ -1082,7 +1087,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     </Modal>
     <EmergencyModal
       visible={phoneGuardVisible}
-      title="Taarifa"
+      title={phoneGuardTitle}
       message={phoneGuardMessage}
       iconName="warning"
       primaryLabel="Sawa"
