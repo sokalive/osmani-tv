@@ -35,12 +35,12 @@ assertContains(
 );
 assertContains(
   'screens/AkauntiYanguScreen.js',
-  'details.planId',
-  'account label matches by planId',
+  'formatAccountPackageLabel',
+  'account label uses package name + price',
 );
 assertContains(
   'screens/AkauntiYanguScreen.js',
-  'lastPaymentLabelRef',
+  'lastPackageLabelRef',
   'payment card sticky ref during sparse refresh',
 );
 assertContains(

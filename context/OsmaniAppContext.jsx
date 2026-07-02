@@ -60,7 +60,9 @@ import {
   mergeSubscriptionDetails,
 } from '../lib/subscriptionDetailsMerge';
 import { enrichCanonicalSubscriptionTiming } from '../lib/subscriptionCanonical';
+import { enrichSubscriptionDetailsForDisplay } from '../lib/accountSubscriptionDisplay';
 import {
+  getCachedPaymentPlansSync,
   hydratePaymentPlansCacheFromStorage,
   refreshPaymentPlansCache,
   seedPaymentPlansCacheFromVerify,
@@ -222,7 +224,12 @@ export function OsmaniAppProvider({ children }) {
     isSubscribedRef.current = true;
     setIsSubscribed(true);
     setSubscriptionExpiresAt(cached.expiresAt ?? null);
-    setSubscriptionDetails(subscriptionDetailsFromCache(cached));
+    setSubscriptionDetails(
+      enrichSubscriptionDetailsForDisplay(
+        subscriptionDetailsFromCache(cached),
+        getCachedPaymentPlansSync() ?? [],
+      ),
+    );
     setSubscriptionVersion((v) => v + 1);
     console.log('[SUBSCRIPTION_CACHE]', reason, 'hydrated_active', {
       expiresAt: cached.expiresAt ?? null,
@@ -418,24 +425,33 @@ export function OsmaniAppProvider({ children }) {
           void seedPaymentPlansCacheFromVerify(effectiveResult.plans);
         }
         const detailSource = effectiveResult;
+        const catalogPlans = [
+          ...(Array.isArray(detailSource.plans) ? detailSource.plans : []),
+          ...(getCachedPaymentPlansSync() ?? []),
+        ];
         const rawDetailsPayload = active
-          ? enrichCanonicalSubscriptionTiming({
-              amount: detailSource.amount ?? null,
-              currency: detailSource.currency ?? null,
-              planName: detailSource.planName ?? null,
-              planId: detailSource.planId ?? null,
-              planDurationDays: detailSource.planDurationDays ?? detailSource.plan_duration_days ?? null,
-              plan_duration_days: detailSource.plan_duration_days ?? detailSource.planDurationDays ?? null,
-              startedAt: detailSource.startedAt ?? null,
-              expiresAt,
-              remainingSeconds: detailSource.remainingSeconds ?? detailSource.remaining_seconds ?? null,
-              remainingDays: detailSource.remainingDays ?? detailSource.remaining_days ?? null,
-              serverTime: detailSource.serverTime ?? null,
-              serverTimeFetchedAt,
-              plans: Array.isArray(detailSource.plans) ? detailSource.plans : [],
-              manualGiftAckKey: detailSource.manualGiftAckKey ?? null,
-              transportPreserved: effectiveResult.transportPreserved === true,
-            })
+          ? enrichCanonicalSubscriptionTiming(
+              enrichSubscriptionDetailsForDisplay(
+                {
+                  amount: detailSource.amount ?? null,
+                  currency: detailSource.currency ?? null,
+                  planName: detailSource.planName ?? null,
+                  planId: detailSource.planId ?? null,
+                  planDurationDays: detailSource.planDurationDays ?? detailSource.plan_duration_days ?? null,
+                  plan_duration_days: detailSource.plan_duration_days ?? detailSource.planDurationDays ?? null,
+                  startedAt: detailSource.startedAt ?? null,
+                  expiresAt,
+                  remainingSeconds: detailSource.remainingSeconds ?? detailSource.remaining_seconds ?? null,
+                  remainingDays: detailSource.remainingDays ?? detailSource.remaining_days ?? null,
+                  serverTime: detailSource.serverTime ?? null,
+                  serverTimeFetchedAt,
+                  plans: Array.isArray(detailSource.plans) ? detailSource.plans : [],
+                  manualGiftAckKey: detailSource.manualGiftAckKey ?? null,
+                  transportPreserved: effectiveResult.transportPreserved === true,
+                },
+                catalogPlans,
+              ),
+            )
           : null;
         const detailsPayload = rawDetailsPayload;
         let mergedDetails = null;
@@ -1005,8 +1021,17 @@ export function OsmaniAppProvider({ children }) {
           isSubscribedRef.current = true;
           setIsSubscribed(true);
           setSubscriptionExpiresAt(r.expiresAt ?? null);
-          const details = subscriptionDetailsFromVerifyResult({ ...r, active: true });
-          setSubscriptionDetails(details ?? subscriptionDetailsFromCache({ active: true, expiresAt: r.expiresAt }));
+          const detailsRaw = subscriptionDetailsFromVerifyResult({ ...r, active: true });
+          const recoverCatalog = [
+            ...(Array.isArray(r.plans) ? r.plans : []),
+            ...(getCachedPaymentPlansSync() ?? []),
+          ];
+          const details =
+            enrichCanonicalSubscriptionTiming(
+              enrichSubscriptionDetailsForDisplay(detailsRaw, recoverCatalog),
+            ) ??
+            subscriptionDetailsFromCache({ active: true, expiresAt: r.expiresAt });
+          setSubscriptionDetails(details);
           setSubscriptionVersion((v) => v + 1);
           const planSnapshot =
             extractPlanSnapshotFromDetails(details) ??

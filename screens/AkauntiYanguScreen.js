@@ -33,11 +33,19 @@ import {
   writeOfferCodeCooldownEndMs,
 } from '../lib/offerCodeCooldown';
 import { getDeviceLabel } from '../lib/deviceLabel';
-import { computeSubscriptionProgress, getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
+import { computeSubscriptionProgress, getBackendAnchoredRemainingMs } from '../lib/subscriptionMath';
 import {
   resolveCanonicalExpiresAt,
   resolveDisplayDurationDays,
 } from '../lib/subscriptionCanonical';
+import {
+  enrichSubscriptionDetailsForDisplay,
+  formatAccountPackageLabel,
+} from '../lib/accountSubscriptionDisplay';
+import {
+  getCachedPaymentPlansSync,
+  hydratePaymentPlansCacheFromStorage,
+} from '../lib/paymentPlansCache';
 import { formatSubscriptionRemainingCountdown } from '../lib/formatSubscriptionRemaining';
 import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
 
@@ -74,62 +82,11 @@ function StatCard({ icon, value, label }) {
  * Backend-authoritative formatters. None of these grant or revoke access;
  * they purely render values that the verify endpoint already returned.
  */
-function formatPrice(amount, currency) {
-  if (amount == null || amount === '') return null;
-  const n =
-    typeof amount === 'number' && Number.isFinite(amount)
-      ? amount
-      : Number(String(amount).replace(/,/g, ''));
-  if (!Number.isFinite(n)) return null;
-  const code = String(currency || '').toUpperCase();
-  const prefix = code === 'TZS' || code === '' ? 'TSh' : code;
-  let formatted;
-  try {
-    formatted = n.toLocaleString('en-US');
-  } catch {
-    formatted = String(n);
-  }
-  return `${prefix} ${formatted}`;
-}
-
-function resolveSubscriptionPaymentLabel(details) {
-  if (!details) return null;
-  const plans = Array.isArray(details.plans) ? details.plans : [];
-  const pickFromPlan = (p) =>
-    formatPrice(
-      p?.price ?? p?.amount ?? p?.Price ?? p?.Amount,
-      p?.currency ?? p?.currency_code ?? p?.currencyCode ?? details.currency,
-    );
-  const wantId = String(details.planId ?? details.plan_id ?? '').trim();
-  if (wantId) {
-    for (const p of plans) {
-      const id = String(p?.id ?? p?.plan_id ?? p?.planId ?? '').trim();
-      if (id && id === wantId) {
-        const fromPlan = pickFromPlan(p);
-        if (fromPlan) return fromPlan;
-      }
-    }
-  }
-  const want = String(details.planName ?? '').trim().toLowerCase();
-  if (want) {
-    for (const p of plans) {
-      const label = String(p?.name ?? p?.title ?? '').trim().toLowerCase();
-      if (label && label === want) {
-        const fromPlan = pickFromPlan(p);
-        if (fromPlan) return fromPlan;
-      }
-    }
-  }
-  if (plans.length === 1) {
-    const fromPlan = pickFromPlan(plans[0]);
-    if (fromPlan) return fromPlan;
-  }
-  return formatPrice(details.amount, details.currency);
-}
 
 /** Package length in days from verify payload (null when absent). */
-function resolvePlanDurationDays(details) {
-  return resolveDisplayDurationDays(details);
+function resolvePlanDurationDays(details, catalogPlans = []) {
+  const enriched = enrichSubscriptionDetailsForDisplay(details, catalogPlans);
+  return resolveDisplayDurationDays(enriched);
 }
 
 function formatOfferCooldownMmSs(totalSeconds) {
@@ -163,8 +120,11 @@ export default function AkauntiYanguScreen() {
   const [deviceIdFull, setDeviceIdFull] = useState('');
   /** Bumps on each Account tab focus — remounts Update App section (post-OTA cache bust). */
   const [accountUpdateSectionKey, setAccountUpdateSectionKey] = useState(0);
-  /** Last good payment label — survive sparse verify/cache refresh payloads. */
-  const lastPaymentLabelRef = useRef(null);
+  /** Last good package label — survive sparse verify/cache refresh payloads. */
+  const lastPackageLabelRef = useRef(null);
+  /** Last good duration days — survive sparse verify/cache refresh payloads. */
+  const lastDurationDaysRef = useRef(null);
+  const [paymentPlansCatalog, setPaymentPlansCatalog] = useState([]);
   const {
     isSubscribed,
     subscriptionExpiresAt,
@@ -172,6 +132,7 @@ export default function AkauntiYanguScreen() {
     subscriptionSyncLoaded,
     subscriptionRecoveryComplete,
     subscriptionVersion,
+    availablePlans,
     refreshSubscription,
   } = useOsmaniApp();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
@@ -196,17 +157,31 @@ export default function AkauntiYanguScreen() {
 
   useEffect(() => {
     if (!isSubscribed) {
-      lastPaymentLabelRef.current = null;
+      lastPackageLabelRef.current = null;
+      lastDurationDaysRef.current = null;
     }
   }, [isSubscribed, subscriptionVersion]);
+
+  const catalogPlans = useMemo(() => {
+    const fromContext = Array.isArray(availablePlans) ? availablePlans : [];
+    const fromCache = Array.isArray(paymentPlansCatalog) ? paymentPlansCatalog : [];
+    return [...fromContext, ...fromCache];
+  }, [availablePlans, paymentPlansCatalog]);
+
+  const displayDetails = useMemo(
+    () => enrichSubscriptionDetailsForDisplay(subscriptionDetails, catalogPlans),
+    [subscriptionDetails, catalogPlans],
+  );
 
   useEffect(() => {
     if (!isSubscribed) {
       return;
     }
-    const pay = resolveSubscriptionPaymentLabel(subscriptionDetails);
-    if (pay) lastPaymentLabelRef.current = pay;
-  }, [isSubscribed, subscriptionDetails]);
+    const label = formatAccountPackageLabel(displayDetails, catalogPlans);
+    if (label) lastPackageLabelRef.current = label;
+    const days = resolvePlanDurationDays(displayDetails, catalogPlans);
+    if (days != null) lastDurationDaysRef.current = days;
+  }, [isSubscribed, displayDetails, catalogPlans]);
 
   const canonicalExpiresAt = useMemo(
     () => resolveCanonicalExpiresAt(subscriptionDetails, subscriptionExpiresAt),
@@ -221,51 +196,58 @@ export default function AkauntiYanguScreen() {
   const progress = useMemo(
     () =>
       computeSubscriptionProgress({
-        startedAt: subscriptionDetails?.startedAt ?? null,
-        periodStartAt: subscriptionDetails?.periodStartAt ?? null,
+        startedAt: displayDetails?.startedAt ?? null,
+        periodStartAt: displayDetails?.periodStartAt ?? null,
         expiresAt: canonicalExpiresAt,
-        planDurationDays: subscriptionDetails?.planDurationDays ?? null,
-        displayDurationDays: subscriptionDetails?.displayDurationDays ?? null,
+        planDurationDays: displayDetails?.planDurationDays ?? null,
+        displayDurationDays: displayDetails?.displayDurationDays ?? null,
         remainingSeconds:
-          subscriptionDetails?.remainingSeconds ?? subscriptionDetails?.remaining_seconds ?? null,
-        serverTime: subscriptionDetails?.serverTime ?? null,
-        serverTimeFetchedAt: subscriptionDetails?.serverTimeFetchedAt ?? null,
+          displayDetails?.remainingSeconds ?? displayDetails?.remaining_seconds ?? null,
+        remainingDays: displayDetails?.remainingDays ?? displayDetails?.remaining_days ?? null,
+        serverTime: displayDetails?.serverTime ?? null,
+        serverTimeFetchedAt: displayDetails?.serverTimeFetchedAt ?? null,
         nowMsOverride: tickNowMs,
       }),
-    [subscriptionDetails, canonicalExpiresAt, tickNowMs],
+    [displayDetails, canonicalExpiresAt, tickNowMs],
   );
 
-  // Card 1: Malipo / Kifurushi — sticky when refresh omits amount/plans (cache/transport).
+  // Card 1: Malipo / Kifurushi — package name + amount; sticky when refresh omits fields.
   const paymentValue = useMemo(() => {
     if (!isSubscribed) return 'Hapana';
-    const fresh = resolveSubscriptionPaymentLabel(subscriptionDetails);
+    const fresh = formatAccountPackageLabel(displayDetails, catalogPlans);
     if (fresh) {
-      lastPaymentLabelRef.current = fresh;
+      lastPackageLabelRef.current = fresh;
       return fresh;
     }
-    return lastPaymentLabelRef.current ?? '—';
-  }, [isSubscribed, subscriptionDetails]);
+    return lastPackageLabelRef.current ?? '—';
+  }, [isSubscribed, displayDetails, catalogPlans]);
 
-  // Card 2: Muda Uliobaki wa Kifurushi — live countdown to expiry (server-anchored).
+  // Card 2: Muda Uliobaki wa Kifurushi — backend-anchored countdown (remaining_seconds first).
   const remainingCountdownValue = useMemo(() => {
     if (!isSubscribed) return '—';
     if (!canonicalExpiresAt) return '—';
-    const remainingMs = getServerAnchoredRemainingMs({
+    const remainingMs = getBackendAnchoredRemainingMs({
       expiresAt: canonicalExpiresAt,
-      serverTime: subscriptionDetails?.serverTime ?? null,
-      serverTimeFetchedAt: subscriptionDetails?.serverTimeFetchedAt ?? null,
+      remainingSeconds:
+        displayDetails?.remainingSeconds ?? displayDetails?.remaining_seconds ?? null,
+      serverTime: displayDetails?.serverTime ?? null,
+      serverTimeFetchedAt: displayDetails?.serverTimeFetchedAt ?? null,
       nowMsOverride: tickNowMs,
     });
     if (remainingMs == null) return '—';
     return formatSubscriptionRemainingCountdown(remainingMs);
-  }, [isSubscribed, subscriptionDetails, canonicalExpiresAt, tickNowMs]);
+  }, [isSubscribed, displayDetails, canonicalExpiresAt, tickNowMs]);
 
-  // Card 3: Muda wa Kifurushi — backend-aligned period length (not stale catalog alone).
+  // Card 3: Muda wa Kifurushi — backend-aligned period length with catalog fill.
   const durationValue = useMemo(() => {
     if (!isSubscribed) return '—';
-    const days = resolvePlanDurationDays(subscriptionDetails);
-    return days != null ? String(days) : '—';
-  }, [isSubscribed, subscriptionDetails]);
+    const days = resolvePlanDurationDays(displayDetails, catalogPlans);
+    if (days != null) {
+      lastDurationDaysRef.current = days;
+      return String(days);
+    }
+    return lastDurationDaysRef.current != null ? String(lastDurationDaysRef.current) : '—';
+  }, [isSubscribed, displayDetails, catalogPlans]);
 
   // Card 5 (status)
   const statusLabel =
@@ -309,6 +291,12 @@ export default function AkauntiYanguScreen() {
       setAccountUpdateSectionKey((k) => k + 1);
       void refreshSubscription();
       void syncCooldownFromStorage();
+      void (async () => {
+        const cached = getCachedPaymentPlansSync();
+        if (cached?.length) setPaymentPlansCatalog(cached);
+        const hydrated = await hydratePaymentPlansCacheFromStorage();
+        if (hydrated?.length) setPaymentPlansCatalog(hydrated);
+      })();
       (async () => {
         try {
           const identity = await getDeviceIdentity();
