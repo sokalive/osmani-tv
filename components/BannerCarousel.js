@@ -21,6 +21,7 @@ import {
   findRawChannelById,
 } from '../lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from '../lib/premiumChannelNavigation';
+import { resolveChannelTapAccessSnapshot } from '../lib/premiumChannelTapSnapshot';
 
 const COLORS = {
   white: '#FFFFFF',
@@ -357,13 +358,37 @@ function BannerCarousel({
         raw?.accessType === 'premium' ||
         Boolean(raw?.accessPremium === true || raw?.access_premium === true);
       const isPremium = freeMode ? false : isPremiumApi;
-      if (isPremium && !freeMode && !premiumPlaybackReady) {
-        await awaitPremiumAccessSnapshot?.();
-      }
-      if (isPremium && !freeMode && !isSubscribed) {
+      const isFree = freeMode || !isPremium;
+
+      const { snapshot, paymentImmediate } = await resolveChannelTapAccessSnapshot({
+        getPremiumAccessSnapshot,
+        awaitPremiumAccessSnapshot,
+        premiumPlaybackReady,
+        isFreeChannel: isFree,
+      });
+
+      if (!paymentImmediate && isPremium && !freeMode && !isSubscribed) {
         await awaitRecoverBoot?.();
+        const refreshed = await resolveChannelTapAccessSnapshot({
+          getPremiumAccessSnapshot,
+          awaitPremiumAccessSnapshot,
+          premiumPlaybackReady,
+          isFreeChannel: isFree,
+        });
+        await openPremiumChannelFromSnapshot(refreshed.snapshot, {
+          playerChannel,
+          cardIsPremium: isPremium,
+          navigation,
+          openPaymentModal: openPaymentModal ?? onPremiumRequired ?? (() => {}),
+          verifySubscriptionBeforePlay,
+          security,
+          Alert,
+          requireUpdateBeforeChannelPlayback,
+          onChannelUpdateRequired,
+        });
+        return;
       }
-      const snapshot = await awaitPremiumAccessSnapshot?.();
+
       await openPremiumChannelFromSnapshot(snapshot, {
         playerChannel,
         cardIsPremium: isPremium,

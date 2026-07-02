@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Premium playback regression — restore a99a906 snapshot gate vs HEAD instant snapshot.
+ * Premium tap regression — instant payment modal for unsubscribed; await snapshot for subscribed boot.
  * Run: node scripts/verify-premium-playback-regression.js
  */
 
@@ -27,28 +27,34 @@ function pass(msg) {
 const app = read('App.js');
 const banner = read('components/BannerCarousel.js');
 const nav = read('lib/premiumChannelNavigation.js');
+const tap = read('lib/premiumChannelTapSnapshot.js');
 
-if (!app.includes('await awaitPremiumAccessSnapshot()')) {
-  fail('App.js must await premium access snapshot when sync not ready');
-} else pass('App.js awaitPremiumAccessSnapshot restored');
+if (!tap.includes('paymentImmediate')) fail('premiumChannelTapSnapshot helper');
+else pass('premiumChannelTapSnapshot helper');
+
+if (!app.includes('resolveChannelTapAccessSnapshot')) fail('App.js uses tap snapshot helper');
+else pass('App.js tap snapshot helper');
+
+if (!app.includes('snapshot_payment_immediate')) fail('App.js logs payment-immediate path');
+else pass('App.js payment-immediate logging');
+
+if (!tap.includes('await awaitPremiumAccessSnapshot()')) {
+  fail('App.js must await snapshot for subscribed boot path');
+} else pass('App.js subscribed boot await preserved');
 
 if (!app.includes('premiumPlaybackReady || isFree')) {
   fail('App.js must keep free-channel fast snapshot path');
 } else pass('App.js free-channel fast path');
 
-if (!banner.includes('await awaitPremiumAccessSnapshot')) {
-  fail('BannerCarousel must await premium access snapshot');
-} else pass('BannerCarousel awaitPremiumAccessSnapshot restored');
+if (!banner.includes('resolveChannelTapAccessSnapshot')) {
+  fail('BannerCarousel must use tap snapshot helper');
+} else pass('BannerCarousel tap snapshot helper');
 
-if (app.includes("logChannelCardTap('snapshot_immediate'")) {
-  fail('App.js must not use snapshot_immediate without await');
-} else pass('no snapshot_immediate regression');
+if (nav.includes('await openPaymentModal()')) {
+  fail('payment modal must open synchronously for instant UI');
+} else pass('payment modal opens synchronously');
 
-if (!nav.includes('await openPaymentModal()')) {
-  fail('premiumChannelNavigation must await payment modal');
-} else pass('payment modal awaited');
-
-if (app.includes('awaitRecoverBoot')) pass('boot recovery kept on premium tap');
+if (app.includes('awaitRecoverBoot')) pass('boot recovery kept for subscribed boot path');
 else fail('missing awaitRecoverBoot');
 
 if (!process.exitCode) console.log('\n[verify-premium-playback-regression] ok');

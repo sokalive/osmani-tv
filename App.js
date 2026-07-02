@@ -74,6 +74,7 @@ import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBa
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
+import { resolveChannelTapAccessSnapshot } from './lib/premiumChannelTapSnapshot';
 import { instructionVideoVisibleForInstall, isInstructionVideoChannel } from './lib/instructionVideoChannel';
 import { readNativeAndroidVersionCode } from './lib/playVpsApiHost';
 import { logChannelCardTap } from './lib/channelCardTapDiagnostics';
@@ -767,15 +768,52 @@ function ChannelCatalogScreen({
       }
       const isFree = freeMode || channelIsFreeAccess(playerChannel, { freeMode });
       const isPremiumChannel = isPremium && !isFree && !freeMode;
-      if (isPremiumChannel && !isSubscribed) {
+
+      const { snapshot, paymentImmediate } = await resolveChannelTapAccessSnapshot({
+        getPremiumAccessSnapshot,
+        awaitPremiumAccessSnapshot,
+        premiumPlaybackReady,
+        isFreeChannel: isFree,
+      });
+
+      if (!paymentImmediate && isPremiumChannel && !isSubscribed) {
         await awaitRecoverBoot();
+        const refreshed = await resolveChannelTapAccessSnapshot({
+          getPremiumAccessSnapshot,
+          awaitPremiumAccessSnapshot,
+          premiumPlaybackReady,
+          isFreeChannel: isFree,
+        });
+        logChannelCardTap(
+          refreshed.paymentImmediate ? 'snapshot_payment_immediate' : 'snapshot_ready',
+          {
+            channelKey,
+            isFree,
+            isPremiumChannel,
+            isSubscribed: refreshed.snapshot.isSubscribed,
+            waitedMs: Date.now() - startedAt,
+          },
+        );
+        await openPremiumChannelFromSnapshot(refreshed.snapshot, {
+          playerChannel,
+          cardIsPremium: isPremium,
+          navigation,
+          openPaymentModal: openPremiumModal,
+          verifySubscriptionBeforePlay,
+          security,
+          Alert,
+          requireUpdateBeforeChannelPlayback,
+          onChannelUpdateRequired: requestChannelUpdateGate,
+        });
+        logChannelCardTap('navigation_finished', {
+          channelKey,
+          totalMs: Date.now() - startedAt,
+        });
+        return;
       }
-      const snapshot =
-        premiumPlaybackReady || isFree
-          ? getPremiumAccessSnapshot()
-          : await awaitPremiumAccessSnapshot();
+
       logChannelCardTap(
-        premiumPlaybackReady || isFree ? 'snapshot_sync' : 'snapshot_ready',
+        paymentImmediate ? 'snapshot_payment_immediate' : premiumPlaybackReady || isFree ? 'snapshot_sync' : 'snapshot_ready',
         {
           channelKey,
           isFree,
