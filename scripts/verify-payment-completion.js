@@ -25,6 +25,7 @@ function pass(msg) {
 }
 
 const modal = read('components/PremiumModal.js');
+const payment = read('api/payment.js');
 const app = read('App.js');
 const banner = read('components/BannerCarousel.js');
 
@@ -51,9 +52,21 @@ else pass('auto onClose after success');
 if (!modal.includes("source: 'poll-success'")) fail('poll success activation source');
 else pass('poll success activation source');
 
-if (!modal.includes("events = ['payment_success', 'payment_completed']")) {
+if (!modal.includes("'payment_success'") || !modal.includes("'payment_completed'")) {
   fail('payment_success SSE listener');
 } else pass('payment_success SSE listener');
+
+if (!modal.includes('probeSubscriptionActivation')) fail('fast subscription probe');
+else pass('fast subscription probe');
+
+if (!modal.includes('getSubscriptionStatusForDevice')) fail('status probe during activation');
+else pass('status probe during activation');
+
+if (!payment.includes('COMPLETED')) fail('broaden payment success status');
+else pass('broaden payment success status');
+
+if (!modal.includes('subscription_activated')) fail('subscription_activated SSE during wait');
+else pass('subscription_activated SSE during wait');
 
 if (!modal.includes('PAYMENT_ACTIVATION_MAX_ATTEMPTS_CONFIRMED')) {
   fail('extended activation attempts when payment confirmed');

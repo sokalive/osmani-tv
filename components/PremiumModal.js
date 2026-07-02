@@ -32,7 +32,7 @@ import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { formatCheckoutPaymentError, PhoneSubscriptionConflictError } from '../lib/paymentCheckoutErrors';
 import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
-import { verifySubscription } from '../api/subscription';
+import { verifySubscription, getSubscriptionStatusForDevice } from '../api/subscription';
 import { formatUserFacingApiError } from '../lib/catalogConnectivity';
 import {
   getCachedPaymentPlansSync,
@@ -129,6 +129,59 @@ function latestExpiryIso(...candidates) {
     }
   }
   return bestStr;
+}
+
+/**
+ * Fast subscription probes before slow reverify — critical after payment SUCCESS.
+ * @returns {Promise<{ verified: object|null; fetchExpires: string|null }>}
+ */
+async function probeSubscriptionActivation(deviceId, deviceFingerprint, identity) {
+  let fetchExpires = null;
+
+  try {
+    const sub = await fetchSubscription(deviceId);
+    fetchExpires = sub?.expiresAt ?? null;
+    if (sub?.active === true) {
+      return {
+        verified: { active: true, isActive: true, expiresAt: sub.expiresAt ?? null },
+        fetchExpires,
+      };
+    }
+  } catch {
+    // subscription-status optional
+  }
+
+  const candidateIds = [
+    identity?.packageAndroidId,
+    identity?.legacyPackageAndroidId,
+    identity?.subscriptionDeviceId,
+    identity?.displayedAccountId,
+    deviceId,
+  ];
+  const seen = new Set();
+  for (const raw of candidateIds) {
+    const id = String(raw ?? '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const hit = await getSubscriptionStatusForDevice(id);
+    if (hit?.active === true) {
+      return {
+        verified: { active: true, isActive: true, expiresAt: hit.expiresAt ?? null },
+        fetchExpires: hit.expiresAt ?? fetchExpires,
+      };
+    }
+  }
+
+  try {
+    const verified = await verifySubscription(deviceId, deviceFingerprint);
+    if (isSubscriptionActive(verified)) {
+      return { verified, fetchExpires };
+    }
+  } catch {
+    // verify optional during activation race
+  }
+
+  return { verified: null, fetchExpires };
 }
 
 /**
@@ -457,25 +510,34 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       try {
         let verified = null;
         let fetchExpires = null;
-        const { deviceId } = await getDeviceIdentity();
+        const identity = await getDeviceIdentity();
+        const { deviceId, deviceFingerprint } = identity;
 
         for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
           if (doneRef.current) return;
-          verified = await refreshSubscription();
-          try {
-            const sub = await fetchSubscription(deviceId);
-            fetchExpires = sub?.expiresAt ?? fetchExpires;
-            if (sub?.active === true && !isSubscriptionActive(verified)) {
-              verified = {
-                ...verified,
-                active: true,
-                isActive: true,
-                expiresAt: sub.expiresAt ?? null,
-              };
+
+          const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, identity);
+          verified = probed.verified;
+          fetchExpires = probed.fetchExpires ?? fetchExpires;
+
+          if (!verified) {
+            verified = await refreshSubscription();
+            try {
+              const sub = await fetchSubscription(deviceId);
+              fetchExpires = sub?.expiresAt ?? fetchExpires;
+              if (sub?.active === true && !isSubscriptionActive(verified)) {
+                verified = {
+                  ...verified,
+                  active: true,
+                  isActive: true,
+                  expiresAt: sub.expiresAt ?? null,
+                };
+              }
+            } catch {
+              // optional enrichment
             }
-          } catch {
-            // optional enrichment only
           }
+
           if (verified && isSubscriptionActive(verified)) {
             await finalizePaymentSuccess(verified, fetchExpires);
             return;
@@ -573,7 +635,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         let peek = null;
         try {
           const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-          peek = await verifySubscription(deviceId, deviceFingerprint);
+          const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, {
+            subscriptionDeviceId: deviceId,
+          });
+          peek = probed.verified;
         } catch {
           peek = null;
         }
@@ -618,21 +683,15 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
     const onMessage = (event) => {
       if (doneRef.current) return;
-      void (async () => {
-        try {
-          const payload = JSON.parse(event?.data ?? '{}');
-          const payloadActive = payload?.isActive === true || payload?.active === true;
-          if (!payloadActive) return;
-          const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-          const verified = await verifySubscription(deviceId, deviceFingerprint);
-          if (doneRef.current) return;
-          if (verified && isSubscriptionActive(verified)) {
-            void attemptPaymentActivation({ paymentConfirmed: true, source: 'subscription-stream' });
-          }
-        } catch {
-          // ignore malformed stream payloads / transient verify errors
-        }
-      })();
+      try {
+        const payload = JSON.parse(event?.data ?? '{}');
+        const payloadActive = payload?.isActive === true || payload?.active === true;
+        if (!payloadActive) return;
+        console.log('[PremiumModal]', 'subscription_stream_active');
+        void attemptPaymentActivation({ paymentConfirmed: true, source: 'subscription-stream' });
+      } catch {
+        // ignore malformed stream payloads
+      }
     };
 
     stream.addEventListener('message', onMessage);
@@ -653,7 +712,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   /** Admin / gateway payment_success SSE — activate immediately without waiting for next poll. */
   useEffect(() => {
     if (!visible || step !== 3 || doneRef.current) return undefined;
-    const events = ['payment_success', 'payment_completed'];
+    const events = [
+      'payment_success',
+      'payment_completed',
+      'subscription_activated',
+      'subscription_granted',
+      'subscription_changed',
+      'subscription_updated',
+    ];
     const offs = events.map((ev) =>
       subscribeRealtimeEvent(ev, () => {
         if (doneRef.current) return;

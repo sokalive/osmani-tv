@@ -344,10 +344,14 @@ export async function getPaymentStatus(orderId) {
     const msg = body?.error != null ? String(body.error) : `HTTP ${res.status}`;
     throw new Error(formatCheckoutPaymentError(msg, { httpStatus: res.status }));
   }
-  const st = String(body?.status ?? 'PENDING').toUpperCase();
-  const reason = String(body?.reason ?? '');
-  if (st === 'SUCCESS') return { status: 'SUCCESS', reason };
-  if (st === 'FAILED') return { status: 'FAILED', reason };
+  const st = String(body?.status ?? body?.payment_status ?? 'PENDING').toUpperCase();
+  const reason = String(body?.reason ?? body?.message ?? '');
+  if (['SUCCESS', 'COMPLETED', 'PAID', 'SUCCESSFUL', 'APPROVED'].includes(st)) {
+    return { status: 'SUCCESS', reason };
+  }
+  if (['FAILED', 'FAILURE', 'CANCELLED', 'CANCELED', 'DECLINED', 'REJECTED'].includes(st)) {
+    return { status: 'FAILED', reason };
+  }
   return { status: 'PENDING', reason };
 }
 
