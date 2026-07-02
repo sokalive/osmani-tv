@@ -26,8 +26,25 @@ function pass(msg) {
 
 const modal = read('components/PremiumModal.js');
 const payment = read('api/payment.js');
+const errors = read('lib/paymentCheckoutErrors.js');
 const app = read('App.js');
 const banner = read('components/BannerCarousel.js');
+
+if (!payment.includes('PAYMENT_CREATE_ORDER_TIMEOUT_MS')) fail('create-order extended timeout');
+else pass('create-order extended timeout');
+
+if (!payment.includes('timeoutMs: PAYMENT_CREATE_ORDER_TIMEOUT_MS')) {
+  fail('create-order passes extended timeout to fetch');
+} else pass('create-order passes extended timeout to fetch');
+
+if (!errors.includes('isPaymentCreateOrderTimeout')) fail('create-order timeout detector');
+else pass('create-order timeout detector');
+
+if (!modal.includes('create_order_timeout_recovery')) fail('create-order timeout recovery path');
+else pass('create-order timeout recovery path');
+
+if (!modal.includes('create-order-timeout-recovery')) fail('orphan subscription recovery poll');
+else pass('orphan subscription recovery poll');
 
 if (!modal.includes('finalizePaymentSuccess')) fail('finalizePaymentSuccess');
 else pass('finalizePaymentSuccess');

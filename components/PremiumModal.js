@@ -29,7 +29,11 @@ import {
   resolveCheckoutStartPayment,
 } from '../api/payment';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
-import { formatCheckoutPaymentError, PhoneSubscriptionConflictError } from '../lib/paymentCheckoutErrors';
+import {
+  formatCheckoutPaymentError,
+  isPaymentCreateOrderTimeout,
+  PhoneSubscriptionConflictError,
+} from '../lib/paymentCheckoutErrors';
 import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { verifySubscription, getSubscriptionStatusForDevice } from '../api/subscription';
@@ -72,6 +76,8 @@ const POLL_MS = 1500;
 const PAYMENT_ACTIVATION_RETRY_MS = 750;
 const PAYMENT_ACTIVATION_MAX_ATTEMPTS = 1;
 const PAYMENT_ACTIVATION_MAX_ATTEMPTS_CONFIRMED = 6;
+/** Waiting window when create-order HTTP timed out but USSD/PIN may still be active. */
+const CREATE_ORDER_ORPHAN_WAIT_SEC = 300;
 
 /**
  * Local fallback used only when GET /api/payment-providers fails or
@@ -673,6 +679,21 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     return () => clearTimers();
   }, [visible, step, orderId, clearTimers, pollOnce, handleFailed]);
 
+  /**
+   * create-order HTTP may time out after USSD/PIN was already triggered.
+   * Poll subscription activation without order_id until success or countdown ends.
+   */
+  useEffect(() => {
+    if (!visible || step !== 3 || orderId || !waitingDeviceId || doneRef.current) return undefined;
+
+    const recover = () => {
+      void moveToSuccessStep({ paymentConfirmed: true, source: 'create-order-timeout-recovery' });
+    };
+    recover();
+    const id = setInterval(recover, POLL_MS);
+    return () => clearInterval(id);
+  }, [visible, step, orderId, waitingDeviceId, moveToSuccessStep]);
+
   useEffect(() => {
     if (!visible || step !== 3 || !waitingDeviceId || doneRef.current) return undefined;
     closeSse();
@@ -766,8 +787,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setSubmitting(true);
     const activeProvider = checkoutProvider;
     const normalizedPhone = phoneNumber.replace(/\s/g, '');
+    let identity = identityPrefetchRef.current;
     try {
-      const identity = identityPrefetchRef.current ?? (await getDeviceIdentity());
+      identity = identity ?? (await getDeviceIdentity());
       identityPrefetchRef.current = identity;
       const { deviceId, deviceFingerprint } = identity;
       const payPayload = {
@@ -820,6 +842,24 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           provider: e.provider ?? activeProvider,
           code: e.code ?? null,
           reason: e.backendReason ?? null,
+        });
+        return;
+      }
+      if (isPaymentCreateOrderTimeout(e) && identity?.deviceId) {
+        console.log(
+          '[PremiumModal]',
+          'create_order_timeout_recovery',
+          JSON.stringify({ provider: activeProvider, deviceId: identity.deviceId }),
+        );
+        doneRef.current = false;
+        setWaitingDeviceId(identity.deviceId);
+        setOrderId(null);
+        setRemainingSeconds(CREATE_ORDER_ORPHAN_WAIT_SEC);
+        setPaymentProgressStep(1);
+        setStep(3);
+        void reportPaymentTelemetry('create_order_timeout_recovery', {
+          plan_id: selectedPlan?.id ?? null,
+          provider: activeProvider,
         });
         return;
       }
