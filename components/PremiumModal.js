@@ -22,7 +22,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import EventSource from 'react-native-sse';
 import {
-  fetchSubscription,
   getCheckoutPaymentProviders,
   getPaymentProviders,
   getPaymentStatus,
@@ -36,8 +35,13 @@ import {
 } from '../lib/paymentCheckoutErrors';
 import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
-import { verifySubscription, getSubscriptionStatusForDevice } from '../api/subscription';
+import { verifySubscription } from '../api/subscription';
 import { formatUserFacingApiError } from '../lib/catalogConnectivity';
+import {
+  isSubscriptionActive,
+  latestExpiryIso,
+  runPaymentActivationTick,
+} from '../lib/paymentActivation';
 import {
   getCachedPaymentPlansSync,
   normalizePaymentPlansList,
@@ -73,9 +77,6 @@ const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
 
 const POLL_MS = 1500;
-const PAYMENT_ACTIVATION_RETRY_MS = 750;
-const PAYMENT_ACTIVATION_MAX_ATTEMPTS = 1;
-const PAYMENT_ACTIVATION_MAX_ATTEMPTS_CONFIRMED = 6;
 /** Waiting window when create-order HTTP timed out but USSD/PIN may still be active. */
 const CREATE_ORDER_ORPHAN_WAIT_SEC = 300;
 
@@ -107,87 +108,6 @@ function formatPlanDuration(raw) {
   const match = value.match(/\d+/);
   if (match) return `(${match[0]} siku)`;
   return `(${value.replace(/^\(|\)$/g, '')})`;
-}
-
-function isSubscriptionActive(subscription) {
-  if (!subscription || typeof subscription !== 'object') return false;
-  return subscription.active === true || subscription.isActive === true;
-}
-
-function parseExpiryMs(v) {
-  if (v == null || v === '') return null;
-  const t = Date.parse(String(v));
-  return Number.isFinite(t) ? t : null;
-}
-
-/** Prefer the furthest future expiry when verify and subscription-status disagree (e.g. renewal). */
-function latestExpiryIso(...candidates) {
-  let bestStr = null;
-  let bestMs = null;
-  for (const raw of candidates) {
-    if (raw == null || raw === '') continue;
-    const s = String(raw).trim();
-    const ms = parseExpiryMs(s);
-    if (ms == null) continue;
-    if (bestMs == null || ms > bestMs) {
-      bestMs = ms;
-      bestStr = s;
-    }
-  }
-  return bestStr;
-}
-
-/**
- * Fast subscription probes before slow reverify — critical after payment SUCCESS.
- * @returns {Promise<{ verified: object|null; fetchExpires: string|null }>}
- */
-async function probeSubscriptionActivation(deviceId, deviceFingerprint, identity) {
-  let fetchExpires = null;
-
-  try {
-    const sub = await fetchSubscription(deviceId);
-    fetchExpires = sub?.expiresAt ?? null;
-    if (sub?.active === true) {
-      return {
-        verified: { active: true, isActive: true, expiresAt: sub.expiresAt ?? null },
-        fetchExpires,
-      };
-    }
-  } catch {
-    // subscription-status optional
-  }
-
-  const candidateIds = [
-    identity?.packageAndroidId,
-    identity?.legacyPackageAndroidId,
-    identity?.subscriptionDeviceId,
-    identity?.displayedAccountId,
-    deviceId,
-  ];
-  const seen = new Set();
-  for (const raw of candidateIds) {
-    const id = String(raw ?? '').trim();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    const hit = await getSubscriptionStatusForDevice(id);
-    if (hit?.active === true) {
-      return {
-        verified: { active: true, isActive: true, expiresAt: hit.expiresAt ?? null },
-        fetchExpires: hit.expiresAt ?? fetchExpires,
-      };
-    }
-  }
-
-  try {
-    const verified = await verifySubscription(deviceId, deviceFingerprint);
-    if (isSubscriptionActive(verified)) {
-      return { verified, fetchExpires };
-    }
-  } catch {
-    // verify optional during activation race
-  }
-
-  return { verified: null, fetchExpires };
 }
 
 /**
@@ -496,74 +416,41 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   );
 
   /**
-   * Stable a99a906 activation: fast probe, optional refresh+fetch merge, auto-close on success.
-   * Does NOT clear timers until finalizePaymentSuccess — polling/SSE keep retrying when pending.
+   * MFALME-style single activation tick per poll/SSE event (no blocking multi-minute loops).
+   * Keeps polling/SSE alive until finalizePaymentSuccess.
    */
-  const moveToSuccessStep = useCallback(
+  const schedulePostPaymentActivationPolls = useCallback(
     async ({ paymentConfirmed = false, source = 'poll' } = {}) => {
-      if (doneRef.current) return;
+      if (doneRef.current) return false;
       if (paymentConfirmed) setPaymentProgressStep(2);
-
-      const maxAttempts = paymentConfirmed
-        ? PAYMENT_ACTIVATION_MAX_ATTEMPTS_CONFIRMED
-        : PAYMENT_ACTIVATION_MAX_ATTEMPTS;
 
       try {
         const identity = await getDeviceIdentity();
         const { deviceId, deviceFingerprint } = identity;
-        let verified = null;
-        let fetchExpires = null;
+        const result = await runPaymentActivationTick({
+          deviceId,
+          deviceFingerprint,
+          identity,
+          refreshSubscription,
+        });
 
-        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-          if (doneRef.current) return;
-
-          const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, identity);
-          fetchExpires = probed.fetchExpires ?? fetchExpires;
-
-          if (probed.verified && isSubscriptionActive(probed.verified)) {
-            await finalizePaymentSuccess(probed.verified, fetchExpires);
-            void refreshSubscription().catch(() => {});
-            return;
-          }
-
-          const shouldSlowRefresh = paymentConfirmed ? attempt >= 1 : attempt >= 0;
-          if (shouldSlowRefresh) {
-            verified = await refreshSubscription();
-            try {
-              const sub = await fetchSubscription(deviceId);
-              fetchExpires = sub?.expiresAt ?? fetchExpires;
-              if (sub?.active === true && !isSubscriptionActive(verified)) {
-                verified = {
-                  ...verified,
-                  active: true,
-                  isActive: true,
-                  expiresAt: sub.expiresAt ?? null,
-                };
-              }
-            } catch {
-              // optional enrichment
-            }
-
-            if (verified && isSubscriptionActive(verified)) {
-              await finalizePaymentSuccess(verified, fetchExpires);
-              void refreshSubscription().catch(() => {});
-              return;
-            }
-          }
-
-          if (attempt < maxAttempts - 1) {
-            await new Promise((resolve) => setTimeout(resolve, PAYMENT_ACTIVATION_RETRY_MS));
-          }
+        if (result.active && result.subscription) {
+          await finalizePaymentSuccess(result.subscription, result.fetchExpires);
+          void refreshSubscription().catch(() => {});
+          console.log('[PremiumModal]', 'payment_activation_success', { source });
+          return true;
         }
 
         console.log('[PAYMENT_SUCCESS_VERIFY]', 'activation_pending', {
           source,
           paymentConfirmed,
-          active: verified?.active,
-          isActive: verified?.isActive,
+          active: result.subscription?.active,
+          isActive: result.subscription?.isActive,
         });
+        return false;
       } catch (e) {
         console.log('[PAYMENT_SUCCESS_VERIFY]', 'activation_error', e?.message ?? e);
+        return false;
       }
     },
     [refreshSubscription, finalizePaymentSuccess],
@@ -631,31 +518,26 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         }
 
         let peek = null;
-        let fetchExpires = null;
         try {
-          const identity = await getDeviceIdentity();
-          const { deviceId, deviceFingerprint } = identity;
-          const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, identity);
-          peek = probed.verified;
-          fetchExpires = probed.fetchExpires;
+          const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+          peek = await verifySubscription(deviceId, deviceFingerprint);
         } catch {
           peek = null;
         }
         if (doneRef.current) return;
         if (peek && isSubscriptionActive(peek)) {
-          await finalizePaymentSuccess(peek, fetchExpires);
-          void refreshSubscription().catch(() => {});
+          await schedulePostPaymentActivationPolls({ paymentConfirmed: true, source: 'poll-verify' });
           return;
         }
 
         if (status === 'SUCCESS') {
-          await moveToSuccessStep({ paymentConfirmed: true, source: 'poll-success' });
+          await schedulePostPaymentActivationPolls({ paymentConfirmed: true, source: 'poll-success' });
         }
       } catch {
         // transient network — keep polling
       }
     },
-    [moveToSuccessStep, handleFailed, finalizePaymentSuccess, refreshSubscription],
+    [schedulePostPaymentActivationPolls, handleFailed],
   );
 
   useEffect(() => {
@@ -687,12 +569,15 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     if (!visible || step !== 3 || orderId || !waitingDeviceId || doneRef.current) return undefined;
 
     const recover = () => {
-      void moveToSuccessStep({ paymentConfirmed: true, source: 'create-order-timeout-recovery' });
+      void schedulePostPaymentActivationPolls({
+        paymentConfirmed: true,
+        source: 'create-order-timeout-recovery',
+      });
     };
     recover();
     const id = setInterval(recover, POLL_MS);
     return () => clearInterval(id);
-  }, [visible, step, orderId, waitingDeviceId, moveToSuccessStep]);
+  }, [visible, step, orderId, waitingDeviceId, schedulePostPaymentActivationPolls]);
 
   useEffect(() => {
     if (!visible || step !== 3 || !waitingDeviceId || doneRef.current) return undefined;
@@ -708,10 +593,18 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           const payload = JSON.parse(event?.data ?? '{}');
           const payloadActive = payload?.isActive === true || payload?.active === true;
           if (!payloadActive) return;
-          console.log('[PremiumModal]', 'subscription_stream_active');
-          await moveToSuccessStep({ paymentConfirmed: true, source: 'subscription-stream' });
+          const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+          const verified = await verifySubscription(deviceId, deviceFingerprint);
+          if (doneRef.current) return;
+          if (verified && isSubscriptionActive(verified)) {
+            console.log('[PremiumModal]', 'subscription_stream_active');
+            await schedulePostPaymentActivationPolls({
+              paymentConfirmed: true,
+              source: 'subscription-stream',
+            });
+          }
         } catch {
-          // ignore malformed stream payloads
+          // ignore malformed stream payloads / transient verify errors
         }
       })();
     };
@@ -729,7 +622,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       }
       closeSse();
     };
-  }, [visible, step, waitingDeviceId, closeSse, moveToSuccessStep]);
+  }, [visible, step, waitingDeviceId, closeSse, schedulePostPaymentActivationPolls]);
 
   /** Admin / gateway payment_success SSE — activate immediately without waiting for next poll. */
   useEffect(() => {
@@ -746,13 +639,13 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       subscribeRealtimeEvent(ev, () => {
         if (doneRef.current) return;
         console.log('[PremiumModal]', 'payment_sse', ev);
-        void moveToSuccessStep({ paymentConfirmed: true, source: `sse:${ev}` });
+        void schedulePostPaymentActivationPolls({ paymentConfirmed: true, source: `sse:${ev}` });
       }),
     );
     return () => {
       offs.forEach((off) => off());
     };
-  }, [visible, step, moveToSuccessStep]);
+  }, [visible, step, schedulePostPaymentActivationPolls]);
 
   const handleCancel = () => {
     clearTimers();

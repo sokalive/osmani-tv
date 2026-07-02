@@ -6,10 +6,10 @@ import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { fetchAdminApiJson, fetchAdminApiResponse } from '../lib/catalogApiFetch';
 
 /**
- * USSD/PIN push can appear before the provider HTTP response returns.
- * Default admin API timeout (12s) aborts create-order while payment is in flight.
+ * MFALME parity: create-order must not abort while USSD/PIN is on the device.
+ * Uses fetchAdminApiResponse with noTimeout (plain fetch semantics).
  */
-export const PAYMENT_CREATE_ORDER_TIMEOUT_MS = 90_000;
+export const PAYMENT_CREATE_ORDER_NO_TIMEOUT = true;
 
 /**
  * Payment + subscription HTTP API (ZenoPay STK push).
@@ -229,7 +229,7 @@ async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
       method: 'POST',
       body: bodyPayload,
       tag: 'payment-create-order',
-      timeoutMs: PAYMENT_CREATE_ORDER_TIMEOUT_MS,
+      noTimeout: PAYMENT_CREATE_ORDER_NO_TIMEOUT,
     });
     last = attempt;
     if (isPhoneSubscriptionConflict(attempt.res.status, attempt.parsed)) {

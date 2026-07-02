@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Payment completion — auto-close waiting UI, keep polling alive until activation.
+ * Payment completion — MFALME-aligned activation pipeline.
  * Run: node scripts/verify-payment-completion.js
  */
 
@@ -26,38 +26,43 @@ function pass(msg) {
 
 const modal = read('components/PremiumModal.js');
 const payment = read('api/payment.js');
+const activation = read('lib/paymentActivation.js');
+const fetchLib = read('lib/catalogApiFetch.js');
 const errors = read('lib/paymentCheckoutErrors.js');
 const app = read('App.js');
 const banner = read('components/BannerCarousel.js');
 
-if (!payment.includes('PAYMENT_CREATE_ORDER_TIMEOUT_MS')) fail('create-order extended timeout');
-else pass('create-order extended timeout');
+if (!payment.includes('noTimeout: PAYMENT_CREATE_ORDER_NO_TIMEOUT')) {
+  fail('create-order must not abort (MFALME no-timeout)');
+} else pass('create-order no-timeout (MFALME parity)');
 
-if (!payment.includes('timeoutMs: PAYMENT_CREATE_ORDER_TIMEOUT_MS')) {
-  fail('create-order passes extended timeout to fetch');
-} else pass('create-order passes extended timeout to fetch');
+if (!fetchLib.includes('noTimeout')) fail('catalogApiFetch noTimeout support');
+else pass('catalogApiFetch noTimeout support');
 
-if (!errors.includes('isPaymentCreateOrderTimeout')) fail('create-order timeout detector');
-else pass('create-order timeout detector');
+if (!activation.includes('runPaymentActivationTick')) fail('runPaymentActivationTick');
+else pass('runPaymentActivationTick');
 
-if (!modal.includes('create_order_timeout_recovery')) fail('create-order timeout recovery path');
-else pass('create-order timeout recovery path');
+if (!activation.includes('probeSubscriptionActivation')) fail('probeSubscriptionActivation module');
+else pass('probeSubscriptionActivation module');
 
-if (!modal.includes('create-order-timeout-recovery')) fail('orphan subscription recovery poll');
-else pass('orphan subscription recovery poll');
+if (!modal.includes('schedulePostPaymentActivationPolls')) {
+  fail('schedulePostPaymentActivationPolls');
+} else pass('schedulePostPaymentActivationPolls');
 
-if (!modal.includes('finalizePaymentSuccess')) fail('finalizePaymentSuccess');
-else pass('finalizePaymentSuccess');
-
-if (!modal.includes('const moveToSuccessStep = useCallback')) fail('moveToSuccessStep');
-else pass('moveToSuccessStep');
+if (modal.includes('moveToSuccessStep')) fail('remove legacy moveToSuccessStep');
+else pass('no legacy moveToSuccessStep');
 
 if (modal.includes('activationInFlightRef')) fail('must not block activation with in-flight guard');
 else pass('no activation in-flight guard');
 
-const moveBlock = modal.match(/const moveToSuccessStep[\s\S]*?},\s*\n\s*\[refreshSubscription, finalizePaymentSuccess\]/);
-if (!moveBlock || moveBlock[0].includes('clearTimers();')) {
-  fail('moveToSuccessStep must not clear timers before success');
+if (!modal.includes('finalizePaymentSuccess')) fail('finalizePaymentSuccess');
+else pass('finalizePaymentSuccess');
+
+const schedBlock = modal.match(
+  /const schedulePostPaymentActivationPolls[\s\S]*?},\s*\n\s*\[refreshSubscription, finalizePaymentSuccess\]/,
+);
+if (!schedBlock || schedBlock[0].includes('clearTimers();')) {
+  fail('schedulePostPaymentActivationPolls must not clear timers before success');
 } else pass('polling survives failed activation attempt');
 
 if (!modal.includes('onUnlockSuccess?.()')) fail('auto onUnlockSuccess');
@@ -73,29 +78,21 @@ if (!modal.includes("'payment_success'") || !modal.includes("'payment_completed'
   fail('payment_success SSE listener');
 } else pass('payment_success SSE listener');
 
-if (!modal.includes('probeSubscriptionActivation')) fail('fast subscription probe');
-else pass('fast subscription probe');
+if (!modal.includes('verifySubscription(deviceId, deviceFingerprint)')) {
+  fail('poll peek uses verifySubscription (MFALME order)');
+} else pass('poll peek uses verifySubscription');
 
-if (!modal.includes('getSubscriptionStatusForDevice')) fail('status probe during activation');
-else pass('status probe during activation');
+if (!modal.includes('create_order_timeout_recovery')) fail('create-order timeout recovery path');
+else pass('create-order timeout recovery path');
+
+if (!errors.includes('isPaymentCreateOrderTimeout')) fail('create-order timeout detector');
+else pass('create-order timeout detector');
 
 if (!payment.includes('COMPLETED')) fail('broaden payment success status');
 else pass('broaden payment success status');
 
 if (!modal.includes('subscription_activated')) fail('subscription_activated SSE during wait');
 else pass('subscription_activated SSE during wait');
-
-if (!modal.includes('PAYMENT_ACTIVATION_MAX_ATTEMPTS_CONFIRMED')) {
-  fail('extended activation attempts when payment confirmed');
-} else pass('extended activation attempts when payment confirmed');
-
-if (!modal.includes('PAYMENT_ACTIVATION_RETRY_MS = 750')) {
-  fail('stable a99a906 activation retry interval');
-} else pass('stable a99a906 activation retry interval');
-
-if (!modal.includes('peek && isSubscriptionActive(peek)')) {
-  fail('poll verifies subscription before payment SUCCESS');
-} else pass('poll peek-before-success order');
 
 if (!app.includes('pendingChannelAfterPaymentRef')) fail('pending channel after payment ref');
 else pass('pending channel after payment ref');
