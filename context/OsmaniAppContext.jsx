@@ -61,6 +61,12 @@ import {
 } from '../lib/subscriptionDetailsMerge';
 import { enrichCanonicalSubscriptionTiming } from '../lib/subscriptionCanonical';
 import { enrichSubscriptionDetailsForDisplay } from '../lib/accountSubscriptionDisplay';
+import { buildPaymentSuccessDetails } from '../lib/paymentSuccessDisplay';
+import {
+  isActivationSuccessSseEvent,
+  parseInstantSubscriptionFromSse,
+  sseGrantTargetsThisDevice,
+} from '../lib/subscriptionSseInstant';
 import {
   getCachedPaymentPlansSync,
   hydratePaymentPlansCacheFromStorage,
@@ -187,6 +193,10 @@ export function OsmaniAppProvider({ children }) {
   }
   /** Incremented to open PremiumModal from any screen (trial / preview expiry). */
   const [paymentModalRequest, setPaymentModalRequest] = useState(0);
+  /** Global activation success (admin grant, offer code, transfer target — not payment modal). */
+  const [activationSuccessVisible, setActivationSuccessVisible] = useState(false);
+  const [activationSuccessDetails, setActivationSuccessDetails] = useState(null);
+  const [activationSuccessSource, setActivationSuccessSource] = useState('admin_grant');
   /** Legacy channel playback blocked until APK update (admin toggle). */
   const [channelUpdateGateVisible, setChannelUpdateGateVisible] = useState(false);
   const presentChannelUpdateGateRef = useRef(() => false);
@@ -236,6 +246,98 @@ export function OsmaniAppProvider({ children }) {
     });
     return true;
   }, []);
+
+  /**
+   * v1.0.0-style instant subscription UI — SSE hints, unlock, admin grants.
+   * Persists cache + details immediately; background verify still confirms access.
+   */
+  const applyInstantSubscriptionState = useCallback(async (hint, reason = 'instant') => {
+    if (!hint || hint.active !== true) return null;
+    const expiresAt = hint.expiresAt ?? null;
+    isSubscribedRef.current = true;
+    setIsSubscribed(true);
+    setSubscriptionExpiresAt(expiresAt);
+    setRevokedReason(null);
+
+    const catalogPlans = [
+      ...(Array.isArray(hint.plans) ? hint.plans : []),
+      ...(getCachedPaymentPlansSync() ?? []),
+    ];
+    const detailsBase = subscriptionDetailsFromVerifyResult({ ...hint, active: true });
+    const enriched = enrichCanonicalSubscriptionTiming(
+      enrichSubscriptionDetailsForDisplay(detailsBase, catalogPlans),
+    );
+
+    let mergedDetails = enriched;
+    setSubscriptionDetails((prev) => {
+      mergedDetails = mergeSubscriptionDetails(prev, enriched);
+      return mergedDetails;
+    });
+    setSubscriptionVersion((v) => v + 1);
+
+    if (Array.isArray(hint.plans) && hint.plans.length > 0) {
+      setAvailablePlans(hint.plans);
+      void seedPaymentPlansCacheFromVerify(hint.plans);
+    }
+
+    try {
+      const identity = await getDeviceIdentity();
+      const planSnapshot = extractPlanSnapshotFromDetails(mergedDetails);
+      await writeSubscriptionCache({
+        active: true,
+        expiresAt,
+        deviceId: identity.deviceId,
+        fingerprint: identity.deviceFingerprint,
+        planSnapshot,
+      });
+    } catch (e) {
+      console.log('[SUBSCRIPTION_INSTANT]', reason, 'cache_write_error', e?.message ?? e);
+    }
+
+    console.log('[SUBSCRIPTION_INSTANT]', reason, {
+      expiresAt,
+      planName: mergedDetails?.planName ?? null,
+      planDurationDays: mergedDetails?.planDurationDays ?? null,
+    });
+    return mergedDetails;
+  }, []);
+
+  const showActivationSuccess = useCallback((details, source = 'admin_grant') => {
+    const built = buildPaymentSuccessDetails(details);
+    if (!built?.expiresAt && !built?.planName) return;
+    setActivationSuccessDetails(built);
+    setActivationSuccessSource(source);
+    setActivationSuccessVisible(true);
+  }, []);
+
+  const dismissActivationSuccess = useCallback(() => {
+    setActivationSuccessVisible(false);
+    setActivationSuccessDetails(null);
+  }, []);
+
+  const tryInstantApplyFromSse = useCallback(
+    async (eventName, payload) => {
+      if (!(await sseGrantTargetsThisDevice(payload))) {
+        console.log('[SUBSCRIPTION_INSTANT]', 'sse_skipped_other_device', { eventName });
+        return null;
+      }
+      const hint = parseInstantSubscriptionFromSse(payload, eventName);
+      if (hint?.active !== true) return null;
+      const details = await applyInstantSubscriptionState(hint, `sse-instant:${eventName}`);
+      if (
+        details &&
+        isActivationSuccessSseEvent(eventName) &&
+        eventName !== 'payment_success' &&
+        eventName !== 'payment_completed'
+      ) {
+        const source =
+          eventName === 'manual_subscription_granted' ? 'admin_grant' : 'custom_grant';
+        showActivationSuccess(details, source);
+      }
+      return details;
+    },
+    [applyInstantSubscriptionState, showActivationSuccess],
+  );
 
   /**
    * Single trust path. Always hits the backend and treats `active` as the
@@ -683,16 +785,18 @@ export function OsmaniAppProvider({ children }) {
   }, [reverifySubscription, subscriptionDetails]);
 
   /** Apply the same object returned from `reverifySubscription` / API (strict `isActive`). */
-  const unlockChannels = useCallback((subscription) => {
-    if (!subscription) return;
-    const active = subscription.isActive === true || subscription.active === true;
-    if (!active) return;
-    isSubscribedRef.current = true;
-    setIsSubscribed(true);
-    if (subscription.expiresAt != null) setSubscriptionExpiresAt(String(subscription.expiresAt));
-    setRevokedReason(null);
-    setSubscriptionVersion((v) => v + 1);
-  }, []);
+  const unlockChannels = useCallback(
+    (subscription) => {
+      if (!subscription) return;
+      const active = subscription.isActive === true || subscription.active === true;
+      if (!active) return;
+      void applyInstantSubscriptionState(
+        { ...subscription, active: true },
+        'unlock-channels',
+      );
+    },
+    [applyInstantSubscriptionState],
+  );
 
   const refreshServerHealth = useCallback(async (reason = 'fetch') => {
     try {
@@ -1256,6 +1360,7 @@ export function OsmaniAppProvider({ children }) {
     const offSubscriptionLifecycle = SUBSCRIPTION_SSE_EVENTS.map((ev) =>
       subscribeRealtimeEvent(ev, (payload) => {
         console.log('[SUBSCRIPTION_SSE]', ev, payload);
+        void tryInstantApplyFromSse(ev, payload);
         void reverifySubscription(`sse:${ev}`);
         scheduleAdminDrivenSoftSync(`sse:${ev}`);
         if (ev === 'payment_success' || ev === 'payment_completed') {
@@ -1267,6 +1372,7 @@ export function OsmaniAppProvider({ children }) {
       subscribeRealtimeEvent(ev, (payload) => {
         console.log('[USER_CENTER_SSE]', ev, payload);
         void registerDeviceIntelligence();
+        void tryInstantApplyFromSse(ev, payload);
         void reverifySubscription(`sse:${ev}`);
         void refreshPaymentPlansCache({ reason: `sse:${ev}` });
         scheduleAdminDrivenSoftSync(`sse:${ev}`);
@@ -1296,9 +1402,11 @@ export function OsmaniAppProvider({ children }) {
         }
         sourceTransferSessionRef.current = null;
         setPendingTransfer(null);
+        void tryInstantApplyFromSse('transfer_completed', payload);
         const r = await reverifySubscription('sse:transfer_completed');
         if (r?.active === true) {
           setRevokedReason(null);
+          showActivationSuccess(r, 'transfer');
         }
       })();
     });
@@ -1310,7 +1418,13 @@ export function OsmaniAppProvider({ children }) {
       console.log('[TRANSFER_APPROVED]', 'sse', payload);
       sourceTransferSessionRef.current = null;
       setPendingTransfer(null);
-      void reverifySubscription('sse:transfer_approved');
+      void tryInstantApplyFromSse('transfer_approved', payload);
+      void reverifySubscription('sse:transfer_approved').then((r) => {
+        if (r?.active === true) {
+          setRevokedReason(null);
+          showActivationSuccess(r, 'transfer');
+        }
+      });
     });
     // Source-device approve/reject popup fires on EITHER event name —
     // the new backend uses `transfer_confirmation_required`; the older
@@ -1418,7 +1532,7 @@ export function OsmaniAppProvider({ children }) {
       offRuntimeModes.forEach((off) => off());
       offCatalogAliases.forEach((off) => off());
     };
-  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway]);
+  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway, tryInstantApplyFromSse, showActivationSuccess]);
 
   // Foreground sync: refresh catalog + reverify periodically while app is active.
   useEffect(() => {
@@ -1686,6 +1800,12 @@ export function OsmaniAppProvider({ children }) {
       awaitPremiumGateReady,
       paymentModalRequest,
       requestPaymentModal,
+      activationSuccessVisible,
+      activationSuccessDetails,
+      activationSuccessSource,
+      showActivationSuccess,
+      dismissActivationSuccess,
+      applyInstantSubscriptionState,
       requireUpdateBeforeChannelPlayback: settings.requireUpdateBeforeChannelPlayback,
       phoneNumberGateEnabled: settings.phoneNumberGateEnabled !== false,
       channelUpdateGateVisible,
@@ -1738,6 +1858,12 @@ export function OsmaniAppProvider({ children }) {
       awaitPremiumGateReady,
       paymentModalRequest,
       requestPaymentModal,
+      activationSuccessVisible,
+      activationSuccessDetails,
+      activationSuccessSource,
+      showActivationSuccess,
+      dismissActivationSuccess,
+      applyInstantSubscriptionState,
       channelUpdateGateVisible,
       requestChannelUpdateGate,
       presentChannelUpdateGate,

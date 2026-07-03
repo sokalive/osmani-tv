@@ -845,6 +845,11 @@ function normalizeVerifyResponse(body, fallback = {}) {
   };
 }
 
+/** Public alias for SSE envelopes and instant-apply hints (same shape as verify). */
+export function parseSubscriptionPayload(body, fallback = {}) {
+  return normalizeVerifyResponse(body, fallback);
+}
+
 function expandDeviceKeys(payload) {
   if (!payload || typeof payload !== 'object') return payload;
   const out = { ...payload };

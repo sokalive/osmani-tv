@@ -39,7 +39,7 @@ import NotificationPermissionReminderGate from './components/NotificationPermiss
 import ManualSubscriptionGiftModal from './components/ManualSubscriptionGiftModal';
 import PopupSettingsModal from './components/PopupSettingsModal';
 import TransferConfirmModal from './components/TransferConfirmModal';
-import TransferSuccessModal from './components/TransferSuccessModal';
+import SubscriptionActivationSuccessModal from './components/SubscriptionActivationSuccessModal';
 import TransferredAwayModal from './components/TransferredAwayModal';
 import UpdateOverlay from './components/UpdateOverlay';
 import ChannelUpdateGateHost from './components/ChannelUpdateGateHost';
@@ -1641,12 +1641,17 @@ function SubscriptionLifecycleGates() {
     pendingTransfer,
     dismissPendingTransfer,
     reverifySubscription,
+    activationSuccessVisible,
+    activationSuccessDetails,
+    activationSuccessSource,
+    dismissActivationSuccess,
   } = useOsmaniApp();
   const [recovering, setRecovering] = useState(false);
   const [plansOpen, setPlansOpen] = useState(false);
 
   useRegisterBlockingSheet('lifecycle-plans', plansOpen);
   useRegisterBlockingSheet('lifecycle-transfer', Boolean(pendingTransfer));
+  useRegisterBlockingSheet('lifecycle-activation-success', activationSuccessVisible);
   useRegisterBlockingSheet(
     'lifecycle-revoked',
     Boolean(revokedReason) && revokedReason !== 'transferred' && !plansOpen,
@@ -1715,6 +1720,12 @@ function SubscriptionLifecycleGates() {
         onOpenPlans={onOpenPlans}
       />
       <PremiumModal visible={plansOpen} onClose={onPlansClose} onUnlockSuccess={onPlansUnlock} />
+      <SubscriptionActivationSuccessModal
+        visible={activationSuccessVisible}
+        details={activationSuccessDetails}
+        source={activationSuccessSource}
+        onDismiss={dismissActivationSuccess}
+      />
     </>
   );
 }

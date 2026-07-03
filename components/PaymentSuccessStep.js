@@ -26,7 +26,13 @@ function DetailRow({ label, value }) {
 /**
  * Premium payment success dialog (step 4) — backend values only.
  */
-export default function PaymentSuccessStep({ details, onOpenChannel }) {
+export default function PaymentSuccessStep({
+  details,
+  onOpenChannel,
+  subtitle = 'Umefanikiwa kununua kifurushi.',
+  message = 'Sasa unaweza kutazama channel zote za Premium Live kuanzia muda huu.',
+  channelButtonLabel = 'FUNGUA CHANNEL',
+}) {
   const planName = details?.planName ?? '—';
   const pricePaid = formatPaymentAmount(details?.amount, details?.currency ?? 'TZS');
   const duration = formatBackendDurationDays(details?.planDurationDays);
@@ -37,7 +43,7 @@ export default function PaymentSuccessStep({ details, onOpenChannel }) {
   return (
     <View style={styles.wrap}>
       <Text style={styles.celebration}>🎉 Hongera!</Text>
-      <Text style={styles.subtitle}>Umefanikiwa kununua kifurushi.</Text>
+      <Text style={styles.subtitle}>{subtitle}</Text>
 
       <View style={styles.iconHalo}>
         <View style={styles.iconCircle}>
@@ -54,9 +60,7 @@ export default function PaymentSuccessStep({ details, onOpenChannel }) {
         <DetailRow label="Siku zilizobaki" value={remainingDays} />
       </View>
 
-      <Text style={styles.message}>
-        Sasa unaweza kutazama channel zote za Premium Live kuanzia muda huu.
-      </Text>
+      <Text style={styles.message}>{message}</Text>
 
       <Pressable style={styles.ctaWrap} onPress={onOpenChannel} accessibilityRole="button">
         <LinearGradient
@@ -65,7 +69,7 @@ export default function PaymentSuccessStep({ details, onOpenChannel }) {
           end={{ x: 1, y: 1 }}
           style={styles.ctaGradient}
         >
-          <Text style={styles.ctaText}>FUNGUA CHANNEL</Text>
+          <Text style={styles.ctaText}>{channelButtonLabel}</Text>
         </LinearGradient>
       </Pressable>
     </View>

@@ -22,7 +22,7 @@ import UpdateAppSection from '../components/UpdateAppSection';
 import AccountUpdateSectionBoundary from '../components/AccountUpdateSectionBoundary';
 import HamishaKifurushiModal from '../components/HamishaKifurushiModal';
 import PremiumModal from '../components/PremiumModal';
-import { redeemOfferCode } from '../api/subscription';
+import { redeemOfferCode, parseSubscriptionPayload } from '../api/subscription';
 import { useDeviceIntelligence } from '../context/DeviceIntelligenceContext';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { formatSubscriptionExpiry } from '../lib/formatExpiry';
@@ -134,6 +134,8 @@ export default function AkauntiYanguScreen() {
     subscriptionVersion,
     availablePlans,
     refreshSubscription,
+    showActivationSuccess,
+    applyInstantSubscriptionState,
   } = useOsmaniApp();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
 
@@ -330,7 +332,12 @@ export default function AkauntiYanguScreen() {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
       const r = await redeemOfferCode(deviceId, deviceFingerprint, raw);
       if (r.ok) {
-        await refreshSubscription();
+        const hint = parseSubscriptionPayload(r.raw, { active: true });
+        if (hint?.active === true) {
+          await applyInstantSubscriptionState(hint, 'offer-code-redeem');
+        }
+        const fresh = await refreshSubscription();
+        showActivationSuccess(fresh ?? hint, 'offer_code');
         setOfferCodeInput('');
         navigation.navigate('Home');
         return;
@@ -355,6 +362,8 @@ export default function AkauntiYanguScreen() {
     refreshSubscription,
     navigation,
     guardDeviceIntelligence,
+    showActivationSuccess,
+    applyInstantSubscriptionState,
   ]);
 
   return (
