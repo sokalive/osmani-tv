@@ -514,12 +514,6 @@ export function OsmaniAppProvider({ children }) {
               resolveSource: r.resolveSource ?? null,
               hadActive: isSubscribedRef.current,
             });
-            if (r?.manualGiftAckKey) {
-              setSubscriptionDetails((prev) =>
-                mergeSubscriptionDetails(prev, { manualGiftAckKey: r.manualGiftAckKey }),
-              );
-              setSubscriptionVersion((v) => v + 1);
-            }
             return effectiveResult;
           }
           if (verifyKey !== lastVerifyKeyRef.current) return r;
@@ -548,8 +542,10 @@ export function OsmaniAppProvider({ children }) {
           void seedPaymentPlansCacheFromVerify(effectiveResult.plans);
         }
         const detailSource = effectiveResult;
-        const resolvedManualGiftAckKey =
-          r?.manualGiftAckKey ?? detailSource?.manualGiftAckKey ?? null;
+        const resolvedManualGiftShowPopup = r?.manualGiftShowPopup === true;
+        const resolvedManualGiftAckKey = resolvedManualGiftShowPopup
+          ? (r?.manualGiftAckKey ?? detailSource?.manualGiftAckKey ?? null)
+          : null;
         const catalogPlans = [
           ...(Array.isArray(detailSource.plans) ? detailSource.plans : []),
           ...(getCachedPaymentPlansSync() ?? []),
@@ -571,6 +567,7 @@ export function OsmaniAppProvider({ children }) {
                   serverTime: detailSource.serverTime ?? null,
                   serverTimeFetchedAt,
                   plans: Array.isArray(detailSource.plans) ? detailSource.plans : [],
+                  manualGiftShowPopup: resolvedManualGiftShowPopup,
                   manualGiftAckKey: resolvedManualGiftAckKey,
                   transportPreserved: effectiveResult.transportPreserved === true,
                 },
@@ -583,9 +580,6 @@ export function OsmaniAppProvider({ children }) {
         setSubscriptionDetails((prev) => {
           if (!active) return null;
           mergedDetails = mergeSubscriptionDetails(prev, detailsPayload);
-          if (resolvedManualGiftAckKey && !mergedDetails?.manualGiftAckKey) {
-            mergedDetails = { ...mergedDetails, manualGiftAckKey: resolvedManualGiftAckKey };
-          }
           return mergedDetails;
         });
         traceAccountDisplay('reverifySubscription', {
@@ -602,6 +596,7 @@ export function OsmaniAppProvider({ children }) {
         console.log('[MANUAL_GIFT]', 'context_after_verify', {
           reason,
           active,
+          manualGiftShowPopup: detailsPayload?.manualGiftShowPopup === true,
           manualGiftAckKey: detailsPayload?.manualGiftAckKey ?? null,
           rawVerifyManualGiftAckKey: r?.manualGiftAckKey ?? null,
         });
@@ -1650,6 +1645,20 @@ export function OsmaniAppProvider({ children }) {
     console.log('[SUBSCRIPTION_CLEAR_LOCAL]', reason);
   }, []);
 
+  /** Clear stale manual-gift popup state without touching subscription active flag. */
+  const dismissManualGiftClientState = useCallback((reason = 'dismiss') => {
+    setSubscriptionDetails((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        manualGiftShowPopup: false,
+        manualGiftAckKey: null,
+      };
+    });
+    setSubscriptionVersion((v) => v + 1);
+    console.log('[MANUAL_GIFT]', 'client_state_cleared', { reason });
+  }, []);
+
   /**
    * Source Phone A: instant loss of premium access; success popup only when user initiated transfer.
    */
@@ -1810,6 +1819,7 @@ export function OsmaniAppProvider({ children }) {
       applySourceTransferCompleted,
       dismissSourceTransferSuccess,
       clearLocalActiveSubscription,
+      dismissManualGiftClientState,
       pendingTransfer,
       dismissPendingTransfer,
       triggerPendingTransfer,
@@ -1868,6 +1878,7 @@ export function OsmaniAppProvider({ children }) {
       applySourceTransferCompleted,
       dismissSourceTransferSuccess,
       clearLocalActiveSubscription,
+      dismissManualGiftClientState,
       pendingTransfer,
       dismissPendingTransfer,
       triggerPendingTransfer,

@@ -645,11 +645,51 @@ function ackKeyFromManualGiftObject(mg) {
 }
 
 /**
+ * Backend signals whether the one-time manual-gift congratulations popup should show.
+ * Popup is server-authoritative — absent or false means never show.
+ */
+function pickManualGiftShowPopup(body) {
+  if (!isPlainObject(body)) return false;
+  const data = isPlainObject(body.data) ? body.data : null;
+  const giftObjs = collectManualGiftObjects(body);
+
+  for (const mg of giftObjs) {
+    if (mg.showPopup === true || mg.show_popup === true) return true;
+    if (mg.showPopup === false || mg.show_popup === false) return false;
+    if (
+      mg.pending_ack === true ||
+      mg.pendingAck === true ||
+      mg.requires_ack === true ||
+      mg.requiresAck === true
+    ) {
+      return true;
+    }
+  }
+
+  if (
+    body.manual_gift_show_popup === true ||
+    body.manualGiftShowPopup === true ||
+    body.show_manual_gift_popup === true ||
+    data?.manual_gift_show_popup === true ||
+    data?.manualGiftShowPopup === true ||
+    data?.show_manual_gift_popup === true
+  ) {
+    return true;
+  }
+
+  if (body.manualGift === null || body.manual_gift === null) return false;
+  if (data?.manualGift === null || data?.manual_gift === null) return false;
+
+  return false;
+}
+
+/**
  * Stable key for admin-applied manual subscription gifts. Must change when the
  * backend issues a NEW gift so the app can show the one-time congratulations again.
  */
 function pickManualGiftAckKey(body) {
   if (!isPlainObject(body)) return null;
+  if (!pickManualGiftShowPopup(body)) return null;
   const data = isPlainObject(body.data) ? body.data : null;
   const sub = isPlainObject(body.subscription) ? body.subscription : null;
   const nestedSub = pickDataSubscription(body);
@@ -704,19 +744,6 @@ function pickManualGiftAckKey(body) {
     pay?.manual_gift_version,
   );
 
-  const flag =
-    body.manualGift === true ||
-    data?.manualGift === true ||
-    body.manual_subscription_gift === true ||
-    body.manualSubscriptionGift === true ||
-    body.is_manual_subscription_gift === true ||
-    body.isManualSubscriptionGift === true ||
-    data?.manual_subscription_gift === true ||
-    sub?.manual_subscription_gift === true ||
-    nestedSub?.manual_subscription_gift === true;
-
-  if (!explicitId && version == null && !flag && giftObjs.length === 0) return null;
-
   if (explicitId) {
     const k = version != null ? `${explicitId}:${version}` : explicitId;
     if (__DEV__) console.log('[MANUAL_GIFT]', 'pick_ack_key_flat_id', { key: k });
@@ -727,24 +754,9 @@ function pickManualGiftAckKey(body) {
     if (__DEV__) console.log('[MANUAL_GIFT]', 'pick_ack_key_version_only', { key: k });
     return k;
   }
-  if (flag || giftObjs.length > 0) {
-    const started = pickStartedAt(body);
-    if (started) {
-      const k = `manual_gift_started:${started}`;
-      if (__DEV__) console.log('[MANUAL_GIFT]', 'pick_ack_key_flag_started', { key: k });
-      return k;
-    }
-    const exp = pickExpiresAt(body);
-    if (exp) {
-      const k = `manual_gift_exp:${exp}`;
-      if (__DEV__) console.log('[MANUAL_GIFT]', 'pick_ack_key_flag_exp', { key: k });
-      return k;
-    }
-  }
-  if (__DEV__ && (giftObjs.length > 0 || flag)) {
+  if (__DEV__ && giftObjs.length > 0) {
     console.log('[MANUAL_GIFT]', 'pick_ack_key_miss', {
       hasManualGiftObjects: giftObjs.length > 0,
-      flag,
     });
   }
   return null;
@@ -769,6 +781,7 @@ function normalizeVerifyResponse(body, fallback = {}) {
       plan_duration_days: null,
       plans: [],
       manualGiftAckKey: null,
+      manualGiftShowPopup: false,
       phone: null,
       raw: body,
       ...fallback,
@@ -842,6 +855,7 @@ function normalizeVerifyResponse(body, fallback = {}) {
     plans: pickPlans(body),
     deviceId: pickStringList(body.device_id, body.deviceId),
     phone: pickPhoneFromApiBody(body),
+    manualGiftShowPopup: pickManualGiftShowPopup(body),
     manualGiftAckKey: pickManualGiftAckKey(body),
     inactiveReason,
     raw: body,

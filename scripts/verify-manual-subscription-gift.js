@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * MFALME manual subscription gift ack key — static + merge unit checks.
+ * MFALME manual subscription gift — static + normalization unit checks.
  * Run: node scripts/verify-manual-subscription-gift.js
  */
 
@@ -31,23 +31,24 @@ const giftModal = fs.readFileSync(
 const giftAck = fs.readFileSync(path.join(root, 'lib', 'manualGiftAck.js'), 'utf8');
 
 const required = [
+  [subApi, 'pickManualGiftShowPopup', 'pickManualGiftShowPopup gate'],
+  [subApi, 'manualGiftShowPopup: pickManualGiftShowPopup(body)', 'normalize exports manualGiftShowPopup'],
   [subApi, 'pickManualGiftAckKey', 'pickManualGiftAckKey in subscription API'],
   [subApi, 'acknowledgeManualGift', 'acknowledgeManualGift export'],
   [subApi, 'normalizeVerifyResponse', 'normalizeVerifyResponse'],
-  [subApi, 'manualGiftAckKey', 'manualGiftAckKey in verify normalization'],
-  [subApi, 'subRoot?.entitlement_remaining_seconds', 'subRoot entitlement fields'],
-  [context, 'reverifySubscription', 'reverifySubscription in context'],
-  [context, 'resolvedManualGiftAckKey', 'resolvedManualGiftAckKey from raw verify'],
-  [context, 'r?.manualGiftAckKey', 'raw verify manualGiftAckKey preserved'],
-  [context, 'mergeSubscriptionDetails(prev, { manualGiftAckKey', 'transport preserve gift key'],
-  [context, 'hydrateSubscriptionFromCache', 'hydrateSubscriptionFromCache'],
+  [context, 'resolvedManualGiftShowPopup', 'context gates gift key on showPopup'],
+  [context, 'dismissManualGiftClientState', 'dismissManualGiftClientState export'],
+  [context, 'manualGiftShowPopup: resolvedManualGiftShowPopup', 'context passes manualGiftShowPopup'],
+  [app, 'manualGiftShowPopup === true', 'tryShowManualGift requires showPopup'],
+  [app, 'isNoPendingManualGiftError', 'ack failure clears stale gift'],
+  [app, 'dismissManualGiftClientState', 'App clears stale gift state'],
+  [app, 'purgeStaleManualGiftPendingKey', 'App purges stale pending key'],
   [app, 'tryShowManualGift', 'tryShowManualGift popup flow'],
   [app, 'acknowledgeManualGiftPress', 'acknowledgeManualGiftPress handler'],
   [app, 'ManualSubscriptionGiftModal', 'ManualSubscriptionGiftModal mounted'],
   [giftModal, 'ASANTE', 'gift modal ASANTE button'],
-  [giftAck, 'writePendingManualGiftKey', 'pending gift key persistence'],
-  [giftAck, 'writeManualGiftAck', 'acked gift key persistence'],
-  [hydrate, 'manualGiftAckKey: result.manualGiftAckKey', 'verify result carries gift key'],
+  [giftAck, 'isNoPendingManualGiftError', 'no-pending error detector'],
+  [giftAck, 'purgeStaleManualGiftPendingKey', 'purge stale pending helper'],
 ];
 
 for (const [src, needle, label] of required) {
@@ -55,49 +56,31 @@ for (const [src, needle, label] of required) {
   else pass(label);
 }
 
-if (
-  /setSubscriptionDetails\(\(prev\)\s*=>\s*\n?\s*mergeSubscriptionDetails/.test(context) &&
-  context.includes('hydrateSubscriptionFromCache')
-) {
-  pass('cache hydrate merges details via mergeSubscriptionDetails');
-} else {
-  fail('cache hydrate merges details via mergeSubscriptionDetails');
-}
+const stickyMatch = mergeSrc.match(/stickyFields\s*=\s*\[([\s\S]*?)\]/);
+if (stickyMatch && stickyMatch[1].includes('manualGiftAckKey')) {
+  fail('manualGiftAckKey must not be a sticky merge field');
+} else pass('manualGiftAckKey not sticky');
 
-if (mergeSrc.includes('manualGiftAckKey: null')) {
-  fail('plan snapshot/cache must not force manualGiftAckKey null');
-} else pass('no forced null manualGiftAckKey in merge module');
+if (!subApi.includes('if (!pickManualGiftShowPopup(body)) return null;')) {
+  fail('pickManualGiftAckKey must be gated on showPopup');
+} else pass('pickManualGiftAckKey gated on showPopup');
 
-if (!hydrate.includes('subscriptionDetailsFromCache')) {
-  fail('subscriptionDetailsFromCache required');
-} else {
-  const cacheFn = hydrate.slice(
-    hydrate.indexOf('export function subscriptionDetailsFromCache'),
-    hydrate.indexOf('export function', hydrate.indexOf('export function subscriptionDetailsFromCache') + 1) ||
-      hydrate.length,
-  );
-  if (cacheFn.includes('manualGiftAckKey: null')) {
-    fail('sparse cache fallback must not wipe manualGiftAckKey');
-  } else pass('sparse cache fallback preserves gift key slot');
-}
+if (app.includes("else if (pending !== '' && ack !== pending)")) {
+  fail('pending-only popup path must be removed');
+} else pass('no pending-only popup path');
 
 const { mergeSubscriptionDetails } = require('../lib/subscriptionDetailsMerge');
 
-const sticky = mergeSubscriptionDetails(
-  { manualGiftAckKey: 'gift-abc', amount: 5000 },
-  { manualGiftAckKey: null, expiresAt: '2026-12-01' },
+const cleared = mergeSubscriptionDetails(
+  { manualGiftAckKey: 'stale-key', manualGiftShowPopup: true, amount: 5000 },
+  { manualGiftShowPopup: false, manualGiftAckKey: null, expiresAt: '2026-12-01' },
 );
-if (sticky.manualGiftAckKey !== 'gift-abc') {
-  fail('merge must stick manualGiftAckKey when incoming is null');
-} else pass('merge sticks manualGiftAckKey on sparse incoming');
-
-const incomingWins = mergeSubscriptionDetails(
-  { manualGiftAckKey: 'gift-old' },
-  { manualGiftAckKey: 'gift-new' },
-);
-if (incomingWins.manualGiftAckKey !== 'gift-new') {
-  fail('incoming manualGiftAckKey must win when present');
-} else pass('incoming manualGiftAckKey wins');
+if (cleared.manualGiftAckKey != null) fail('merge must clear stale manualGiftAckKey');
+else pass('merge clears stale manualGiftAckKey');
+if (cleared.manualGiftShowPopup === true) fail('merge must clear showPopup when server says false');
+else pass('merge clears showPopup');
+if (cleared.amount !== 5000) fail('merge still preserves amount');
+else pass('merge preserves amount');
 
 if (!process.exitCode) {
   console.log('\n[verify-manual-subscription-gift] ok');

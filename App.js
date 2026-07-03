@@ -91,6 +91,8 @@ import { logFirstLaunchBootDiagnostics } from './lib/firstLaunchBootDiagnostics'
 import { logStartupStep } from './lib/startupStepLog';
 import {
   clearPendingManualGiftKey,
+  isNoPendingManualGiftError,
+  purgeStaleManualGiftPendingKey,
   readManualGiftAck,
   readPendingManualGiftKey,
   writeManualGiftAck,
@@ -308,6 +310,7 @@ function ChannelCatalogScreen({
     premiumPlaybackReady,
     requireUpdateBeforeChannelPlayback,
     requestChannelUpdateGate,
+    dismissManualGiftClientState,
   } = useOsmaniApp();
   const security = useSecurity();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
@@ -431,11 +434,14 @@ function ChannelCatalogScreen({
 
   const tryShowManualGift = useCallback(
     async (source) => {
-      const detailsKey = subscriptionDetailsRef.current?.manualGiftAckKey ?? null;
+      const details = subscriptionDetailsRef.current;
+      const detailsKey = details?.manualGiftAckKey ?? null;
+      const showPopup = details?.manualGiftShowPopup === true;
       const subscribed = isSubscribedRef.current;
       console.log('[MANUAL_GIFT]', 'popup_try', source, {
         enableHomeExpiryReminder,
         manualGiftAckLoaded,
+        manualGiftShowPopup: showPopup,
         manualGiftAckKey: detailsKey ?? null,
         isSubscribed: subscribed,
         blockingSheetActive: isBlockingSheetActive,
@@ -452,22 +458,35 @@ function ChannelCatalogScreen({
       }
       await syncPendingGiftBlocking();
 
+      if (!subscribed || !showPopup || detailsKey == null || detailsKey === '') {
+        const pending = await readPendingManualGiftKey();
+        if (pending) {
+          await purgeStaleManualGiftPendingKey();
+          dismissManualGiftClientState('verify_no_pending_gift');
+        }
+        if (manualGiftVisibleRef.current) {
+          manualGiftVisibleRef.current = false;
+          setManualGiftVisible(false);
+        }
+        console.log('[MANUAL_GIFT]', 'popup_skip', source, 'server_gate_failed', {
+          subscribed,
+          showPopup,
+          detailsKey,
+        });
+        return false;
+      }
+
       const ack = await readManualGiftAck();
       const pending = await readPendingManualGiftKey();
 
-      if (detailsKey != null && detailsKey !== '' && ack === detailsKey) {
+      if (ack === detailsKey) {
         await clearPendingManualGiftKey();
         await syncPendingGiftBlocking();
         console.log('[MANUAL_GIFT]', 'popup_skip', source, 'already_acked_matches_verify');
         return false;
       }
 
-      let outstanding = null;
-      if (detailsKey != null && detailsKey !== '' && ack !== detailsKey) {
-        outstanding = detailsKey;
-      } else if (pending !== '' && ack !== pending) {
-        outstanding = pending;
-      }
+      const outstanding = detailsKey;
 
       console.log('[MANUAL_GIFT]', 'popup_ack_compare', source, {
         storedAck: ack || '(empty)',
@@ -475,11 +494,6 @@ function ChannelCatalogScreen({
         detailsKey,
         outstanding,
       });
-
-      if (!outstanding || !subscribed) {
-        console.log('[MANUAL_GIFT]', 'popup_skip', source, 'no_outstanding_or_not_subscribed');
-        return false;
-      }
 
       if (isBlockingSheetActive) {
         deferredManualGiftRef.current = true;
@@ -508,6 +522,7 @@ function ChannelCatalogScreen({
       blockingSheetIds,
       premiumModalVisible,
       syncPendingGiftBlocking,
+      dismissManualGiftClientState,
     ],
   );
 
@@ -531,6 +546,7 @@ function ChannelCatalogScreen({
     manualGiftAckLoaded,
     subscriptionVersion,
     subscriptionDetails?.manualGiftAckKey,
+    subscriptionDetails?.manualGiftShowPopup,
   ]);
 
   useEffect(() => {
@@ -630,10 +646,12 @@ function ChannelCatalogScreen({
   }, [premiumModalVisible, enableHomeExpiryReminder]);
 
   const acknowledgeManualGiftPress = useCallback(async () => {
-    const dk = subscriptionDetailsRef.current?.manualGiftAckKey ?? null;
+    const details = subscriptionDetailsRef.current;
+    const dk = details?.manualGiftAckKey ?? null;
+    const showPopup = details?.manualGiftShowPopup === true;
     const pending = await readPendingManualGiftKey();
     const key =
-      dk != null && dk !== ''
+      showPopup && dk != null && dk !== ''
         ? dk
         : pending !== ''
           ? pending
@@ -653,6 +671,14 @@ function ChannelCatalogScreen({
       console.log('[MANUAL_GIFT]', 'ack_complete', { key });
       void syncPendingGiftBlocking();
     } catch (e) {
+      if (isNoPendingManualGiftError(e)) {
+        await purgeStaleManualGiftPendingKey();
+        dismissManualGiftClientState('ack_no_pending_gift');
+        manualGiftVisibleRef.current = false;
+        setManualGiftVisible(false);
+        console.log('[MANUAL_GIFT]', 'ack_stale_cleared', { key });
+        return;
+      }
       Alert.alert(
         'Hitilafu',
         typeof e?.message === 'string' ? e.message : 'Huwezi kuthibitisha sasa. Jaribu tena.',
@@ -660,7 +686,7 @@ function ChannelCatalogScreen({
     } finally {
       setManualGiftAckBusy(false);
     }
-  }, [syncPendingGiftBlocking]);
+  }, [syncPendingGiftBlocking, dismissManualGiftClientState]);
 
   const openPremiumModal = useCallback((pendingChannel) => {
     if (guardDeviceIntelligence().ok === false) return;
