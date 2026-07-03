@@ -18,7 +18,11 @@ const logPath = path.join(__dirname, '..', 'ota-publish-account-display-fix.log'
 const groups = [];
 
 function appendLog(text) {
-  fs.appendFileSync(logPath, text + '\n');
+  try {
+    fs.appendFileSync(logPath, text + '\n');
+  } catch {
+    // Tee-Object or concurrent writers may lock the log on Windows — non-fatal.
+  }
 }
 
 fs.writeFileSync(logPath, `[publish-account-display-ota] started ${new Date().toISOString()}\n`);
