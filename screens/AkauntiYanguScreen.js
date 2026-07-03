@@ -39,9 +39,12 @@ import {
   resolveDisplayDurationDays,
 } from '../lib/subscriptionCanonical';
 import {
+  buildAccountDisplayDetails,
   enrichSubscriptionDetailsForDisplay,
   formatAccountPackageLabel,
 } from '../lib/accountSubscriptionDisplay';
+import { readHydratableSubscriptionCache } from '../lib/subscriptionCacheHydrate';
+import { subscriptionDetailsFromPlanSnapshot } from '../lib/subscriptionDetailsMerge';
 import {
   getCachedPaymentPlansSync,
   hydratePaymentPlansCacheFromStorage,
@@ -84,9 +87,8 @@ function StatCard({ icon, value, label }) {
  */
 
 /** Package length in days from verify payload (null when absent). */
-function resolvePlanDurationDays(details, catalogPlans = []) {
-  const enriched = enrichSubscriptionDetailsForDisplay(details, catalogPlans);
-  return resolveDisplayDurationDays(enriched);
+function resolvePlanDurationDays(displayDetails) {
+  return resolveDisplayDurationDays(displayDetails);
 }
 
 function formatOfferCooldownMmSs(totalSeconds) {
@@ -171,8 +173,8 @@ export default function AkauntiYanguScreen() {
   }, [availablePlans, paymentPlansCatalog]);
 
   const displayDetails = useMemo(
-    () => enrichSubscriptionDetailsForDisplay(subscriptionDetails, catalogPlans),
-    [subscriptionDetails, catalogPlans],
+    () => buildAccountDisplayDetails(subscriptionDetails, subscriptionExpiresAt, catalogPlans),
+    [subscriptionDetails, subscriptionExpiresAt, catalogPlans],
   );
 
   useEffect(() => {
@@ -181,9 +183,32 @@ export default function AkauntiYanguScreen() {
     }
     const label = formatAccountPackageLabel(displayDetails, catalogPlans);
     if (label) lastPackageLabelRef.current = label;
-    const days = resolvePlanDurationDays(displayDetails, catalogPlans);
+    const days = resolvePlanDurationDays(displayDetails);
     if (days != null) lastDurationDaysRef.current = days;
   }, [isSubscribed, displayDetails, catalogPlans]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void (async () => {
+        if (!isSubscribed) return;
+        try {
+          const { cached } = await readHydratableSubscriptionCache();
+          const snap = cached?.planSnapshot
+            ? subscriptionDetailsFromPlanSnapshot(cached.planSnapshot, cached.expiresAt)
+            : null;
+          if (!snap) return;
+          const label = formatAccountPackageLabel(snap, catalogPlans);
+          if (label) lastPackageLabelRef.current = label;
+          const days = resolvePlanDurationDays(
+            buildAccountDisplayDetails(snap, cached?.expiresAt ?? null, catalogPlans),
+          );
+          if (days != null) lastDurationDaysRef.current = days;
+        } catch {
+          // non-fatal
+        }
+      })();
+    }, [isSubscribed, catalogPlans]),
+  );
 
   const canonicalExpiresAt = useMemo(
     () => resolveCanonicalExpiresAt(subscriptionDetails, subscriptionExpiresAt),
@@ -243,13 +268,13 @@ export default function AkauntiYanguScreen() {
   // Card 3: Muda wa Kifurushi — backend-aligned period length with catalog fill.
   const durationValue = useMemo(() => {
     if (!isSubscribed) return '—';
-    const days = resolvePlanDurationDays(displayDetails, catalogPlans);
+    const days = resolvePlanDurationDays(displayDetails);
     if (days != null) {
       lastDurationDaysRef.current = days;
       return String(days);
     }
     return lastDurationDaysRef.current != null ? String(lastDurationDaysRef.current) : '—';
-  }, [isSubscribed, displayDetails, catalogPlans]);
+  }, [isSubscribed, displayDetails]);
 
   // Card 5 (status)
   const statusLabel =

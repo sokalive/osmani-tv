@@ -60,7 +60,7 @@ import {
   mergeSubscriptionDetails,
 } from '../lib/subscriptionDetailsMerge';
 import { enrichCanonicalSubscriptionTiming } from '../lib/subscriptionCanonical';
-import { enrichSubscriptionDetailsForDisplay } from '../lib/accountSubscriptionDisplay';
+import { enrichSubscriptionDetailsForDisplay, buildAccountDisplayDetails } from '../lib/accountSubscriptionDisplay';
 import { buildPaymentSuccessDetails } from '../lib/paymentSuccessDisplay';
 import {
   isActivationSuccessSseEvent,
@@ -264,8 +264,10 @@ export function OsmaniAppProvider({ children }) {
       ...(getCachedPaymentPlansSync() ?? []),
     ];
     const detailsBase = subscriptionDetailsFromVerifyResult({ ...hint, active: true });
-    const enriched = enrichCanonicalSubscriptionTiming(
-      enrichSubscriptionDetailsForDisplay(detailsBase, catalogPlans),
+    const enriched = buildAccountDisplayDetails(
+      detailsBase,
+      expiresAt,
+      catalogPlans,
     );
 
     let mergedDetails = enriched;

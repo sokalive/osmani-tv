@@ -57,6 +57,7 @@ import EmergencyModal from './EmergencyModal';
 import PaymentWaitingStep from './PaymentWaitingStep';
 import PaymentSuccessStep from './PaymentSuccessStep';
 import { buildPaymentSuccessDetails } from '../lib/paymentSuccessDisplay';
+import { mergeCheckoutPlanIntoSubscription } from '../lib/accountSubscriptionDisplay';
 
 const ACCENT = '#FACC15';
 const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
@@ -387,24 +388,21 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       clearTimers();
       closeSse();
 
-      let subscription = verified;
-      try {
-        const fresh = await refreshSubscription();
-        if (fresh && isSubscriptionActive(fresh)) {
-          subscription = fresh;
-        }
-      } catch {
-        // keep verified snapshot
-      }
+      const mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
+      const forUnlock = mergeCheckoutPlanIntoSubscription(
+        {
+          ...verified,
+          active: true,
+          isActive: true,
+          expiresAt: mergedExpires ?? verified?.expiresAt ?? null,
+        },
+        selectedPlan,
+      );
 
-      const mergedExpires = latestExpiryIso(subscription?.expiresAt, fetchExpires);
-      const forUnlock = {
-        ...subscription,
-        active: true,
-        isActive: true,
-        expiresAt: mergedExpires ?? subscription?.expiresAt ?? null,
-      };
       unlockChannels(forUnlock);
+      if (Array.isArray(forUnlock?.plans) && forUnlock.plans.length > 0) {
+        void seedPaymentPlansCacheFromVerify(forUnlock.plans);
+      }
 
       setSuccessDetails(
         buildPaymentSuccessDetails(forUnlock, {
@@ -424,6 +422,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         expiresAt: forUnlock?.expiresAt ?? null,
       });
       setStep(4);
+
+      void refreshSubscription().catch(() => {});
     },
     [
       clearTimers,

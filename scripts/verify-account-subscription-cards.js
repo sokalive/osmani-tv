@@ -27,6 +27,7 @@ function fail(msg) {
 
 const account = read('screens/AkauntiYanguScreen.js');
 const display = read('lib/accountSubscriptionDisplay.js');
+const premium = read('components/PremiumModal.js');
 const math = read('lib/subscriptionMath.js');
 const merge = read('lib/subscriptionDetailsMerge.js');
 const context = read('context/OsmaniAppContext.jsx');
@@ -55,8 +56,28 @@ else pass('context enriches verify details');
 if (!account.includes('lastPackageLabelRef')) fail('payment card sticky ref during sparse refresh');
 else pass('payment card sticky ref during sparse refresh');
 
-if (!display.includes('findCatalogPlanForDetails')) fail('catalog plan lookup');
-else pass('catalog plan lookup');
+if (!account.includes('buildAccountDisplayDetails')) fail('Account uses buildAccountDisplayDetails');
+else pass('Account uses buildAccountDisplayDetails');
+
+if (!display.includes('mergeCheckoutPlanIntoSubscription')) fail('checkout plan merge helper');
+else pass('checkout plan merge helper');
+
+if (!premium.includes('mergeCheckoutPlanIntoSubscription')) fail('PremiumModal merges checkout plan on success');
+else pass('PremiumModal instant checkout merge');
+
+if (!premium.includes('unlockChannels(forUnlock)')) fail('PremiumModal unlockChannels on success');
+else pass('PremiumModal unlockChannels');
+
+const finalizeStart = premium.indexOf('const finalizePaymentSuccess');
+const finalizeEnd = premium.indexOf('const handleOpenChannel', finalizeStart);
+const finalizeBody = finalizeStart >= 0 ? premium.slice(finalizeStart, finalizeEnd) : '';
+const unlockBeforeRefresh =
+  finalizeBody.includes('unlockChannels(forUnlock)') &&
+  finalizeBody.includes('void refreshSubscription()') &&
+  finalizeBody.indexOf('unlockChannels(forUnlock)') <
+    finalizeBody.indexOf('void refreshSubscription()');
+if (!unlockBeforeRefresh) fail('finalizePaymentSuccess must unlock before background refresh');
+else pass('payment unlock before background verify');
 
 if (!process.exitCode) {
   console.log('\n[verify-account-subscription-cards] ok');
