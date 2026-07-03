@@ -1,0 +1,174 @@
+{
+  "timestamp": "2026-07-03T14:57:17.745Z",
+  "commit": "d0be6deaeb5e89c9f18660b74eab034f8b26229c",
+  "results": [
+    {
+      "script": "scripts/verify-startup-health.mjs",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-startup-crash-guard.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-brand-assets.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-expo-updates.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-account-display-sparse.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-account-subscription-cards.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-account-subscription-price.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-phone-subscription-guard.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-phone-number-gate.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-payment-waiting-ui.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-payment-success-ui.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-payment-completion.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-payment-plans-instant.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-payment-checkout-providers.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-instant-ux.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-pending-activation.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-recovery-boot.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-sse-guard.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-canonical-display.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-cache-hydrate.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-cache-repair.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-false-transfer-stress.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-premium-playback-regression.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-channel-card-tap.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-push-notification-registration.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-user-center-sync.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-vps-production.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-vps-no-render-fallback.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-users-intelligence-production.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-device-access-production.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-recent-features.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-account-app-update.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-update-overlay-auto-download.js",
+      "status": "PASS",
+      "exitCode": 0
+    }
+  ],
+  "passed": 33,
+  "failed": 0,
+  "skipped": 0
+}

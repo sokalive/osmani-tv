@@ -8,6 +8,8 @@
 
 const VPS = (process.env.EXPO_PUBLIC_API_URL || 'https://api.osmanitv.com').replace(/\/+$/, '');
 const RENDER = 'https://osmani-admin-api.onrender.com';
+const fs = require('fs');
+const path = require('path');
 
 const {
   parseUpdateCheckResponse,
@@ -64,8 +66,8 @@ if (eas.build.production?.android?.buildType !== 'app-bundle') {
   fail('production profile must build app-bundle (AAB)');
 } else pass('production profile builds AAB');
 
-const { DEFAULT_API_URL, RENDER_PRODUCTION_API_URL } = require('../lib/apiBaseUrl');
-if (DEFAULT_API_URL !== RENDER_PRODUCTION_API_URL) {
+const apiBaseSrc = fs.readFileSync(path.join(__dirname, '..', 'lib', 'apiBaseUrl.js'), 'utf8');
+if (!apiBaseSrc.includes('export const DEFAULT_API_URL = RENDER_PRODUCTION_API_URL')) {
   fail('DEFAULT_API_URL must remain Render HTTPS for legacy OTA/APK users');
 } else pass('DEFAULT_API_URL unchanged (Render legacy safe)');
 

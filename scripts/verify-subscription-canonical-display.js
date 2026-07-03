@@ -115,8 +115,8 @@ if (!screen.includes('resolveCanonicalExpiresAt')) fail('account uses canonical 
 else pass('account uses canonical expiry');
 if (!screen.includes('canonicalExpiresAt')) fail('account unified expiry binding');
 else pass('account unified expiry binding');
-if (screen.includes('lastDurationDaysRef')) fail('sticky duration ref must be removed');
-else pass('no sticky duration cache');
+if (!screen.includes('lastDurationDaysRef')) fail('account sticky duration ref required for sparse refresh');
+else pass('account sticky duration ref');
 
 const ctx = fs.readFileSync(path.join(root, 'context', 'OsmaniAppContext.jsx'), 'utf8');
 if (!ctx.includes('enrichCanonicalSubscriptionTiming')) fail('context must enrich canonical timing');

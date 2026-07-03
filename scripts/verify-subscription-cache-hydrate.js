@@ -74,9 +74,9 @@ if (!fetch.includes('ADMIN_API_TIMEOUT_MS')) {
 } else pass('admin API fetch timeout');
 
 const app = fs.readFileSync(path.join(root, 'App.js'), 'utf8');
-if (!app.includes('snapshot_immediate')) {
-  fail('channel tap must use immediate premium snapshot');
-} else pass('immediate channel tap snapshot');
+if (!app.includes('awaitPremiumSnapshotCapped')) {
+  fail('channel tap must use capped premium snapshot gate');
+} else pass('capped channel tap snapshot gate');
 
 if (!player.includes('isSubscribed')) {
   fail('player optimistic premium gate required');
@@ -99,11 +99,11 @@ else pass('context merges partial verify details');
 if (!subApi.includes('planSnapshot')) fail('subscription cache must persist plan snapshot');
 else pass('plan snapshot AsyncStorage key');
 
-if (!account.includes('lastPaymentLabelRef')) fail('account sticky payment ref');
-else pass('account sticky payment ref');
+if (!account.includes('lastPackageLabelRef')) fail('account sticky package label ref');
+else pass('account sticky package label ref');
 
-if (account.includes('lastDurationDaysRef')) fail('sticky duration ref must be removed');
-else pass('no sticky duration cache');
+if (!account.includes('lastDurationDaysRef')) fail('account sticky duration ref required');
+else pass('account sticky duration ref');
 
 const { mergeSubscriptionDetails } = require('../lib/subscriptionDetailsMerge');
 const merged = mergeSubscriptionDetails(

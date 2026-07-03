@@ -86,9 +86,13 @@ else pass('instruction native route');
 if (!ctx.includes('Video ya maelekezo haijapatikana')) fail('instruction swahili 404');
 else pass('instruction swahili 404');
 
-const nav = fs.readFileSync(path.join(root, 'lib/premiumChannelNavigation.js'), 'utf8');
-if (!nav.includes("path: 'instruction_video'")) fail('nav instruction bypass');
-else pass('nav instruction bypass');
+const appNav = fs.readFileSync(path.join(root, 'App.js'), 'utf8');
+if (
+  !appNav.includes('isInstructionVideoChannel') ||
+  !appNav.includes('isPremium = freeMode || isInstructionVideo ? false')
+) {
+  fail('catalog instruction video premium bypass');
+} else pass('catalog instruction video premium bypass');
 
 const trial = fs.readFileSync(path.join(root, 'lib/trialWatchAccess.js'), 'utf8');
 if (!trial.includes('isInstructionVideoChannel')) fail('trial free access');

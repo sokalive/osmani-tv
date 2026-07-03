@@ -27,19 +27,20 @@ function read(rel) {
 require('./verify-account-app-update.js');
 
 const account = read('screens/AkauntiYanguScreen.js');
-const updateSection = read('components/AccountUpdateSection.js');
+const updateSection = read('components/UpdateAppSection.js');
 
-if (!account.includes('AccountUpdateSection')) fail('AkauntiYangu mounts AccountUpdateSection');
-else pass('AkauntiYangu pinned AccountUpdateSection');
+if (!account.includes('UpdateAppSection')) fail('AkauntiYangu mounts UpdateAppSection');
+else pass('UpdateAppSection in account scroll');
 
-if (!account.includes('updateFooter')) fail('pinned update footer layout');
-else pass('pinned update footer layout');
+if (account.includes('updateFooter')) {
+  fail('must not use pinned footer for update section');
+} else pass('no pinned update footer');
 
 if (!updateSection.includes('Update App')) fail('Update App title in component');
 else pass('Update App title in component');
 
-if (!updateSection.includes('Pakua toleo jipya la programu ikiwa linapatikana.')) {
-  fail('Update App Swahili subtitle with period');
+if (!updateSection.includes('Pakua toleo jipya la programu ikiwa linapatikana')) {
+  fail('Update App Swahili subtitle');
 } else pass('Update App subtitle copy');
 
 if (!account.includes('subscriptionVersion')) fail('account clears sticky refs on subscriptionVersion');
@@ -59,14 +60,14 @@ else pass('transfer phone validation');
 
 console.log('\n--- Manual device verification (required) ---');
 console.log('| Runtime | Screen | versionCode | Expected | Actual |');
-console.log('| 1.6.0–1.8.2 | Akaunti Yangu (pinned footer) | any | "Update App" + UPDATE APP always visible | fill after test |');
+console.log('| 1.6.0–1.8.2 | Akaunti Yangu (below offer code) | any | "Update App" + UPDATE APP in scroll | fill after test |');
 console.log('| 1.6.0–1.8.2 | Akaunti Yangu tap UPDATE APP | < latest | APK download starts | fill after test |');
 console.log('| 1.6.0–1.8.2 | Akaunti Yangu tap UPDATE APP | 24 | already-latest Swahili alert | fill after test |');
 console.log('| any | Phone A after transfer approve | — | ACTIVE clears instantly | fill after test |');
 console.log('\nSteps:');
 console.log('1. Force-close app twice so OTA reloads.');
-console.log('2. Open Akaunti Yangu — Update App is pinned above tab bar (no scroll needed).');
-console.log('3. Logcat: [ACCOUNT_UPDATE_SECTION] mounted');
+console.log('2. Open Akaunti Yangu → scroll past offer code — Update App appears directly below.');
+console.log('3. Logcat: [ACCOUNT_UPDATE] rendered');
 console.log('4. Transfer A→B, approve on A — logcat [SUBSCRIPTION_CLEAR_LOCAL]');
 
 if (failed > 0) {

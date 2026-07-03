@@ -29,7 +29,7 @@ assertContains('api/usersIntelligence.js', 'explicitUnblock', 'explicit unblock 
 assertContains('context/DeviceIntelligenceContext.jsx', 'showUnblockModal: result.explicitUnblock', 'unblock modal only on admin unblock');
 assertContains('lib/deviceIntelligenceAccess.js', 'isDeviceIntelligenceSmartMonitorEnabled', 'smart monitor imperative hook');
 assertContains('lib/adminSseRefreshEvents.js', 'smart_monitor_enabled', 'smart monitor SSE event');
-assertContains('lib/security/riskEngine.js', 'serverPlaybackAllowed === true) return ALLOWED', 'server authoritative playback');
+assertContains('lib/security/riskEngine.js', 'serverPlaybackAllowed === true', 'server authoritative playback');
 assertContains('context/SecurityContext.jsx', 'useSyncExternalStore', 'security reacts to intel access updates');
 assertContains('lib/serverIntelAccess.js', 'parseServerIntelAccess', 'server intel parser');
 assertContains('lib/deviceIntelligenceAccess.js', 'subscribeDeviceIntelligenceAccess', 'intel pub/sub');

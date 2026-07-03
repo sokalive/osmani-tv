@@ -81,8 +81,8 @@ const modal = read('components/PremiumModal.js');
 const player = read('screens/ChannelPlayerScreen.js');
 const presence = read('lib/presenceTracker.js');
 
-if (!premium.includes('premium_unlock')) fail('premium unlock telemetry');
-else pass('premium unlock telemetry');
+if (!premium.includes('premium_subscribed_cache_fast')) fail('premium unlock navigation telemetry');
+else pass('premium unlock navigation telemetry');
 
 if (!modal.includes('reportPaymentTelemetry')) fail('PremiumModal payment telemetry');
 else pass('PremiumModal payment telemetry');
