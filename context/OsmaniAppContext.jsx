@@ -54,7 +54,7 @@ import {
   subscriptionDetailsFromVerifyResult,
 } from '../lib/subscriptionCacheHydrate';
 import { isStaleActiveSubscriptionCache } from '../lib/subscriptionCacheRepair';
-import { purgeUnreliableSubscriptionCache } from '../lib/subscriptionRecoveryBoot';
+import { purgeUnreliableSubscriptionCache, SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS } from '../lib/subscriptionRecoveryBoot';
 import {
   extractPlanSnapshotFromDetails,
   mergeSubscriptionDetails,
@@ -78,10 +78,11 @@ import { reportUserCenterEvent } from '../api/userCenterSync';
 import { registerDeviceIntelligence } from '../api/usersIntelligence';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
-const COLD_START_SUBSCRIPTION_TIMEOUT_MS = 15_000;
-/** Fast recover on boot — v24 migration must finish before premium taps decide "unpaid". */
-const RECOVER_BOOT_TIMEOUT_MS = 5_000;
-const SUBSCRIPTION_VERIFY_TIMEOUT_MS = 12_000;
+const COLD_START_SUBSCRIPTION_TIMEOUT_MS = SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS;
+/** Fast identity resolve on boot — status probe + migration candidates before sync ready. */
+const RECOVER_BOOT_TIMEOUT_MS = 8_000;
+/** Multi-candidate verify + status + recover on slow mobile networks (reinstall). */
+const SUBSCRIPTION_VERIFY_TIMEOUT_MS = SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS;
 const TRIAL_WATCH_BOOT_TIMEOUT_MS = 5_000;
 
 const defaultSettings = {
@@ -1100,7 +1101,7 @@ export function OsmaniAppProvider({ children }) {
     void refreshTrialWatchSettings('boot').then(() => logStartupStep('remote_config', 'ok'));
   }, [refreshTrialWatchSettings]);
 
-  // Cold-start: purge wrong-device hints → hydrate cache → fast recover → sync ready → background verify.
+  // Cold-start: purge wrong-device hints → hydrate cache → fast resolve (reinstall) → sync ready → background verify.
   useEffect(() => {
     let cancelled = false;
     logStartupStep('subscription_verify', 'start');
@@ -1127,24 +1128,14 @@ export function OsmaniAppProvider({ children }) {
         logStartupStep('device_identity', 'ok');
         const { deviceId, deviceFingerprint } = identity;
         const r = await withTimeout(
-          recoverSubscription(deviceId, deviceFingerprint, {
-            installInstanceId: identity.installInstanceId,
-            packageName: identity.packageName,
-            packageAndroidId: identity.packageAndroidId,
-            legacyPackageAndroidId: identity.legacyPackageAndroidId,
-            stableHardwareId: identity.stableHardwareId,
-            displayedAccountId: identity.displayedAccountId,
-            androidId: identity.androidId,
-            legacyDeviceFingerprint: identity.legacyDeviceFingerprint,
-            legacyPackageName: identity.legacyPackageName,
-            migration_bridge: true,
-          }),
+          resolveActiveSubscription(identity),
           RECOVER_BOOT_TIMEOUT_MS,
-          'cold-start-recover',
+          'cold-start-resolve',
         );
         console.log('[SUBSCRIPTION_RECOVER]', 'cold-start', {
           active: r?.active,
           expiresAt: r?.expiresAt,
+          resolveSource: r?.resolveSource ?? null,
           recoverRefreshed: r?.recoverRefreshed === true,
         });
         if (r?.active === true || r?.recoverRefreshed === true) {
@@ -1185,7 +1176,8 @@ export function OsmaniAppProvider({ children }) {
           void reportUserCenterEvent('subscription_recovery', {
             active: r?.active === true,
             recoverRefreshed: r?.recoverRefreshed === true,
-            source: 'cold-start-recover',
+            resolveSource: r?.resolveSource ?? null,
+            source: 'cold-start-resolve',
           });
         }
       } catch (e) {

@@ -35,6 +35,7 @@ const SCRIPTS = [
   'scripts/verify-subscription-instant-ux.js',
   'scripts/verify-subscription-pending-activation.js',
   'scripts/verify-subscription-recovery-boot.js',
+  'scripts/verify-reinstall-subscription-recovery.js',
   'scripts/verify-subscription-sse-guard.js',
   'scripts/verify-subscription-canonical-display.js',
   'scripts/verify-subscription-cache-hydrate.js',

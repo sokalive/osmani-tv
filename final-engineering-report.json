@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-07-03T14:57:17.745Z",
-  "commit": "d0be6deaeb5e89c9f18660b74eab034f8b26229c",
+  "timestamp": "2026-07-03T16:25:23.980Z",
+  "commit": "7bbc38e31eb124f1a97b3a7052f3f995bd2864fb",
   "results": [
     {
       "script": "scripts/verify-startup-health.mjs",
@@ -88,6 +88,11 @@
       "exitCode": 0
     },
     {
+      "script": "scripts/verify-reinstall-subscription-recovery.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
       "script": "scripts/verify-subscription-sse-guard.js",
       "status": "PASS",
       "exitCode": 0
@@ -168,7 +173,7 @@
       "exitCode": 0
     }
   ],
-  "passed": 33,
+  "passed": 34,
   "failed": 0,
   "skipped": 0
 }

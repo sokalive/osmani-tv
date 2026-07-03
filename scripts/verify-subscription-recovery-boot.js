@@ -42,9 +42,31 @@ const app = fs.readFileSync(path.join(root, 'App.js'), 'utf8');
 if (!ctx.includes('purgeUnreliableSubscriptionCache')) fail('boot must purge wrong-device cache');
 else pass('boot purges wrong-device cache');
 
-if (!ctx.includes("recoverSubscription(deviceId, deviceFingerprint")) {
-  fail('boot must run fast recoverSubscription for identity migration');
-} else pass('cold-start recoverSubscription');
+if (
+  !ctx.includes('resolveActiveSubscription(identity)') &&
+  !ctx.includes('recoverSubscription(deviceId, deviceFingerprint')
+) {
+  fail('boot must run identity resolve for reinstall recovery');
+} else pass('cold-start identity resolve');
+
+if (!ctx.includes('resolveActiveSubscription(identity)')) {
+  fail('cold-start must use resolveActiveSubscription for reinstall');
+} else pass('cold-start resolveActiveSubscription');
+
+const ctxTimeouts = fs.readFileSync(path.join(root, 'context', 'OsmaniAppContext.jsx'), 'utf8');
+const recoverBootMatch = ctxTimeouts.match(/RECOVER_BOOT_TIMEOUT_MS\s*=\s*([\d_]+)/);
+const verifyTimeoutMatch = ctxTimeouts.match(/SUBSCRIPTION_VERIFY_TIMEOUT_MS\s*=\s*([\w_]+)/);
+const recoverBootMs = recoverBootMatch ? Number(String(recoverBootMatch[1]).replace(/_/g, '')) : 0;
+if (recoverBootMs < 8_000) fail('RECOVER_BOOT_TIMEOUT_MS must allow fast status probe');
+else pass('RECOVER_BOOT_TIMEOUT_MS for reinstall probe');
+
+if (
+  !verifyTimeoutMatch ||
+  (!verifyTimeoutMatch[1].includes('SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS') &&
+    Number(String(verifyTimeoutMatch[1]).replace(/_/g, '')) < 40_000)
+) {
+  fail('SUBSCRIPTION_VERIFY_TIMEOUT_MS must allow multi-candidate reinstall chain');
+} else pass('SUBSCRIPTION_VERIFY_TIMEOUT_MS for reinstall chain');
 
 if (!ctx.includes("reverifySubscription('cold-start-bg')")) {
   fail('boot must background-verify after sync ready');
