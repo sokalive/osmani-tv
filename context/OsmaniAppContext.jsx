@@ -1655,7 +1655,6 @@ export function OsmaniAppProvider({ children }) {
         manualGiftAckKey: null,
       };
     });
-    setSubscriptionVersion((v) => v + 1);
     console.log('[MANUAL_GIFT]', 'client_state_cleared', { reason });
   }, []);
 

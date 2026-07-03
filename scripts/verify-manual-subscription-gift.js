@@ -37,6 +37,13 @@ const required = [
   [subApi, 'acknowledgeManualGift', 'acknowledgeManualGift export'],
   [subApi, 'normalizeVerifyResponse', 'normalizeVerifyResponse'],
   [context, 'resolvedManualGiftShowPopup', 'context gates gift key on showPopup'],
+  [giftAck, 'finalizeManualGiftAcknowledgement', 'finalizeManualGiftAcknowledgement helper'],
+  [giftAck, 'isManualGiftKeyAcknowledged', 'isManualGiftKeyAcknowledged helper'],
+  [app, 'manualGiftAcknowledgedKeyRef', 'sync ack gate ref'],
+  [app, 'cancelManualGiftPopupTimers', 'cancel popup timers on ack'],
+  [app, 'finalizeManualGiftPopupClosed', 'full popup close on ack'],
+  [app, 'ack_in_flight', 'block popup while ack in flight'],
+  [app, 'already_acked_local', 'skip popup for locally acked key'],
   [context, 'dismissManualGiftClientState', 'dismissManualGiftClientState export'],
   [context, 'manualGiftShowPopup: resolvedManualGiftShowPopup', 'context passes manualGiftShowPopup'],
   [app, 'manualGiftShowPopup === true', 'tryShowManualGift requires showPopup'],
@@ -82,6 +89,7 @@ else pass('merge clears showPopup');
 if (cleared.amount !== 5000) fail('merge still preserves amount');
 else pass('merge preserves amount');
 
-if (!process.exitCode) {
-  console.log('\n[verify-manual-subscription-gift] ok');
-}
+if (context.includes('dismissManualGiftClientState') &&
+    /dismissManualGiftClientState[\s\S]*?setSubscriptionVersion/.test(context)) {
+  fail('dismissManualGiftClientState must not bump subscriptionVersion (popup loop)');
+} else pass('dismissManualGiftClientState avoids version bump loop');

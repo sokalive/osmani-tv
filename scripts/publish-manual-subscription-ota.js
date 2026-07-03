@@ -25,7 +25,7 @@ function appendLog(text) {
 fs.writeFileSync(logPath, `[publish-manual-subscription-ota] started ${new Date().toISOString()}\n`);
 
 for (const runtime of RUNTIMES) {
-  const msg = `fix(subscription): gate manual gift popup on showPopup runtime ${runtime}`;
+  const msg = `fix(subscription): stop manual gift popup loop after ASANTE runtime ${runtime}`;
   console.log(`\n=== OTA runtime ${runtime} ===`);
   appendLog(`\n=== OTA runtime ${runtime} ===`);
 

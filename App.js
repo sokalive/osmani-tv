@@ -90,12 +90,12 @@ import StartupErrorBoundary from './components/StartupErrorBoundary';
 import { logFirstLaunchBootDiagnostics } from './lib/firstLaunchBootDiagnostics';
 import { logStartupStep } from './lib/startupStepLog';
 import {
-  clearPendingManualGiftKey,
+  finalizeManualGiftAcknowledgement,
+  isManualGiftKeyAcknowledged,
   isNoPendingManualGiftError,
   purgeStaleManualGiftPendingKey,
   readManualGiftAck,
   readPendingManualGiftKey,
-  writeManualGiftAck,
   writePendingManualGiftKey,
 } from './lib/manualGiftAck';
 import BannerCarousel, { BannerCarouselSkeleton } from './components/BannerCarousel';
@@ -363,6 +363,9 @@ function ChannelCatalogScreen({
   const deferredManualGiftRef = useRef(false);
   const tryShowManualGiftRef = useRef(async () => false);
   const manualGiftVisibleRef = useRef(false);
+  const manualGiftFocusTimerRef = useRef(null);
+  /** Sync gate: popup never reopens for this key after ASANTE (survives verify/SSE/version bumps). */
+  const manualGiftAcknowledgedKeyRef = useRef('');
   isSubscribedRef.current = isSubscribed;
   subscriptionDetailsRef.current = subscriptionDetails;
   subscriptionExpiresAtRef.current = subscriptionExpiresAt;
@@ -416,8 +419,11 @@ function ChannelCatalogScreen({
       return undefined;
     }
     Promise.all([readManualGiftAck(), readPendingManualGiftKey()])
-      .then(() => {
-        if (!cancelled) setManualGiftAckLoaded(true);
+      .then(([ack]) => {
+        if (!cancelled) {
+          if (ack) manualGiftAcknowledgedKeyRef.current = ack;
+          setManualGiftAckLoaded(true);
+        }
       })
       .catch(() => {
         if (!cancelled) setManualGiftAckLoaded(true);
@@ -432,8 +438,33 @@ function ChannelCatalogScreen({
     await Promise.all([readManualGiftAck(), readPendingManualGiftKey()]).catch(() => {});
   }, []);
 
+  const cancelManualGiftPopupTimers = useCallback(() => {
+    if (manualGiftFocusTimerRef.current != null) {
+      clearTimeout(manualGiftFocusTimerRef.current);
+      manualGiftFocusTimerRef.current = null;
+    }
+    deferredManualGiftRef.current = false;
+  }, []);
+
+  const finalizeManualGiftPopupClosed = useCallback(
+    async (key, reason) => {
+      const k = String(key ?? '').trim();
+      if (k) manualGiftAcknowledgedKeyRef.current = k;
+      cancelManualGiftPopupTimers();
+      await purgeStaleManualGiftPendingKey();
+      dismissManualGiftClientState(reason);
+      manualGiftVisibleRef.current = false;
+      setManualGiftVisible(false);
+    },
+    [cancelManualGiftPopupTimers, dismissManualGiftClientState],
+  );
+
   const tryShowManualGift = useCallback(
     async (source) => {
+      if (manualGiftAckBusy) {
+        console.log('[MANUAL_GIFT]', 'popup_skip', source, 'ack_in_flight');
+        return false;
+      }
       const details = subscriptionDetailsRef.current;
       const detailsKey = details?.manualGiftAckKey ?? null;
       const showPopup = details?.manualGiftShowPopup === true;
@@ -443,6 +474,7 @@ function ChannelCatalogScreen({
         manualGiftAckLoaded,
         manualGiftShowPopup: showPopup,
         manualGiftAckKey: detailsKey ?? null,
+        acknowledgedKey: manualGiftAcknowledgedKeyRef.current || null,
         isSubscribed: subscribed,
         blockingSheetActive: isBlockingSheetActive,
         blockingSheetIds,
@@ -457,6 +489,23 @@ function ChannelCatalogScreen({
         return false;
       }
       await syncPendingGiftBlocking();
+
+      if (detailsKey != null && detailsKey !== '') {
+        if (
+          manualGiftAcknowledgedKeyRef.current === detailsKey ||
+          (await isManualGiftKeyAcknowledged(detailsKey))
+        ) {
+          manualGiftAcknowledgedKeyRef.current = detailsKey;
+          await purgeStaleManualGiftPendingKey();
+          if (showPopup) dismissManualGiftClientState('already_acked_local');
+          if (manualGiftVisibleRef.current) {
+            manualGiftVisibleRef.current = false;
+            setManualGiftVisible(false);
+          }
+          console.log('[MANUAL_GIFT]', 'popup_skip', source, 'already_acked_local');
+          return false;
+        }
+      }
 
       if (!subscribed || !showPopup || detailsKey == null || detailsKey === '') {
         const pending = await readPendingManualGiftKey();
@@ -477,11 +526,11 @@ function ChannelCatalogScreen({
       }
 
       const ack = await readManualGiftAck();
-      const pending = await readPendingManualGiftKey();
 
       if (ack === detailsKey) {
-        await clearPendingManualGiftKey();
-        await syncPendingGiftBlocking();
+        manualGiftAcknowledgedKeyRef.current = detailsKey;
+        await purgeStaleManualGiftPendingKey();
+        dismissManualGiftClientState('already_acked_matches_verify');
         console.log('[MANUAL_GIFT]', 'popup_skip', source, 'already_acked_matches_verify');
         return false;
       }
@@ -490,7 +539,6 @@ function ChannelCatalogScreen({
 
       console.log('[MANUAL_GIFT]', 'popup_ack_compare', source, {
         storedAck: ack || '(empty)',
-        pending,
         detailsKey,
         outstanding,
       });
@@ -518,6 +566,7 @@ function ChannelCatalogScreen({
     [
       enableHomeExpiryReminder,
       manualGiftAckLoaded,
+      manualGiftAckBusy,
       isBlockingSheetActive,
       blockingSheetIds,
       premiumModalVisible,
@@ -531,10 +580,19 @@ function ChannelCatalogScreen({
   useFocusEffect(
     useCallback(() => {
       if (!enableHomeExpiryReminder) return undefined;
-      const tid = setTimeout(() => {
+      if (manualGiftFocusTimerRef.current != null) {
+        clearTimeout(manualGiftFocusTimerRef.current);
+      }
+      manualGiftFocusTimerRef.current = setTimeout(() => {
+        manualGiftFocusTimerRef.current = null;
         void tryShowManualGiftRef.current('focus');
       }, 500);
-      return () => clearTimeout(tid);
+      return () => {
+        if (manualGiftFocusTimerRef.current != null) {
+          clearTimeout(manualGiftFocusTimerRef.current);
+          manualGiftFocusTimerRef.current = null;
+        }
+      };
     }, [enableHomeExpiryReminder]),
   );
 
@@ -660,22 +718,21 @@ function ChannelCatalogScreen({
       console.log('[MANUAL_GIFT]', 'ack_press_skip_no_key');
       return;
     }
+    cancelManualGiftPopupTimers();
     setManualGiftAckBusy(true);
     try {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
       await acknowledgeManualGift(deviceId, deviceFingerprint, key);
-      await writeManualGiftAck(key);
-      await clearPendingManualGiftKey();
-      manualGiftVisibleRef.current = false;
-      setManualGiftVisible(false);
+      await finalizeManualGiftAcknowledgement(key);
+      manualGiftAcknowledgedKeyRef.current = key;
+      await finalizeManualGiftPopupClosed(key, 'ack_success');
       console.log('[MANUAL_GIFT]', 'ack_complete', { key });
       void syncPendingGiftBlocking();
     } catch (e) {
       if (isNoPendingManualGiftError(e)) {
-        await purgeStaleManualGiftPendingKey();
-        dismissManualGiftClientState('ack_no_pending_gift');
-        manualGiftVisibleRef.current = false;
-        setManualGiftVisible(false);
+        manualGiftAcknowledgedKeyRef.current = key;
+        await finalizeManualGiftAcknowledgement(key);
+        await finalizeManualGiftPopupClosed(key, 'ack_no_pending_gift');
         console.log('[MANUAL_GIFT]', 'ack_stale_cleared', { key });
         return;
       }
@@ -686,7 +743,11 @@ function ChannelCatalogScreen({
     } finally {
       setManualGiftAckBusy(false);
     }
-  }, [syncPendingGiftBlocking, dismissManualGiftClientState]);
+  }, [
+    syncPendingGiftBlocking,
+    cancelManualGiftPopupTimers,
+    finalizeManualGiftPopupClosed,
+  ]);
 
   const openPremiumModal = useCallback((pendingChannel) => {
     if (guardDeviceIntelligence().ok === false) return;
