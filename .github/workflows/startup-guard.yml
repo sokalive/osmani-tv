@@ -1,0 +1,41 @@
+name: Startup Guard
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: startup-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  startup-guard:
+    name: Startup import & regression guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify startup imports (JSX + export resolution)
+        run: node scripts/verify-startup-imports.mjs
+
+      - name: Verify startup regressions (707d63c, 9dd7585, 4619087)
+        run: node scripts/verify-startup-regressions.mjs
+
+      - name: Verify startup crash guard
+        run: node scripts/verify-startup-crash-guard.js
+
+      - name: Bundle smoke — App entry resolves
+        run: npx expo export --platform android --output-dir dist-startup-ci

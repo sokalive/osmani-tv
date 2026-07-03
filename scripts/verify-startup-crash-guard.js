@@ -104,4 +104,6 @@ if (wa.includes('throw new Error') && wa.includes('Could not load WhatsApp')) {
 
 if (!process.exitCode) {
   console.log('\n[verify-startup-crash-guard] ok');
+  console.log('Also run: node scripts/verify-startup-imports.mjs');
+  console.log('Also run: node scripts/verify-startup-regressions.mjs');
 }
