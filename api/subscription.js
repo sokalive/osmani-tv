@@ -799,21 +799,21 @@ function normalizeVerifyResponse(body, fallback = {}) {
     body.entitlementRemainingSeconds,
     data?.entitlement_remaining_seconds,
     data?.entitlementRemainingSeconds,
-    sub?.entitlement_remaining_seconds,
-    sub?.entitlementRemainingSeconds,
+    subRoot?.entitlement_remaining_seconds,
+    subRoot?.entitlementRemainingSeconds,
   );
   const entitlementDays = pickNumber(
     body.entitlement_remaining_days,
     body.entitlementRemainingDays,
     data?.entitlement_remaining_days,
     data?.entitlementRemainingDays,
-    sub?.entitlement_remaining_days,
-    sub?.entitlementRemainingDays,
+    subRoot?.entitlement_remaining_days,
+    subRoot?.entitlementRemainingDays,
   );
   const status =
     body.status ??
     data?.status ??
-    sub?.status ??
+    subRoot?.status ??
     (inactiveReason && !active ? inactiveReason : null);
   return {
     active,

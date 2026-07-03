@@ -40,6 +40,7 @@ const SCRIPTS = [
   'scripts/verify-subscription-canonical-display.js',
   'scripts/verify-subscription-cache-hydrate.js',
   'scripts/verify-subscription-cache-repair.js',
+  'scripts/verify-manual-subscription-gift.js',
   'scripts/verify-false-transfer-stress.js',
   // Account + premium
   'scripts/verify-premium-playback-regression.js',

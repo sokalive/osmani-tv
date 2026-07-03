@@ -236,10 +236,13 @@ export function OsmaniAppProvider({ children }) {
     isSubscribedRef.current = true;
     setIsSubscribed(true);
     setSubscriptionExpiresAt(cached.expiresAt ?? null);
-    setSubscriptionDetails(
-      enrichSubscriptionDetailsForDisplay(
-        subscriptionDetailsFromCache(cached),
-        getCachedPaymentPlansSync() ?? [],
+    setSubscriptionDetails((prev) =>
+      mergeSubscriptionDetails(
+        prev,
+        enrichSubscriptionDetailsForDisplay(
+          subscriptionDetailsFromCache(cached),
+          getCachedPaymentPlansSync() ?? [],
+        ),
       ),
     );
     setSubscriptionVersion((v) => v + 1);
@@ -511,6 +514,12 @@ export function OsmaniAppProvider({ children }) {
               resolveSource: r.resolveSource ?? null,
               hadActive: isSubscribedRef.current,
             });
+            if (r?.manualGiftAckKey) {
+              setSubscriptionDetails((prev) =>
+                mergeSubscriptionDetails(prev, { manualGiftAckKey: r.manualGiftAckKey }),
+              );
+              setSubscriptionVersion((v) => v + 1);
+            }
             return effectiveResult;
           }
           if (verifyKey !== lastVerifyKeyRef.current) return r;
@@ -539,6 +548,8 @@ export function OsmaniAppProvider({ children }) {
           void seedPaymentPlansCacheFromVerify(effectiveResult.plans);
         }
         const detailSource = effectiveResult;
+        const resolvedManualGiftAckKey =
+          r?.manualGiftAckKey ?? detailSource?.manualGiftAckKey ?? null;
         const catalogPlans = [
           ...(Array.isArray(detailSource.plans) ? detailSource.plans : []),
           ...(getCachedPaymentPlansSync() ?? []),
@@ -560,7 +571,7 @@ export function OsmaniAppProvider({ children }) {
                   serverTime: detailSource.serverTime ?? null,
                   serverTimeFetchedAt,
                   plans: Array.isArray(detailSource.plans) ? detailSource.plans : [],
-                  manualGiftAckKey: detailSource.manualGiftAckKey ?? null,
+                  manualGiftAckKey: resolvedManualGiftAckKey,
                   transportPreserved: effectiveResult.transportPreserved === true,
                 },
                 catalogPlans,
@@ -572,6 +583,9 @@ export function OsmaniAppProvider({ children }) {
         setSubscriptionDetails((prev) => {
           if (!active) return null;
           mergedDetails = mergeSubscriptionDetails(prev, detailsPayload);
+          if (resolvedManualGiftAckKey && !mergedDetails?.manualGiftAckKey) {
+            mergedDetails = { ...mergedDetails, manualGiftAckKey: resolvedManualGiftAckKey };
+          }
           return mergedDetails;
         });
         traceAccountDisplay('reverifySubscription', {

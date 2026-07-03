@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-07-03T16:25:23.980Z",
-  "commit": "7bbc38e31eb124f1a97b3a7052f3f995bd2864fb",
+  "timestamp": "2026-07-03T20:53:15.502Z",
+  "commit": "d60ff1c728295ac25aaf3db179372e3cce87b8a6",
   "results": [
     {
       "script": "scripts/verify-startup-health.mjs",
@@ -113,6 +113,11 @@
       "exitCode": 0
     },
     {
+      "script": "scripts/verify-manual-subscription-gift.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
       "script": "scripts/verify-false-transfer-stress.js",
       "status": "PASS",
       "exitCode": 0
@@ -173,7 +178,7 @@
       "exitCode": 0
     }
   ],
-  "passed": 34,
+  "passed": 35,
   "failed": 0,
   "skipped": 0
 }
