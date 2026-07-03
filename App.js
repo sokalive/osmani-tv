@@ -39,6 +39,7 @@ import NotificationPermissionReminderGate from './components/NotificationPermiss
 import ManualSubscriptionGiftModal from './components/ManualSubscriptionGiftModal';
 import PopupSettingsModal from './components/PopupSettingsModal';
 import TransferConfirmModal from './components/TransferConfirmModal';
+import TransferSuccessModal from './components/TransferSuccessModal';
 import SubscriptionActivationSuccessModal from './components/SubscriptionActivationSuccessModal';
 import TransferredAwayModal from './components/TransferredAwayModal';
 import UpdateOverlay from './components/UpdateOverlay';

@@ -70,6 +70,14 @@ const app = read('App.js');
 if (!app.includes('StartupErrorBoundary')) fail('App must wrap StartupErrorBoundary');
 else pass('StartupErrorBoundary wired');
 
+if (app.includes('<TransferSuccessModal') && !app.includes("from './components/TransferSuccessModal'")) {
+  fail('TransferSuccessModal used but import missing');
+} else pass('TransferSuccessModal import present');
+
+if (app.includes('<SubscriptionActivationSuccessModal') && !app.includes("from './components/SubscriptionActivationSuccessModal'")) {
+  fail('SubscriptionActivationSuccessModal used but import missing');
+} else pass('SubscriptionActivationSuccessModal import present');
+
 if (!app.includes('unhandled_rejection')) fail('App must log unhandled rejections');
 else pass('unhandled rejection logger');
 
