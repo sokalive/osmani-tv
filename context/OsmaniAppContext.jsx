@@ -61,6 +61,7 @@ import {
 } from '../lib/subscriptionDetailsMerge';
 import { enrichCanonicalSubscriptionTiming } from '../lib/subscriptionCanonical';
 import { enrichSubscriptionDetailsForDisplay, buildAccountDisplayDetails } from '../lib/accountSubscriptionDisplay';
+import { traceAccountDisplay } from '../lib/accountDisplayTrace';
 import { buildPaymentSuccessDetails } from '../lib/paymentSuccessDisplay';
 import {
   isActivationSuccessSseEvent,
@@ -300,6 +301,14 @@ export function OsmaniAppProvider({ children }) {
       expiresAt,
       planName: mergedDetails?.planName ?? null,
       planDurationDays: mergedDetails?.planDurationDays ?? null,
+    });
+    traceAccountDisplay('applyInstantSubscriptionState', {
+      reason,
+      planName: mergedDetails?.planName ?? null,
+      amount: mergedDetails?.amount ?? null,
+      planDurationDays: mergedDetails?.planDurationDays ?? null,
+      planId: mergedDetails?.planId ?? null,
+      plansCount: Array.isArray(mergedDetails?.plans) ? mergedDetails.plans.length : 0,
     });
     return mergedDetails;
   }, []);
@@ -564,6 +573,17 @@ export function OsmaniAppProvider({ children }) {
           mergedDetails = mergeSubscriptionDetails(prev, detailsPayload);
           return mergedDetails;
         });
+        traceAccountDisplay('reverifySubscription', {
+          reason,
+          verifyPlanId: detailSource.planId ?? null,
+          verifyPlanName: detailSource.planName ?? null,
+          verifyAmount: detailSource.amount ?? null,
+          verifyPlanDurationDays: detailSource.planDurationDays ?? null,
+          mergedPlanName: mergedDetails?.planName ?? null,
+          mergedAmount: mergedDetails?.amount ?? null,
+          mergedPlanDurationDays: mergedDetails?.planDurationDays ?? null,
+          plansInVerify: Array.isArray(detailSource.plans) ? detailSource.plans.length : 0,
+        });
         console.log('[MANUAL_GIFT]', 'context_after_verify', {
           reason,
           active,
@@ -646,7 +666,9 @@ export function OsmaniAppProvider({ children }) {
             isSubscribedRef.current = true;
             setIsSubscribed(true);
             setSubscriptionExpiresAt(cached.expiresAt ?? null);
-            setSubscriptionDetails(subscriptionDetailsFromCache(cached));
+            setSubscriptionDetails((prev) =>
+              mergeSubscriptionDetails(prev, subscriptionDetailsFromCache(cached)),
+            );
             setSubscriptionVersion((v) => v + 1);
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'error_preserved_cache', {
               error: e?.message ?? e,
@@ -752,7 +774,9 @@ export function OsmaniAppProvider({ children }) {
         setIsSubscribed(true);
         setSubscriptionExpiresAt(cached.expiresAt ?? null);
         if (!subscriptionDetails) {
-          setSubscriptionDetails(subscriptionDetailsFromCache(cached));
+          setSubscriptionDetails((prev) =>
+            mergeSubscriptionDetails(prev, subscriptionDetailsFromCache(cached)),
+          );
         }
         setSubscriptionVersion((v) => v + 1);
         void reverifySubscription(`gate-bg:${reason}`);
@@ -1133,11 +1157,9 @@ export function OsmaniAppProvider({ children }) {
             ...(getCachedPaymentPlansSync() ?? []),
           ];
           const details =
-            enrichCanonicalSubscriptionTiming(
-              enrichSubscriptionDetailsForDisplay(detailsRaw, recoverCatalog),
-            ) ??
+            buildAccountDisplayDetails(detailsRaw, r.expiresAt ?? null, recoverCatalog) ??
             subscriptionDetailsFromCache({ active: true, expiresAt: r.expiresAt });
-          setSubscriptionDetails(details);
+          setSubscriptionDetails((prev) => mergeSubscriptionDetails(prev, details));
           setSubscriptionVersion((v) => v + 1);
           const planSnapshot =
             extractPlanSnapshotFromDetails(details) ??

@@ -48,8 +48,10 @@ import { subscriptionDetailsFromPlanSnapshot } from '../lib/subscriptionDetailsM
 import {
   getCachedPaymentPlansSync,
   hydratePaymentPlansCacheFromStorage,
+  refreshPaymentPlansCache,
 } from '../lib/paymentPlansCache';
 import { formatSubscriptionRemainingCountdown } from '../lib/formatSubscriptionRemaining';
+import { traceAccountDisplay } from '../lib/accountDisplayTrace';
 import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
 
 /** Extra scroll padding above pinned Update App footer */
@@ -172,10 +174,20 @@ export default function AkauntiYanguScreen() {
     return [...fromContext, ...fromCache];
   }, [availablePlans, paymentPlansCatalog]);
 
-  const displayDetails = useMemo(
-    () => buildAccountDisplayDetails(subscriptionDetails, subscriptionExpiresAt, catalogPlans),
-    [subscriptionDetails, subscriptionExpiresAt, catalogPlans],
-  );
+  const displayDetails = useMemo(() => {
+    const built = buildAccountDisplayDetails(
+      subscriptionDetails,
+      subscriptionExpiresAt,
+      catalogPlans,
+    );
+    traceAccountDisplay('AkauntiYanguScreen.render', {
+      paymentLabel: formatAccountPackageLabel(built, catalogPlans),
+      durationDays: resolvePlanDurationDays(built),
+      catalogPlansCount: catalogPlans.length,
+      subscriptionVersion,
+    });
+    return built;
+  }, [subscriptionDetails, subscriptionExpiresAt, catalogPlans, subscriptionVersion]);
 
   useEffect(() => {
     if (!isSubscribed) {
@@ -323,6 +335,8 @@ export default function AkauntiYanguScreen() {
         if (cached?.length) setPaymentPlansCatalog(cached);
         const hydrated = await hydratePaymentPlansCacheFromStorage();
         if (hydrated?.length) setPaymentPlansCatalog(hydrated);
+        const fresh = await refreshPaymentPlansCache({ reason: 'account-focus' });
+        if (fresh?.length) setPaymentPlansCatalog(fresh);
       })();
       (async () => {
         try {

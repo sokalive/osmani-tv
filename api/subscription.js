@@ -294,10 +294,13 @@ function pickPlanId(body) {
   const sub = isPlainObject(body.subscription) ? body.subscription : null;
   const dataSub = pickDataSubscription(body);
   const plan = pickPlan(body);
+  const pay = isPlainObject(body.payment) ? body.payment : null;
   return pickTruthyString(
     plan?.id,
     plan?.plan_id,
     plan?.planId,
+    pay?.plan_id,
+    pay?.planId,
     sub?.plan_id,
     sub?.planId,
     dataSub?.plan_id,
