@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { assertPlaybackAllowed, useSecurity } from '../context/SecurityContext';
 import { Image } from 'expo-image';
+import ResilientCatalogImage from './ResilientCatalogImage';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   bannerNeedsRuntimeTick,
@@ -147,17 +148,19 @@ const BannerSlide = React.memo(function BannerSlide({ slide, slideWidth, nowMs }
 
   useEffect(() => {
     setImageFailed(false);
-  }, [slide.imageUrl, slide.id]);
+  }, [slide.imageUrl, slide.imageFallbackUrl, slide.id]);
 
   return (
     <View style={[styles.slide, { width: slideWidth }]}>
       {!imageFailed && slide.imageUrl ? (
-        <Image
-          source={{ uri: slide.imageUrl }}
+        <ResilientCatalogImage
+          uri={slide.imageUrl}
+          fallbackUri={slide.imageFallbackUrl}
           style={styles.image}
           contentFit="cover"
           transition={140}
-          onError={() => setImageFailed(true)}
+          optimizeFallback={{ maxWidth: 840, quality: 82 }}
+          onFinalError={() => setImageFailed(true)}
         />
       ) : (
         <LinearGradient

@@ -11,7 +11,6 @@ import {
 } from '@react-navigation/native';
 import { BottomTabBar, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Image as ExpoImage } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   ActivityIndicator,
@@ -57,7 +56,8 @@ import {
   useModalSheetCoordinator,
   useRegisterBlockingSheet,
 } from './context/ModalSheetCoordinatorContext';
-import { optimizeDisplayImageUrl, resolveMediaAssetUrl } from './lib/mediaDelivery';
+import { optimizeDisplayImageUrl, resolveMediaAssetUrl, withImageCacheRevision } from './lib/mediaDelivery';
+import ResilientCatalogImage from './components/ResilientCatalogImage';
 import { isCatalogInteractionBlocked } from './lib/catalogConnectivity';
 import { acknowledgeManualGift } from './api/subscription';
 import { trackInstallOnce } from './api/analytics';
@@ -181,7 +181,8 @@ function resolveChannelThumbnailUri(raw) {
   else if (rel.startsWith('/')) resolved = resolveMediaAssetUrl(rel);
   else if (rel.length > 0) resolved = resolveMediaAssetUrl(rel);
   if (!resolved) return null;
-  return optimizeDisplayImageUrl(resolved, { maxWidth: 360, quality: 80 });
+  const optimized = optimizeDisplayImageUrl(resolved, { maxWidth: 360, quality: 80 });
+  return withImageCacheRevision(optimized, raw?.updatedAt ?? raw?.updated_at);
 }
 
 function placeholderLetterFromName(name) {
@@ -968,11 +969,12 @@ function ChannelCatalogScreen({
       >
         <View style={styles.cardImageWrap}>
           {item.thumbnailUri ? (
-            <ExpoImage
-              source={{ uri: item.thumbnailUri }}
+            <ResilientCatalogImage
+              uri={item.thumbnailUri}
               style={styles.cardImage}
               contentFit="cover"
               transition={120}
+              optimizeFallback={{ maxWidth: 360, quality: 80 }}
             />
           ) : (
             <View style={[styles.cardImage, styles.cardImagePlaceholder]}>
@@ -1031,11 +1033,12 @@ function ChannelCatalogScreen({
       >
         <View style={styles.highlightImageWrap}>
           {item.thumbnailUri ? (
-            <ExpoImage
-              source={{ uri: item.thumbnailUri }}
+            <ResilientCatalogImage
+              uri={item.thumbnailUri}
               style={styles.cardImage}
               contentFit="cover"
               transition={120}
+              optimizeFallback={{ maxWidth: 360, quality: 80 }}
             />
           ) : (
             <View style={[styles.cardImage, styles.cardImagePlaceholder]}>

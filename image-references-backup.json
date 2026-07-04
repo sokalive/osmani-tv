@@ -1,0 +1,127 @@
+{
+  "timestamp": "2026-07-04T07:32:33.880Z",
+  "channels": [
+    {
+      "id": 1,
+      "name": "Azam 1 HD",
+      "thumbnail": "https://api.osmanitv.com/uploads/1783144959631-62aadf222a687df3.jpeg",
+      "updatedAt": "2026-07-04T06:02:41.056Z"
+    },
+    {
+      "id": 11,
+      "name": "Azam TWO",
+      "thumbnail": "https://api.osmanitv.com/uploads/1779089154538-20459cfea1b98f11.jpg",
+      "updatedAt": "2026-07-04T01:35:25.018Z"
+    },
+    {
+      "id": 17,
+      "name": "Azam 2 HD",
+      "thumbnail": "https://api.osmanitv.com/uploads/1781116213040-202dd0e6c0064706.webp",
+      "updatedAt": "2026-07-04T01:35:26.688Z"
+    },
+    {
+      "id": 3,
+      "name": "Azam 4 HD",
+      "thumbnail": "https://api.osmanitv.com/uploads/1781115967115-759abaa77a830551.webp",
+      "updatedAt": "2026-07-04T01:35:30.662Z"
+    },
+    {
+      "id": 16,
+      "name": "Bein 1 HD",
+      "thumbnail": "https://api.osmanitv.com/uploads/1781887664993-c819f799d6e47dd3.jpeg",
+      "updatedAt": "2026-07-04T01:35:35.014Z"
+    },
+    {
+      "id": 4,
+      "name": "SinemaZetu",
+      "thumbnail": "https://api.osmanitv.com/uploads/1779089445888-3666ac5cfe18e73d.jpg",
+      "updatedAt": "2026-07-04T01:35:36.057Z"
+    },
+    {
+      "id": 18,
+      "name": "Azam 3 HD",
+      "thumbnail": "https://api.osmanitv.com/uploads/1783149413088-b03aaa765ff916cc.jpeg",
+      "updatedAt": "2026-07-04T07:16:53.198Z"
+    },
+    {
+      "id": 13,
+      "name": "Be2 HD",
+      "thumbnail": "https://api.osmanitv.com/uploads/1781887833904-0673bcb5d6d1e27a.jpeg",
+      "updatedAt": "2026-07-04T01:35:43.030Z"
+    },
+    {
+      "id": 14,
+      "name": "Bein 4 HD",
+      "thumbnail": "https://api.osmanitv.com/uploads/1781888072266-7b1a0535528b451d.jpeg",
+      "updatedAt": "2026-07-04T01:35:45.703Z"
+    },
+    {
+      "id": 15,
+      "name": "Bein 3 HD",
+      "thumbnail": "https://api.osmanitv.com/uploads/1781887943556-3af0e052d014d0ac.jpeg",
+      "updatedAt": "2026-07-04T01:35:50.774Z"
+    },
+    {
+      "id": 19,
+      "name": "VIDEO",
+      "thumbnail": "https://api.osmanitv.com/uploads/1781888160065-0b3cac53fb8fb641.jpg",
+      "updatedAt": "2026-07-04T07:08:43.662Z"
+    },
+    {
+      "id": 20,
+      "name": "Wasafi TV",
+      "thumbnail": "https://api.osmanitv.com/uploads/1779093708026-fb89954d867a89ef.jpg",
+      "updatedAt": "2026-07-03T19:06:20.096Z"
+    },
+    {
+      "id": 21,
+      "name": "Azam ON",
+      "thumbnail": "https://api.osmanitv.com/uploads/1779093489129-e5ef2473d7ba5b2a.png",
+      "updatedAt": "2026-07-03T19:06:17.742Z"
+    },
+    {
+      "id": 22,
+      "name": "Crown TV",
+      "thumbnail": "https://api.osmanitv.com/uploads/1779093520571-5ec3e308def7ae4c.jpg",
+      "updatedAt": "2026-07-04T01:35:52.274Z"
+    },
+    {
+      "id": 23,
+      "name": "ZBC 2",
+      "thumbnail": "https://api.osmanitv.com/uploads/1779093557607-ee27f9cd3239cdb3.jpg",
+      "updatedAt": "2026-07-04T01:35:55.509Z"
+    },
+    {
+      "id": 24,
+      "name": "Zamaradi TV",
+      "thumbnail": "https://api.osmanitv.com/uploads/1779093626676-3c3d95afd2776ab0.png",
+      "updatedAt": "2026-07-04T01:35:56.453Z"
+    },
+    {
+      "id": 25,
+      "name": "Cheka Plus",
+      "thumbnail": "https://api.osmanitv.com/uploads/1779093374175-084ea168c86e82d6.jpg",
+      "updatedAt": "2026-07-04T01:36:00.657Z"
+    }
+  ],
+  "banners": [
+    {
+      "id": 10,
+      "title": "Orhan",
+      "image": "https://api.osmanitv.com/uploads/1783148650612-dc5e7e20087b0d7d.png",
+      "updatedAt": "2026-07-04T07:04:10.776Z"
+    },
+    {
+      "id": 7,
+      "title": "FIFA World Cup 2026",
+      "image": "https://api.osmanitv.com/uploads/1781888204025-69bce69edb69f528.webp",
+      "updatedAt": "2026-06-28T06:56:05.957Z"
+    },
+    {
+      "id": 6,
+      "title": "THE FAMILY",
+      "image": "https://api.osmanitv.com/uploads/1781888233850-095bf96b5eeed5d2.png",
+      "updatedAt": "2026-06-28T06:56:15.272Z"
+    }
+  ]
+}
