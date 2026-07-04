@@ -1,0 +1,71 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-07-04",
+  "description": "Osmani TV manual subscription realtime wake-up contract. Events are signals only — the app must call authoritative verify before unlocking premium.",
+  "authoritativeVerify": {
+    "endpoint": "POST /api/subscription/verify",
+    "recoverEndpoint": "POST /api/subscription/recover",
+    "statusEndpoint": "GET /api/subscription-status",
+    "trustRule": "Only verify/recover active:true may unlock premium. SSE payload alone is never authoritative."
+  },
+  "endpoints": [
+    {
+      "id": "sync_stream",
+      "url": "/api/sync/stream",
+      "scope": "global",
+      "purpose": "Admin catalog, runtime modes, subscription lifecycle broadcasts"
+    },
+    {
+      "id": "device_subscription_stream",
+      "url": "/api/subscription-stream?device_id={device_id}",
+      "scope": "device_targeted",
+      "purpose": "Primary wake-up for manual grants and per-device subscription changes"
+    }
+  ],
+  "canonicalEvent": {
+    "name": "manual_subscription_granted",
+    "mustTriggerVerify": true,
+    "mustNotUnlockWithoutVerify": true
+  },
+  "compatibilityAliases": [
+    "manual_subscription_granted",
+    "subscription_granted",
+    "subscription_activated",
+    "subscription_changed",
+    "subscription_updated",
+    "subscription_status_changed",
+    "device_subscription",
+    "device_subscription_granted",
+    "device_subscription_updated",
+    "manual_subscription",
+    "manual_subscription_changed",
+    "package_granted",
+    "package_changed",
+    "user_package_changed",
+    "user_subscription_repaired",
+    "subscription_repaired"
+  ],
+  "ignoredByDesign": [
+    "analytics.subscription_updated",
+    "analytics_subscription_updated"
+  ],
+  "payloadSchema": {
+    "device_id": "string — target device; if absent, client may accept broadcast then verify locally",
+    "deviceId": "alias",
+    "target_device_id": "alias",
+    "grant_id": "string optional",
+    "manualGift": "object optional — popup metadata only",
+    "manualGiftAckKey": "string optional — from verify, not SSE alone",
+    "expires_at": "ISO8601 optional hint",
+    "updated_at": "ISO8601 optional hint",
+    "event_id": "string optional dedupe key",
+    "emitted_at": "ISO8601 optional"
+  },
+  "clientBehavior": {
+    "onWakeEvent": "immediate reverifySubscription + optional instant UI hint from SSE",
+    "dedupeMs": 80,
+    "reconnectVerify": true,
+    "foregroundFallbackMs": 30000,
+    "settingsPollMs": 10000
+  }
+}

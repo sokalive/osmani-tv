@@ -47,8 +47,8 @@ if (!realtime.includes('scheduleReconnect') || !realtime.includes('reconnectBack
   fail('realtimeSync must use backoff reconnect');
 } else pass('realtimeSync backoff reconnect');
 
-if (!realtime.includes('SUBSCRIPTION_SSE_EVENTS')) fail('realtimeSync must register subscription SSE events');
-else pass('realtimeSync subscription SSE whitelist');
+if (!realtime.includes('SUBSCRIPTION_WAKE_SSE_EVENTS')) fail('realtimeSync must register subscription wake SSE events');
+else pass('realtimeSync subscription wake SSE whitelist');
 
 if (!realtime.includes('UPDATE_SETTINGS_SSE_EVENTS')) fail('realtimeSync must register update settings SSE events');
 else pass('realtimeSync update settings SSE whitelist');
@@ -56,8 +56,8 @@ else pass('realtimeSync update settings SSE whitelist');
 if (!ctx.includes('scheduleAdminDrivenSoftSync')) fail('context must debounce admin catalog refresh');
 else pass('context admin soft sync debouncer');
 
-if (!ctx.includes('SUBSCRIPTION_SSE_EVENTS')) fail('context must listen for subscription SSE lifecycle');
-else pass('context subscription SSE listeners');
+if (!ctx.includes('SUBSCRIPTION_WAKE_SSE_EVENTS')) fail('context must listen for subscription wake SSE lifecycle');
+else pass('context subscription wake SSE listeners');
 
 if (!ctx.includes("scheduleAdminDrivenSoftSync('app_resume')")) {
   fail('context must soft-sync on app resume');

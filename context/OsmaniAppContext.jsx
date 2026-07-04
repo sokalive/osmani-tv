@@ -20,7 +20,7 @@ import {
   resolveActiveSubscription,
   writeSubscriptionCache,
 } from '../api/subscription';
-import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS, SUBSCRIPTION_SSE_EVENTS, USER_CENTER_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
+import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS, SUBSCRIPTION_WAKE_SSE_EVENTS, USER_CENTER_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import {
   dropLegacyBannersCache,
   readBannersCache,
@@ -35,6 +35,7 @@ import { enrichBannersForViewer } from '../lib/bannerViewerSerializer';
 import { logBannerRuntimeDiagnostics } from '../lib/normalizeBanner';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
+import { startSubscriptionDeviceStream } from '../lib/subscriptionDeviceStream';
 import {
   devicesShareIdentity,
   isConfirmedSubscriptionLoss,
@@ -1313,6 +1314,31 @@ export function OsmaniAppProvider({ children }) {
 
   // Realtime subscription lifecycle events from /api/sync/stream.
   useEffect(() => {
+    const offSyncReconnect = subscribeRealtimeEvent('__sync_stream_connected', () => {
+      void reverifySubscription('sse:sync_stream_connected');
+    });
+    const offDeviceStream = startSubscriptionDeviceStream((reason, payload) => {
+      const eventName = String(reason).replace(/^subscription-stream:/, '');
+      if (payload != null && eventName !== 'open') {
+        void tryInstantApplyFromSse(eventName, payload);
+      }
+      void reverifySubscription(reason);
+    });
+    const offSnapshot = subscribeRealtimeEvent('snapshot', (payload) => {
+      const inner = unwrapSubscriptionSsePayload(payload);
+      if (!inner || typeof inner !== 'object') return;
+      const hasSubHint =
+        inner.subscription != null ||
+        inner.active !== undefined ||
+        inner.isActive !== undefined ||
+        inner.manualGift != null ||
+        inner.manual_gift != null ||
+        inner.device_id != null ||
+        inner.deviceId != null;
+      if (hasSubHint) {
+        void reverifySubscription('sse:snapshot');
+      }
+    });
     const offRevoked = subscribeRealtimeEvent('subscription_revoked', (payload) => {
       void (async () => {
         const role = await subscriptionTransferSseRole(payload, 'subscription_revoked');
@@ -1382,7 +1408,7 @@ export function OsmaniAppProvider({ children }) {
         void clearSubscriptionCache('sse:subscription_revoked');
       })();
     });
-    const offSubscriptionLifecycle = SUBSCRIPTION_SSE_EVENTS.map((ev) =>
+    const offSubscriptionLifecycle = SUBSCRIPTION_WAKE_SSE_EVENTS.map((ev) =>
       subscribeRealtimeEvent(ev, (payload) => {
         console.log('[SUBSCRIPTION_SSE]', ev, payload);
         void tryInstantApplyFromSse(ev, payload);
@@ -1547,6 +1573,9 @@ export function OsmaniAppProvider({ children }) {
       }),
     );
     return () => {
+      offSyncReconnect();
+      offDeviceStream();
+      offSnapshot();
       offRevoked();
       offSubscriptionLifecycle.forEach((off) => off());
       offUserCenter.forEach((off) => off());

@@ -96,9 +96,10 @@ assertContains('context/OsmaniAppContext.jsx', 'applyInstantSubscriptionState', 
 // SSE initialization
 assertContains('context/OsmaniAppContext.jsx', 'subscribeRealtimeEvent', 'SSE listeners in context');
 assertContains('lib/realtimeSync.js', 'startRealtimeSync', 'realtime sync export');
-if (!realtime.includes('SUBSCRIPTION_SSE_EVENTS')) {
-  fail('realtimeSync must register subscription SSE events');
-} else pass('subscription SSE events registered');
+if (!realtime.includes('SUBSCRIPTION_WAKE_SSE_EVENTS')) {
+  fail('realtimeSync must register subscription wake SSE events');
+} else pass('subscription wake SSE events registered');
+assertContains('context/OsmaniAppContext.jsx', 'startSubscriptionDeviceStream', 'device-targeted subscription stream');
 
 // Payment pipeline components (import integrity at startup gates)
 assertContains('components/PremiumModal.js', 'PaymentWaitingStep', 'PaymentWaitingStep in PremiumModal');
