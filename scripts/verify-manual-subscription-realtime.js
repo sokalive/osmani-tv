@@ -33,6 +33,9 @@ const requiredAliases = [
   'device_subscription_granted',
   'manual_subscription_granted',
   'package_granted',
+  'manual_gift',
+  'subscription_wake',
+  'subscription_manual_grant',
 ];
 
 for (const alias of requiredAliases) {

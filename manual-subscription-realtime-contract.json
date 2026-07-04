@@ -1,6 +1,8 @@
 {
   "version": "1.0.0",
   "updated": "2026-07-04",
+  "appCommitReference": "af1b1087a40b608e04d8fbac84328fbb93ccd7e6",
+  "backendCommitReference": "cea3d5c2f3550ee7260ccad434eebdb7c3d209b5",
   "description": "Osmani TV manual subscription realtime wake-up contract. Events are signals only — the app must call authoritative verify before unlocking premium.",
   "authoritativeVerify": {
     "endpoint": "POST /api/subscription/verify",
@@ -23,11 +25,16 @@
     }
   ],
   "canonicalEvent": {
-    "name": "manual_subscription_granted",
+    "name": "manual_gift",
+    "backendWakeEvent": "subscription_wake",
+    "legacyCanonical": "manual_subscription_granted",
     "mustTriggerVerify": true,
     "mustNotUnlockWithoutVerify": true
   },
   "compatibilityAliases": [
+    "manual_gift",
+    "subscription_wake",
+    "subscription_manual_grant",
     "manual_subscription_granted",
     "subscription_granted",
     "subscription_activated",
