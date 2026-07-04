@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import UpdateAppSection from '../components/UpdateAppSection';
+import OmbaKifurushiSection from '../components/OmbaKifurushiSection';
 import AccountUpdateSectionBoundary from '../components/AccountUpdateSectionBoundary';
 import HamishaKifurushiModal from '../components/HamishaKifurushiModal';
 import PremiumModal from '../components/PremiumModal';
@@ -341,12 +342,8 @@ export default function AkauntiYanguScreen() {
       (async () => {
         try {
           const identity = await getDeviceIdentity();
-          setDeviceIdFull(
-            identity.displayedAccountId ||
-              identity.packageAndroidId ||
-              identity.deviceId ||
-              '',
-          );
+          // Canonical verify / SSE / payment / request device_id (not display-only SSAID).
+          setDeviceIdFull(identity.deviceId || identity.subscriptionDeviceId || '');
         } catch {
           setDeviceIdFull('');
         }
@@ -588,6 +585,8 @@ export default function AkauntiYanguScreen() {
         <AccountUpdateSectionBoundary key={accountUpdateSectionKey}>
           <UpdateAppSection />
         </AccountUpdateSectionBoundary>
+
+        <OmbaKifurushiSection />
       </ScrollView>
 
       <HamishaKifurushiModal

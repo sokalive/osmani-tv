@@ -1,9 +1,12 @@
+import Constants from 'expo-constants';
+import { nativeApplicationVersion } from 'expo-application';
 import { parseCheckoutProvidersResponse } from '../lib/checkoutPaymentProviders';
 import { formatCheckoutPaymentError, extractPaymentBackendReason, logPaymentCheckoutFailure, CheckoutPaymentError, PhoneSubscriptionConflictError } from '../lib/paymentCheckoutErrors';
 import { isPhoneSubscriptionConflict, parsePhoneSubscriptionConflict } from '../lib/phoneSubscriptionGuard';
 import { resolveMediaAssetUrl } from '../lib/mediaDelivery';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { fetchAdminApiJson, fetchAdminApiResponse } from '../lib/catalogApiFetch';
+import { readNativeAndroidVersionCode } from '../lib/playVpsApiHost';
 
 /**
  * MFALME parity: create-order must not abort while USSD/PIN is on the device.
@@ -203,8 +206,24 @@ export async function getCheckoutPaymentProviders() {
   return cfg;
 }
 
-function buildCreateOrderPayload(payload) {
+function readPaymentRuntimeVersion() {
+  try {
+    const Updates = require('expo-updates');
+    const rv = Updates?.runtimeVersion;
+    if (rv != null && String(rv).trim()) return String(rv).trim();
+  } catch {
+    /* optional */
+  }
+  const cfg = Constants.expoConfig?.version ?? Constants.manifest?.version;
+  return cfg != null ? String(cfg) : '';
+}
+
+/** Correlation metadata for Admin payment recovery — no client-side order_id minting. */
+function buildCreateOrderPayload(payload, provider) {
   const planId = payload.plan_id ?? payload.planId;
+  const versionCode = readNativeAndroidVersionCode();
+  const appVersion = nativeApplicationVersion ?? '';
+  const runtimeVersion = readPaymentRuntimeVersion();
   return {
     phone: payload.phone,
     plan_id: planId,
@@ -212,6 +231,16 @@ function buildCreateOrderPayload(payload) {
     amount: payload.amount,
     device_id: payload.device_id ?? payload.deviceId,
     deviceId: payload.device_id ?? payload.deviceId,
+    provider: provider ?? payload.provider ?? null,
+    payment_provider: provider ?? payload.payment_provider ?? null,
+    app_version: appVersion,
+    appVersion,
+    runtime_version: runtimeVersion,
+    runtimeVersion,
+    client_version_code:
+      Number.isFinite(versionCode) && versionCode > 0 ? versionCode : null,
+    clientVersionCode:
+      Number.isFinite(versionCode) && versionCode > 0 ? versionCode : null,
     ...(payload.device_fingerprint != null
       ? { device_fingerprint: payload.device_fingerprint, deviceFingerprint: payload.device_fingerprint }
       : {}),
@@ -220,7 +249,7 @@ function buildCreateOrderPayload(payload) {
 
 async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
   const paths = Array.isArray(pathSuffixes) ? pathSuffixes : [pathSuffixes];
-  const bodyPayload = buildCreateOrderPayload(payload);
+  const bodyPayload = buildCreateOrderPayload(payload, provider);
   let last = null;
 
   for (let i = 0; i < paths.length; i += 1) {
