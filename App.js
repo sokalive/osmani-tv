@@ -330,6 +330,7 @@ function ChannelCatalogScreen({
     requireUpdateBeforeChannelPlayback,
     requestChannelUpdateGate,
     dismissManualGiftClientState,
+    reverifySubscription,
   } = useOsmaniApp();
   const security = useSecurity();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
@@ -339,6 +340,15 @@ function ChannelCatalogScreen({
       logStartupStep('home_screen', 'ok', { premiumPlaybackReady });
     }
   }, [navigatorTabKey, premiumPlaybackReady]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isSubscribed) {
+        void reverifySubscription('catalog-focus');
+      }
+      return undefined;
+    }, [isSubscribed, reverifySubscription]),
+  );
 
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);

@@ -33,6 +33,7 @@ const SCRIPTS = [
   'scripts/verify-payment-checkout-providers.js',
   'scripts/verify-sonicpesa-activation-visibility.js',
   'scripts/verify-kulipia-badge.js',
+  'scripts/verify-subscription-revocation-visibility.js',
   // Subscription activation paths
   'scripts/verify-subscription-instant-ux.js',
   'scripts/verify-subscription-pending-activation.js',

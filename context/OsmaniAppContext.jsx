@@ -38,6 +38,7 @@ import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { startSubscriptionDeviceStream } from '../lib/subscriptionDeviceStream';
 import {
   devicesShareIdentity,
+  isAuthoritativeInactiveEntitlement,
   isConfirmedSubscriptionLoss,
   isExplicitTransferRevokeReason,
   isUserConfirmedTransferReason,
@@ -394,6 +395,7 @@ export function OsmaniAppProvider({ children }) {
         let expiresAt = r.expiresAt ?? null;
         let effectiveResult = r;
         const transferLockActive = sourceTransferClearLockUntilRef.current > Date.now();
+        const authoritativeInactive = isAuthoritativeInactiveEntitlement(r);
 
         const cacheSameDevice = async () => {
           const cached = await readSubscriptionCache();
@@ -414,7 +416,7 @@ export function OsmaniAppProvider({ children }) {
           }
         }
 
-        if (!active && isSubscriptionTransportFailure(r)) {
+        if (!active && !authoritativeInactive && isSubscriptionTransportFailure(r)) {
           if (transferLockActive) {
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'skipped_transport_cache_after_source_transfer');
           } else {
@@ -437,6 +439,7 @@ export function OsmaniAppProvider({ children }) {
         }
 
         if (
+          !authoritativeInactive &&
           !active &&
           !transferLockActive &&
           (isSubscriptionTransportFailure(r) || String(r.resolveSource ?? '').includes('timeout'))
@@ -466,6 +469,7 @@ export function OsmaniAppProvider({ children }) {
             }
           }
         } else if (
+          !authoritativeInactive &&
           !transferLockActive &&
           !active &&
           r.resolveSource === 'inactive' &&
@@ -486,6 +490,7 @@ export function OsmaniAppProvider({ children }) {
             });
           }
         } else if (
+          !authoritativeInactive &&
           !transferLockActive &&
           !active &&
           r.resolveSource !== 'inactive' &&
@@ -521,6 +526,12 @@ export function OsmaniAppProvider({ children }) {
           if (verifyKey !== lastVerifyKeyRef.current) return r;
         }
 
+        if (authoritativeInactive) {
+          setRevokedReason((cur) => {
+            if (cur) return cur;
+            return resolveSubscriptionLossModalReason(r);
+          });
+        }
         isSubscribedRef.current = active;
         const serverTimeFetchedAt = Date.now();
         setIsSubscribed(active);
@@ -774,37 +785,28 @@ export function OsmaniAppProvider({ children }) {
     const fastReason = String(reason);
     const isBackground = fastReason.startsWith('gate-bg:') || fastReason.includes('-bg');
 
-    if (!isBackground) {
+    if (isBackground) {
       if (isSubscribedRef.current) {
-        void reverifySubscription(`gate-bg:${reason}`);
-        console.log('[PLAYBACK_GATE]', 'allowed_cache_ref', reason);
-        return true;
+        void reverifySubscription(reason);
+        return isSubscribedRef.current;
       }
       const { cached } = await readHydratableSubscriptionCache();
       if (cached?.active) {
-        isSubscribedRef.current = true;
-        setIsSubscribed(true);
-        setSubscriptionExpiresAt(cached.expiresAt ?? null);
-        if (!subscriptionDetails) {
-          setSubscriptionDetails((prev) =>
-            mergeSubscriptionDetails(prev, subscriptionDetailsFromCache(cached)),
-          );
-        }
-        setSubscriptionVersion((v) => v + 1);
-        void reverifySubscription(`gate-bg:${reason}`);
-        console.log('[PLAYBACK_GATE]', 'allowed_cache_read', reason);
+        void reverifySubscription(reason);
         return true;
       }
+      const r = await reverifySubscription(reason);
+      return r?.active === true;
     }
 
     const hadSubscriptionBefore = isSubscribedRef.current;
-    const r = await reverifySubscription(isBackground ? reason : `gate:${reason}`);
+    const r = await reverifySubscription(`gate:${reason}`);
     const active = r?.active === true;
     if (!active) {
       console.log('[PLAYBACK_GATE]', 'denied', reason);
       if (hadSubscriptionBefore && isConfirmedSubscriptionLoss(r)) {
         const modalReason = resolveSubscriptionLossModalReason(r);
-        logSubscriptionLossModalDecision(`gate:${reason}`, r, modalReason ?? 'skipped', {
+        logSubscriptionLossModalDecision(`gate:${reason}`, r, modalReason ?? 'cleared', {
           hadSubscriptionBefore,
         });
         if (modalReason) {
@@ -820,7 +822,7 @@ export function OsmaniAppProvider({ children }) {
       console.log('[PLAYBACK_GATE]', 'allowed', reason);
     }
     return active;
-  }, [reverifySubscription, subscriptionDetails]);
+  }, [reverifySubscription]);
 
   /** Apply the same object returned from `reverifySubscription` / API (strict `isActive`). */
   const unlockChannels = useCallback(
@@ -1404,18 +1406,13 @@ export function OsmaniAppProvider({ children }) {
           return;
         }
         const modalReason = resolveSubscriptionLossModalReason(r);
-        logSubscriptionLossModalDecision('sse:subscription_revoked', r, modalReason ?? 'skipped', {
+        logSubscriptionLossModalDecision('sse:subscription_revoked', r, modalReason ?? 'cleared', {
           role,
           hadActiveBefore,
           sseReason,
         });
-        if (!modalReason) return;
-        setRevokedReason(modalReason);
-        isSubscribedRef.current = false;
-        setIsSubscribed(false);
-        setSubscriptionExpiresAt(null);
-        setSubscriptionDetails(null);
-        void clearSubscriptionCache('sse:subscription_revoked');
+        if (modalReason) setRevokedReason(modalReason);
+        await clearLocalActiveSubscription('sse:subscription_revoked');
       })();
     });
     const offSubscriptionLifecycle = SUBSCRIPTION_WAKE_SSE_EVENTS.map((ev) =>
