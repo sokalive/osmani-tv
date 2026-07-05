@@ -42,6 +42,7 @@ const SCRIPTS = [
   'scripts/verify-subscription-cache-repair.js',
   'scripts/verify-manual-subscription-gift.js',
   'scripts/verify-false-transfer-stress.js',
+  'scripts/verify-hamisha-transfer.js',
   // Account + premium
   'scripts/verify-premium-playback-regression.js',
   'scripts/verify-channel-card-tap.js',

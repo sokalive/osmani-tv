@@ -2,7 +2,7 @@
 
 **Version:** 2026-07-04-transfer-device-control  
 **Authoritative API:** `https://api.osmanitv.com/api`  
-**VPS backend commit (probe):** `325a5a929bfe537c6b1906a50b9a00d01281f00f`
+**VPS backend commit (probe):** `0ef8cc5deadb69082be83a48f8862a18911b0c1b`
 
 ## Transfer endpoints (confirmed on VPS)
 
