@@ -75,7 +75,7 @@ import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBa
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
-import { awaitPremiumSnapshotCapped } from './lib/premiumTapGate';
+import { awaitPremiumSnapshotCapped, shouldShowKulipiaBadge } from './lib/premiumTapGate';
 import { instructionVideoVisibleForInstall, isInstructionVideoChannel } from './lib/instructionVideoChannel';
 import { readNativeAndroidVersionCode } from './lib/playVpsApiHost';
 import { logChannelCardTap } from './lib/channelCardTapDiagnostics';
@@ -224,6 +224,24 @@ function findServerHealthForChannel(serverHealth, name) {
   const wanted = String(name ?? '').trim().toLowerCase();
   if (!wanted) return null;
   return serverHealth.channels.find((row) => String(row?.name ?? '').trim().toLowerCase() === wanted) || null;
+}
+
+function ChannelAccessBadge({ item, freeMode, isSubscribed, styles: s }) {
+  if (item.isPremium) {
+    if (!shouldShowKulipiaBadge({ isPremium: true, freeMode, isSubscribed })) {
+      return null;
+    }
+    return (
+      <View style={[s.statusPill, { backgroundColor: item.accessBadgeColor }]}>
+        <Text style={[s.liveBadgeText, s.liveBadgeTextOnYellow]}>KULIPIA</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={[s.statusPill, { backgroundColor: item.accessBadgeColor }]}>
+      <Text style={s.liveBadgeText}>{item.accessBadge}</Text>
+    </View>
+  );
 }
 
 function mapApiChannelToCard(raw, index, freeMode = false, serverHealth = null) {
@@ -992,16 +1010,12 @@ function ChannelCatalogScreen({
                 <Text style={styles.liveBadgeText}>{item.liveLabel}</Text>
               </View>
             </View>
-            <View style={[styles.statusPill, { backgroundColor: item.accessBadgeColor }]}>
-              <Text
-                style={[
-                  styles.liveBadgeText,
-                  item.accessBadge === 'KULIPIA' ? styles.liveBadgeTextOnYellow : null,
-                ]}
-              >
-                {item.accessBadge}
-              </Text>
-            </View>
+            <ChannelAccessBadge
+              item={item}
+              freeMode={freeMode}
+              isSubscribed={isSubscribed}
+              styles={styles}
+            />
           </View>
           <LinearGradient
             colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.72)']}
@@ -1019,7 +1033,7 @@ function ChannelCatalogScreen({
         </View>
       </Pressable>
     ),
-    [handleCardPress],
+    [handleCardPress, freeMode, isSubscribed],
   );
 
   const renderHighlightCard = useCallback(
@@ -1056,16 +1070,12 @@ function ChannelCatalogScreen({
                 <Text style={styles.liveBadgeText}>{item.liveLabel}</Text>
               </View>
             </View>
-            <View style={[styles.statusPill, { backgroundColor: item.accessBadgeColor }]}>
-              <Text
-                style={[
-                  styles.liveBadgeText,
-                  item.accessBadge === 'KULIPIA' ? styles.liveBadgeTextOnYellow : null,
-                ]}
-              >
-                {item.accessBadge}
-              </Text>
-            </View>
+            <ChannelAccessBadge
+              item={item}
+              freeMode={freeMode}
+              isSubscribed={isSubscribed}
+              styles={styles}
+            />
           </View>
           <LinearGradient
             colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.72)']}
@@ -1083,7 +1093,7 @@ function ChannelCatalogScreen({
         </View>
       </Pressable>
     ),
-    [handleCardPress],
+    [handleCardPress, freeMode, isSubscribed],
   );
 
   const listHeader = useMemo(
