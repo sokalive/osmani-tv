@@ -29,6 +29,7 @@ import {
   normalizeTanzaniaMobilePhone,
 } from '../lib/tanzaniaPhone';
 import { useRegisterBlockingSheet } from '../context/ModalSheetCoordinatorContext';
+import { isTransferAwaitingSourceApproval } from '../lib/transferAwaitingSourceApproval';
 
 const COLORS = {
   background: '#0C0608',
@@ -166,20 +167,20 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   }, [opacity, scale]);
 
   useEffect(() => {
-    if (visible) {
-      clearSourceTransferSession?.();
-      setStep(STEPS.INTRO);
-      setPhone('');
-      setCode('');
-      setGeneratedCode('');
-      setRemainingSeconds(TRANSFER_CODE_SECONDS);
-      setBusy(false);
-      setError('');
-      setWaitingCode('');
-      setRejectionReason('');
-      runEnterAnim();
-    }
-  }, [visible, runEnterAnim, clearSourceTransferSession]);
+    if (!visible) return;
+    // Preserve source transfer session across close/reopen — clearing it caused
+    // missed SSE + approval UI when the user briefly left this modal.
+    setStep(STEPS.INTRO);
+    setPhone('');
+    setCode('');
+    setGeneratedCode('');
+    setRemainingSeconds(TRANSFER_CODE_SECONDS);
+    setBusy(false);
+    setError('');
+    setWaitingCode('');
+    setRejectionReason('');
+    runEnterAnim();
+  }, [visible, runEnterAnim]);
 
   const close = useCallback(() => {
     onClose?.();
@@ -218,6 +219,13 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     let cancelled = false;
     const onConfirmationRequired = (eventName) => async (payload) => {
       if (cancelled) return;
+      if (!isTransferAwaitingSourceApproval(payload, eventName)) {
+        console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'hamisha_ignored_non_approval', {
+          eventName,
+          status: payload?.status ?? payload?.payload?.status ?? null,
+        });
+        return;
+      }
       let currentDeviceId = '';
       try {
         const identity = await getDeviceIdentity();
@@ -272,17 +280,47 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       'transfer_requested',
       onConfirmationRequired('transfer_requested'),
     );
-    const offPending = subscribeRealtimeEvent(
-      'transfer_pending',
-      onConfirmationRequired('transfer_pending'),
-    );
     return () => {
       cancelled = true;
       offConfirmationRequired();
       offRequested();
-      offPending();
     };
   }, [visible, step, generatedCode, close, triggerPendingTransfer]);
+
+  /**
+   * SOURCE verify poll while code is displayed. VPS activates immediately on
+   * target confirm — SSE may be missed; bounded verify detects source inactive.
+   */
+  useEffect(() => {
+    if (!visible || step !== STEPS.GENERATED || !generatedCode) return undefined;
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 30;
+    const tick = async () => {
+      if (cancelled || attempts >= MAX_ATTEMPTS) return;
+      attempts += 1;
+      try {
+        const r = await reverifySubscription?.('transfer-source-poll');
+        if (cancelled) return;
+        if (r && r.active !== true) {
+          console.log('[transfer-ui]', 'source inactive via poll', { attempts });
+          await applySourceTransferCompleted?.('poll:source_inactive', { showSuccessModal: true });
+          close();
+          return;
+        }
+      } catch (e) {
+        console.log('[transfer-ui]', 'source_poll_error', e?.message ?? e);
+      }
+      if (!cancelled && attempts < MAX_ATTEMPTS) {
+        setTimeout(tick, 6000);
+      }
+    };
+    const timer = setTimeout(tick, 4000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [visible, step, generatedCode, reverifySubscription, applySourceTransferCompleted, close]);
 
   /** Source device: clear subscription immediately when transfer completes. */
   useEffect(() => {
@@ -493,7 +531,30 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       if (!matches(payload)) return;
       console.log('[TRANSFER_PENDING]', 'target_redeem', payload);
     });
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 24;
+    const pollTick = async () => {
+      if (cancelled || attempts >= MAX_ATTEMPTS) return;
+      attempts += 1;
+      try {
+        const r = await reverifySubscription?.('transfer-target-poll');
+        if (cancelled) return;
+        if (r?.active === true) {
+          console.log('[transfer-ui]', 'target active via poll', { attempts });
+          setStep(STEPS.REDEEMED);
+          return;
+        }
+      } catch (e) {
+        console.log('[transfer-ui]', 'target_poll_error', e?.message ?? e);
+      }
+      if (!cancelled && attempts < MAX_ATTEMPTS) setTimeout(pollTick, 6000);
+    };
+    const pollTimer = setTimeout(pollTick, 5000);
+
     return () => {
+      cancelled = true;
+      clearTimeout(pollTimer);
       offApproved();
       offCompleted();
       offRejected();

@@ -1587,7 +1587,8 @@ export async function redeemTransfer(code, deviceId, deviceFingerprint) {
     body?.ok === true ||
     body?.success === true ||
     body?.active === true ||
-    body?.is_active === true;
+    body?.is_active === true ||
+    body?.transferred === true;
   let verified = null;
   try {
     verified = await verifySubscription(deviceId, deviceFingerprint);

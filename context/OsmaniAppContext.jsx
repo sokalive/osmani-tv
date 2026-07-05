@@ -77,6 +77,7 @@ import {
 } from '../lib/paymentPlansCache';
 import { reportUserCenterEvent } from '../api/userCenterSync';
 import { registerDeviceIntelligence } from '../api/usersIntelligence';
+import { isTransferAwaitingSourceApproval } from '../lib/transferAwaitingSourceApproval';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS;
@@ -1367,6 +1368,15 @@ export function OsmaniAppProvider({ children }) {
           return;
         }
         if (
+          (sseReason === 'admin_force' || sseReason === 'admin_force_transfer') &&
+          (role === 'source' || role === 'device')
+        ) {
+          await applySourceTransferCompleted('sse:subscription_revoked:admin_force', {
+            showSuccessModal: false,
+          });
+          return;
+        }
+        if (
           isExplicitTransferRevokeReason(sseReason) &&
           (role === 'source' || role === 'device')
         ) {
@@ -1438,11 +1448,6 @@ export function OsmaniAppProvider({ children }) {
         const sseReason = pickTransferSseReason(inner, 'transfer_completed');
         console.log('[TRANSFER_COMPLETED]', 'sse', payload, { role, sseReason });
         if (role === 'source' || role === 'device') {
-          if (sseReason && !isExplicitTransferRevokeReason(sseReason)) {
-            console.log('[TRANSFER_COMPLETED]', 'ignored_non_transfer_reason', { sseReason, role });
-            void reverifySubscription('sse:transfer_completed:ignored');
-            return;
-          }
           const userInitiated =
             Boolean(sourceTransferSessionRef.current?.code) ||
             isUserConfirmedTransferReason(sseReason);
@@ -1482,6 +1487,15 @@ export function OsmaniAppProvider({ children }) {
     // alias `transfer_requested` is kept as a fallback for backward
     // compatibility.
     const handleSourceTransferRequest = (eventName) => async (payload) => {
+      if (!isTransferAwaitingSourceApproval(payload, eventName)) {
+        console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'ignored_not_awaiting_approval', {
+          eventName,
+          status:
+            (payload && typeof payload === 'object' && (payload.status ?? payload.payload?.status)) ||
+            null,
+        });
+        return;
+      }
       const session = sourceTransferSessionRef.current;
       if (!session?.code) {
         console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'ignored_no_source_session', {
@@ -1495,9 +1509,9 @@ export function OsmaniAppProvider({ children }) {
         deviceId = identity?.deviceId ? String(identity.deviceId) : '';
       } catch {}
       const sourceDeviceId = pickSourceDeviceId(payload);
-      const sourceMatches = Boolean(
-        sourceDeviceId && deviceId && sourceDeviceId === deviceId,
-      );
+      const sourceMatches = sourceDeviceId
+        ? await devicesShareIdentity(sourceDeviceId, deviceId)
+        : true;
       console.log('[TRANSFER_CONFIRMATION_REQUIRED]', 'event_received', {
         eventName,
         payload,
@@ -1539,6 +1553,18 @@ export function OsmaniAppProvider({ children }) {
       'transfer_confirmation_required',
       handleSourceTransferRequest('transfer_confirmation_required'),
     );
+    const offRejected = subscribeRealtimeEvent('transfer_rejected', (payload) => {
+      void (async () => {
+        const role = await subscriptionTransferSseRole(payload, 'transfer_rejected');
+        if (role === 'target') {
+          sourceTransferSessionRef.current = null;
+          setPendingTransfer(null);
+        }
+        if (role === 'source') {
+          setPendingTransfer(null);
+        }
+      })();
+    });
     const offRuntimeModes = RUNTIME_MODE_SSE_NAMES.map((ev) =>
       subscribeRealtimeEvent(ev, (payload) => {
         console.log('[RUNTIME_MODES_SSE]', ev, payload);
@@ -1583,6 +1609,7 @@ export function OsmaniAppProvider({ children }) {
       offApproved();
       offRequested();
       offConfirmationRequired();
+      offRejected();
       offRuntimeModes.forEach((off) => off());
       offCatalogAliases.forEach((off) => off());
     };
@@ -1747,7 +1774,6 @@ export function OsmaniAppProvider({ children }) {
   }, []);
 
   const dismissPendingTransfer = useCallback(() => {
-    sourceTransferSessionRef.current = null;
     setPendingTransfer(null);
   }, []);
 
