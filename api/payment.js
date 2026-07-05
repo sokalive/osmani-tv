@@ -7,6 +7,7 @@ import { resolveMediaAssetUrl } from '../lib/mediaDelivery';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { fetchAdminApiJson, fetchAdminApiResponse } from '../lib/catalogApiFetch';
 import { readNativeAndroidVersionCode } from '../lib/playVpsApiHost';
+import { parsePaymentActivationStatus } from '../lib/paymentWaitingState';
 
 /**
  * MFALME parity: create-order must not abort while USSD/PIN is on the device.
@@ -360,6 +361,22 @@ export async function createPayment(payload) {
   return postCreateOrder('/api/payments/create-payment', payload, 'Payment', 'zenopay');
 }
 
+function enrichPaymentStatusResponse(body, httpStatus) {
+  const parsed = parsePaymentActivationStatus(body);
+  return {
+    status: parsed.status,
+    reason: parsed.reason,
+    appWaitingState: parsed.appWaitingState,
+    activationState: parsed.activationState,
+    entitlementActive: parsed.entitlementActive,
+    retryable: parsed.retryable,
+    userActionRequired: parsed.userActionRequired,
+    transactionStatus: parsed.transactionStatus,
+    httpStatus,
+    raw: body,
+  };
+}
+
 /**
  * @param {string} orderId
  */
@@ -372,23 +389,66 @@ export async function getPaymentStatus(orderId) {
     if (res.status === 404) {
       return {
         status: 'FAILED',
+        appWaitingState: 'FAILED',
         reason: formatCheckoutPaymentError(body?.reason ?? body?.error ?? 'Order not found', {
           httpStatus: 404,
         }),
       };
     }
+    if (res.status === 429) {
+      return {
+        status: 'PENDING',
+        appWaitingState: 'RETRYING',
+        retryable: true,
+        reason: 'Rate limited — retrying',
+        httpStatus: 429,
+      };
+    }
     const msg = body?.error != null ? String(body.error) : `HTTP ${res.status}`;
     throw new Error(formatCheckoutPaymentError(msg, { httpStatus: res.status }));
   }
-  const st = String(body?.status ?? body?.payment_status ?? 'PENDING').toUpperCase();
-  const reason = String(body?.reason ?? body?.message ?? '');
-  if (['SUCCESS', 'COMPLETED', 'PAID', 'SUCCESSFUL', 'APPROVED'].includes(st)) {
-    return { status: 'SUCCESS', reason };
+  return enrichPaymentStatusResponse(body, res.status);
+}
+
+/**
+ * SonicPesa-specific reconcile + app_waiting_state (same host as create-order).
+ * @param {string} orderId
+ */
+export async function getSonicpesaOrderStatus(orderId) {
+  const q = encodeURIComponent(orderId);
+  const { res, parsed: body } = await fetchAdminApiResponse(`/api/payments/sonicpesa/status/${q}`, {
+    tag: 'sonicpesa-payment-status',
+  });
+  if (!res.ok) {
+    if (res.status === 404) {
+      return getPaymentStatus(orderId);
+    }
+    if (res.status === 429) {
+      return {
+        status: 'PENDING',
+        appWaitingState: 'RETRYING',
+        retryable: true,
+        reason: 'Rate limited — retrying',
+        httpStatus: 429,
+      };
+    }
+    const msg = body?.error != null ? String(body.error) : `HTTP ${res.status}`;
+    throw new Error(formatCheckoutPaymentError(msg, { httpStatus: res.status }));
   }
-  if (['FAILED', 'FAILURE', 'CANCELLED', 'CANCELED', 'DECLINED', 'REJECTED'].includes(st)) {
-    return { status: 'FAILED', reason };
+  return enrichPaymentStatusResponse(body, res.status);
+}
+
+/**
+ * Route status poll to the same provider path used for create-order.
+ * @param {string} orderId
+ * @param {'zenopay'|'sonicpesa'|'auraxpay'|string|null} provider
+ */
+export async function resolveOrderPaymentStatus(orderId, provider) {
+  const p = String(provider ?? '').toLowerCase();
+  if (p === 'sonicpesa' || p === 'sonic') {
+    return getSonicpesaOrderStatus(orderId);
   }
-  return { status: 'PENDING', reason };
+  return getPaymentStatus(orderId);
 }
 
 /**

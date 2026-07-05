@@ -59,7 +59,7 @@ if (!modal.includes('finalizePaymentSuccess')) fail('finalizePaymentSuccess');
 else pass('finalizePaymentSuccess');
 
 const schedBlock = modal.match(
-  /const schedulePostPaymentActivationPolls[\s\S]*?},\s*\n\s*\[refreshSubscription, finalizePaymentSuccess\]/,
+  /const schedulePostPaymentActivationPolls[\s\S]*?},\s*\n\s*\[refreshSubscription, finalizePaymentSuccess/,
 );
 if (!schedBlock || schedBlock[0].includes('clearTimers();')) {
   fail('schedulePostPaymentActivationPolls must not clear timers before success');
@@ -77,8 +77,9 @@ else pass('PaymentSuccessStep');
 if (modal.includes('ENDELEA')) fail('no ENDELEA on payment success');
 else pass('no ENDELEA on payment success');
 
-if (!modal.includes("source: 'poll-success'")) fail('poll success activation source');
-else pass('poll success activation source');
+if (!modal.includes("'poll-success'") && !modal.includes("'poll-activating'")) {
+  fail('poll success activation source');
+} else pass('poll success activation source');
 
 if (!modal.includes("'payment_success'") || !modal.includes("'payment_completed'")) {
   fail('payment_success SSE listener');

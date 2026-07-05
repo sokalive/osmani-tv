@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   Dimensions,
   Easing,
   Image,
@@ -23,7 +24,7 @@ import EventSource from 'react-native-sse';
 import {
   getCheckoutPaymentProviders,
   getPaymentProviders,
-  getPaymentStatus,
+  resolveOrderPaymentStatus,
   resolveCheckoutStartPayment,
 } from '../api/payment';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
@@ -58,6 +59,13 @@ import PaymentWaitingStep from './PaymentWaitingStep';
 import PaymentSuccessStep from './PaymentSuccessStep';
 import { buildPaymentSuccessDetails } from '../lib/paymentSuccessDisplay';
 import { mergeCheckoutPlanIntoSubscription } from '../lib/accountSubscriptionDisplay';
+import {
+  APP_WAITING_STATE,
+  computePollIntervalMs,
+  isTerminalWaitingState,
+  mapWaitingStateToProgressStep,
+  PaymentReconcileGuard,
+} from '../lib/paymentWaitingState';
 
 const ACCENT = '#FACC15';
 const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
@@ -78,6 +86,8 @@ const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
 
 const POLL_MS = 1500;
+/** Aggressive activation window after provider confirms (handoff: first 2 min). */
+const ACTIVATION_AGGRESSIVE_MS = 120_000;
 /** Waiting window when create-order HTTP timed out but USSD/PIN may still be active. */
 const CREATE_ORDER_ORPHAN_WAIT_SEC = 300;
 
@@ -138,16 +148,21 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [phoneGuardMessage, setPhoneGuardMessage] = useState('');
   const [checkoutLogoUrl, setCheckoutLogoUrl] = useState(null);
   const [paymentProgressStep, setPaymentProgressStep] = useState(1);
+  const [appWaitingState, setAppWaitingState] = useState(APP_WAITING_STATE.PAYMENT_PENDING);
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const ringRotate = useRef(new Animated.Value(0)).current;
   const pollTimerRef = useRef(null);
+  const pollTimeoutRef = useRef(null);
   const countdownTimerRef = useRef(null);
   const sseRef = useRef(null);
   const doneRef = useRef(false);
   const payInFlightRef = useRef(false);
   const identityPrefetchRef = useRef(null);
+  const reconcileGuardRef = useRef(new PaymentReconcileGuard());
+  const pollStartedAtRef = useRef(0);
+  const checkoutProviderRef = useRef('zenopay');
 
   const animateStepChange = useCallback(() => {
     fadeAnim.setValue(0);
@@ -170,6 +185,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
+    }
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
     }
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current);
@@ -206,6 +225,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setPhoneGuardTitle('Taarifa');
     setPhoneGuardMessage('');
     setPaymentProgressStep(1);
+    setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
+    reconcileGuardRef.current.reset();
+    pollStartedAtRef.current = 0;
     payInFlightRef.current = false;
     identityPrefetchRef.current = null;
     fadeAnim.setValue(1);
@@ -436,6 +458,49 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     ],
   );
 
+  useEffect(() => {
+    checkoutProviderRef.current = checkoutProvider;
+  }, [checkoutProvider]);
+
+  const applyWaitingState = useCallback((incoming, { paymentConfirmed = false } = {}) => {
+    const guard = reconcileGuardRef.current;
+    if (!guard.tryAdvance(incoming)) {
+      console.log('[PremiumModal]', 'waiting_state_rejected_stale', {
+        incoming,
+        best: guard.bestState,
+      });
+      return false;
+    }
+    setAppWaitingState(incoming);
+    setPaymentProgressStep(mapWaitingStateToProgressStep(incoming));
+    if (
+      paymentConfirmed ||
+      incoming === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
+      incoming === APP_WAITING_STATE.ACTIVE
+    ) {
+      setPaymentProgressStep((prev) => Math.max(prev, 2));
+    }
+    return true;
+  }, []);
+
+  const handleTerminalConflict = useCallback(
+    (waitingState, reason) => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      clearTimers();
+      closeSse();
+      applyWaitingState(waitingState);
+      console.log('[PremiumModal]', 'payment_terminal_conflict', { waitingState, reason });
+      void reportPaymentTelemetry('terminal_conflict', {
+        order_id: orderId ?? null,
+        provider: checkoutProvider,
+        waiting_state: waitingState,
+        reason: String(reason ?? ''),
+      });
+    },
+    [clearTimers, closeSse, applyWaitingState, orderId, checkoutProvider],
+  );
+
   const handleOpenChannel = useCallback(() => {
     try {
       onUnlockSuccess?.();
@@ -452,7 +517,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const schedulePostPaymentActivationPolls = useCallback(
     async ({ paymentConfirmed = false, source = 'poll' } = {}) => {
       if (doneRef.current) return false;
-      if (paymentConfirmed) setPaymentProgressStep(2);
+      if (paymentConfirmed) {
+        setPaymentProgressStep(2);
+        applyWaitingState(APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING, { paymentConfirmed: true });
+      }
 
       try {
         const identity = await getDeviceIdentity();
@@ -465,6 +533,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         });
 
         if (result.active && result.subscription) {
+          applyWaitingState(APP_WAITING_STATE.ACTIVE);
           await finalizePaymentSuccess(result.subscription, result.fetchExpires);
           void refreshSubscription().catch(() => {});
           console.log('[PremiumModal]', 'payment_activation_success', { source });
@@ -483,7 +552,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         return false;
       }
     },
-    [refreshSubscription, finalizePaymentSuccess],
+    [refreshSubscription, finalizePaymentSuccess, applyWaitingState],
   );
 
   const handleFailed = useCallback(
@@ -491,6 +560,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       if (doneRef.current) return;
       doneRef.current = true;
       clearTimers();
+      closeSse();
+      applyWaitingState(APP_WAITING_STATE.FAILED);
       setFailureReason(
         formatCheckoutPaymentError(reason || 'Malipo hayajafanikiwa', {
           provider: checkoutProvider,
@@ -510,19 +581,45 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       });
       setStep(5);
     },
-    [clearTimers, checkoutProvider],
+    [clearTimers, closeSse, applyWaitingState, checkoutProvider, orderId],
   );
 
   const pollOnce = useCallback(
     async (oid) => {
       if (doneRef.current) return;
+      const gen = reconcileGuardRef.current.nextGeneration();
+      const provider = checkoutProviderRef.current;
       try {
-        const { status, reason } = await getPaymentStatus(oid);
-        if (doneRef.current) return;
-        if (status === 'FAILED') {
-          handleFailed(reason);
+        const result = await resolveOrderPaymentStatus(oid, provider);
+        if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
+
+        const waiting = result.appWaitingState ?? APP_WAITING_STATE.PAYMENT_PENDING;
+        applyWaitingState(waiting, {
+          paymentConfirmed:
+            waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
+            waiting === APP_WAITING_STATE.ACTIVE ||
+            result.status === 'SUCCESS',
+        });
+
+        if (waiting === APP_WAITING_STATE.PHONE_CONFLICT) {
+          handleTerminalConflict(APP_WAITING_STATE.PHONE_CONFLICT, result.reason);
           return;
         }
+        if (waiting === APP_WAITING_STATE.MOVED_TO_SIBLING_DEVICE) {
+          handleTerminalConflict(APP_WAITING_STATE.MOVED_TO_SIBLING_DEVICE, result.reason);
+          return;
+        }
+        if (waiting === APP_WAITING_STATE.MANUAL_REVIEW_REQUIRED) {
+          handleTerminalConflict(APP_WAITING_STATE.MANUAL_REVIEW_REQUIRED, result.reason);
+          return;
+        }
+
+        if (waiting === APP_WAITING_STATE.FAILED || result.status === 'FAILED') {
+          handleFailed(result.reason);
+          return;
+        }
+
+        if (reconcileGuardRef.current.isStale(gen)) return;
 
         let peek = null;
         try {
@@ -531,42 +628,108 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         } catch {
           peek = null;
         }
-        if (doneRef.current) return;
+        if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
+
         if (peek && isSubscriptionActive(peek)) {
+          applyWaitingState(APP_WAITING_STATE.ACTIVE);
           await schedulePostPaymentActivationPolls({ paymentConfirmed: true, source: 'poll-verify' });
           return;
         }
 
-        if (status === 'SUCCESS') {
-          await schedulePostPaymentActivationPolls({ paymentConfirmed: true, source: 'poll-success' });
+        if (
+          waiting === APP_WAITING_STATE.ACTIVE ||
+          waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
+          result.status === 'SUCCESS' ||
+          result.entitlementActive === true
+        ) {
+          await schedulePostPaymentActivationPolls({
+            paymentConfirmed: true,
+            source:
+              waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING
+                ? 'poll-activating'
+                : 'poll-success',
+          });
         }
-      } catch {
+      } catch (e) {
+        if (reconcileGuardRef.current.isStale(gen)) return;
+        const msg = String(e?.message ?? e ?? '');
+        if (/429|rate limit/i.test(msg)) {
+          applyWaitingState(APP_WAITING_STATE.RETRYING);
+        }
         // transient network — keep polling
       }
     },
-    [schedulePostPaymentActivationPolls, handleFailed],
+    [
+      applyWaitingState,
+      schedulePostPaymentActivationPolls,
+      handleFailed,
+      handleTerminalConflict,
+    ],
+  );
+
+  const scheduleNextPoll = useCallback(
+    (oid) => {
+      if (doneRef.current || !oid) return;
+      const waiting = reconcileGuardRef.current.bestState;
+      if (isTerminalWaitingState(waiting) && waiting !== APP_WAITING_STATE.ACTIVE) return;
+      if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
+      const elapsedMs = Date.now() - (pollStartedAtRef.current || Date.now());
+      const delay = computePollIntervalMs({
+        elapsedMs,
+        waitingState: waiting,
+        retryable: waiting === APP_WAITING_STATE.RETRYING,
+        paymentConfirmed:
+          waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
+          waiting === APP_WAITING_STATE.ACTIVE,
+      });
+      pollTimeoutRef.current = setTimeout(() => {
+        if (doneRef.current) return;
+        void pollOnce(oid).finally(() => scheduleNextPoll(oid));
+      }, delay);
+    },
+    [pollOnce],
   );
 
   useEffect(() => {
     if (!visible || step !== 3 || !orderId || doneRef.current) return undefined;
 
-    (async () => {
-      await pollOnce(orderId);
-    })();
+    pollStartedAtRef.current = Date.now();
+    reconcileGuardRef.current.reset();
+    setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
 
-    pollTimerRef.current = setInterval(() => {
-      if (doneRef.current) return;
-      pollOnce(orderId);
-    }, POLL_MS);
+    void pollOnce(orderId).finally(() => scheduleNextPoll(orderId));
 
     countdownTimerRef.current = setInterval(() => {
-      setRemainingSeconds((prev) => {
-        return prev > 0 ? prev - 1 : 0;
-      });
+      setRemainingSeconds((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
 
     return () => clearTimers();
-  }, [visible, step, orderId, clearTimers, pollOnce, handleFailed]);
+  }, [visible, step, orderId, clearTimers, pollOnce, scheduleNextPoll]);
+
+  /** Foreground resume — reconcile immediately after PIN/USSD or webhook activation. */
+  useEffect(() => {
+    if (!visible || step !== 3 || doneRef.current) return undefined;
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      if (orderId) {
+        void pollOnce(orderId).finally(() => scheduleNextPoll(orderId));
+      } else if (waitingDeviceId) {
+        void schedulePostPaymentActivationPolls({
+          paymentConfirmed: true,
+          source: 'foreground-resume',
+        });
+      }
+    });
+    return () => sub.remove();
+  }, [
+    visible,
+    step,
+    orderId,
+    waitingDeviceId,
+    pollOnce,
+    scheduleNextPoll,
+    schedulePostPaymentActivationPolls,
+  ]);
 
   /**
    * create-order HTTP may time out after USSD/PIN was already triggered.
@@ -582,8 +745,25 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       });
     };
     recover();
-    const id = setInterval(recover, POLL_MS);
-    return () => clearInterval(id);
+    let cancelled = false;
+    let orphanTimer = null;
+    const loop = () => {
+      if (cancelled) return;
+      recover();
+      const elapsedMs = Date.now() - (pollStartedAtRef.current || Date.now());
+      const delay = computePollIntervalMs({
+        elapsedMs,
+        waitingState: reconcileGuardRef.current.bestState,
+        retryable: true,
+        paymentConfirmed: true,
+      });
+      orphanTimer = setTimeout(loop, delay);
+    };
+    loop();
+    return () => {
+      cancelled = true;
+      if (orphanTimer) clearTimeout(orphanTimer);
+    };
   }, [visible, step, orderId, waitingDeviceId, schedulePostPaymentActivationPolls]);
 
   useEffect(() => {
@@ -712,6 +892,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           : 0;
       setRemainingSeconds(wait);
       setPaymentProgressStep(1);
+      setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
+      reconcileGuardRef.current.reset();
+      pollStartedAtRef.current = Date.now();
       setStep(3);
       void reportPaymentTelemetry('started', {
         order_id: oid,
@@ -756,6 +939,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         setOrderId(null);
         setRemainingSeconds(CREATE_ORDER_ORPHAN_WAIT_SEC);
         setPaymentProgressStep(1);
+        setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
+        reconcileGuardRef.current.reset();
+        pollStartedAtRef.current = Date.now();
         setStep(3);
         void reportPaymentTelemetry('create_order_timeout_recovery', {
           plan_id: selectedPlan?.id ?? null,
@@ -1057,6 +1243,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         checkoutProvider={checkoutProvider}
                         checkoutLogoUrl={checkoutLogoUrl}
                         paymentProgressStep={paymentProgressStep}
+                        appWaitingState={appWaitingState}
                         ringSpin={ringSpin}
                       />
                     )}

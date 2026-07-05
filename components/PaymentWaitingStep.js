@@ -33,10 +33,40 @@ function providerLabel(provider) {
   return CHECKOUT_GATEWAY_META[id]?.name ?? 'Malipo';
 }
 
-function statusLabel(step) {
+function statusLabel(step, appWaitingState) {
+  if (appWaitingState === 'PROVIDER_CONFIRMED_ACTIVATING') return 'Inaanzisha Kifurushi';
+  if (appWaitingState === 'RETRYING') return 'Inajaribu Tena';
+  if (appWaitingState === 'PHONE_CONFLICT') return 'Namba Inatumika';
+  if (appWaitingState === 'MOVED_TO_SIBLING_DEVICE') return 'Kifurushi Kimehamishwa';
   if (step >= 3) return 'Inaanzisha Kifurushi';
   if (step >= 2) return 'Inathibitisha Malipo';
   return 'Inasubiri PIN';
+}
+
+function waitingTitle(appWaitingState) {
+  if (appWaitingState === 'PROVIDER_CONFIRMED_ACTIVATING') {
+    return 'Malipo Yamethibitishwa — Inaanzisha';
+  }
+  if (appWaitingState === 'RETRYING') return 'Inajaribu Kuunganisha';
+  if (appWaitingState === 'PHONE_CONFLICT') return 'Namba Tayari Ina Kifurushi';
+  if (appWaitingState === 'MOVED_TO_SIBLING_DEVICE') return 'Kifurushi Kiko Kifaa Kingine';
+  return 'Inasubiri Uthibitisho wa Malipo';
+}
+
+function waitingBody(appWaitingState) {
+  if (appWaitingState === 'PROVIDER_CONFIRMED_ACTIVATING') {
+    return 'Malipo yamethibitishwa na mtoa huduma. Tunaweka kifurushi chako — subiri kidogo.';
+  }
+  if (appWaitingState === 'RETRYING') {
+    return 'Tunajaribu tena kuunganisha na seva. Usifunge programu.';
+  }
+  if (appWaitingState === 'PHONE_CONFLICT') {
+    return 'Malipo yamefanikiwa, lakini namba hii tayari ina kifurushi hai kwenye kifaa kingine. Wasiliana na msaada au tumia Hamisha Kifurushi.';
+  }
+  if (appWaitingState === 'MOVED_TO_SIBLING_DEVICE') {
+    return 'Malipo yamefanikiwa. Kifurushi kimehamishwa kwenye kifaa kingine kilichounganishwa na akaunti yako.';
+  }
+  return null;
 }
 
 /**
@@ -49,6 +79,7 @@ export default function PaymentWaitingStep({
   checkoutProvider,
   checkoutLogoUrl,
   paymentProgressStep,
+  appWaitingState,
   ringSpin,
 }) {
   const pulse = useRef(new Animated.Value(0)).current;
@@ -81,22 +112,32 @@ export default function PaymentWaitingStep({
 
   const providerMeta = CHECKOUT_GATEWAY_META[checkoutProvider] ?? CHECKOUT_GATEWAY_META.zenopay;
   const currentStep = Math.min(Math.max(paymentProgressStep, 0), 3);
+  const waitingState = String(appWaitingState ?? '').trim();
+  const specialBody = waitingBody(waitingState);
+  const isConflict =
+    waitingState === 'PHONE_CONFLICT' || waitingState === 'MOVED_TO_SIBLING_DEVICE';
 
   return (
     <View style={styles.wrap}>
-      <Animated.View style={[styles.loaderHaloWrap, { transform: [{ scale: pulseScale }] }]}>
-        <Animated.View style={[styles.loaderRing, { transform: [{ rotate: ringSpin }] }]} />
-        <View style={styles.loaderInner}>
-          <Ionicons name="phone-portrait-outline" size={28} color={ACCENT} />
+      {!isConflict ? (
+        <Animated.View style={[styles.loaderHaloWrap, { transform: [{ scale: pulseScale }] }]}>
+          <Animated.View style={[styles.loaderRing, { transform: [{ rotate: ringSpin }] }]} />
+          <View style={styles.loaderInner}>
+            <Ionicons name="phone-portrait-outline" size={28} color={ACCENT} />
+          </View>
+        </Animated.View>
+      ) : (
+        <View style={styles.conflictIconWrap}>
+          <Ionicons name="information-circle" size={52} color={ACCENT} />
         </View>
-      </Animated.View>
+      )}
 
       <View style={styles.amountBadge}>
         <Ionicons name="wallet" size={14} color={ACCENT} />
         <Text style={styles.amountBadgeText}>{selectedAmountDisplay}</Text>
       </View>
 
-      <Text style={styles.title}>Inasubiri Uthibitisho wa Malipo</Text>
+      <Text style={styles.title}>{waitingTitle(waitingState)}</Text>
 
       <View style={styles.badgeRow}>
         <View style={styles.providerBadge}>
@@ -111,18 +152,24 @@ export default function PaymentWaitingStep({
         </View>
         <View style={styles.statusBadge}>
           <View style={styles.statusDot} />
-          <Text style={styles.statusBadgeText}>{statusLabel(currentStep)}</Text>
+          <Text style={styles.statusBadgeText}>{statusLabel(currentStep, waitingState)}</Text>
         </View>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.bodyText}>
-          Tafadhali thibitisha malipo yanayoonekana kwenye simu yako kwa kuweka namba yako ya siri
-          (PIN).
-        </Text>
-        <Text style={styles.bodyEmphasis}>
-          Baada ya kuthibitisha, kifurushi kitaanza kutumika moja kwa moja.
-        </Text>
+        {specialBody ? (
+          <Text style={styles.bodyText}>{specialBody}</Text>
+        ) : (
+          <>
+            <Text style={styles.bodyText}>
+              Tafadhali thibitisha malipo yanayoonekana kwenye simu yako kwa kuweka namba yako ya siri
+              (PIN).
+            </Text>
+            <Text style={styles.bodyEmphasis}>
+              Baada ya kuthibitisha, kifurushi kitaanza kutumika moja kwa moja.
+            </Text>
+          </>
+        )}
       </View>
 
       <View style={styles.progressCard}>
@@ -239,6 +286,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: 'rgba(250,204,21,0.22)',
+  },
+  conflictIconWrap: {
+    alignSelf: 'center',
+    paddingVertical: 8,
   },
   amountBadge: {
     flexDirection: 'row',
