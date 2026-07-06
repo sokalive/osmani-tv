@@ -256,6 +256,7 @@ function BannerCarousel({
   onPremiumRequired,
   verifySubscriptionBeforePlay,
   awaitPremiumAccessSnapshot,
+  awaitEntitlementForTap,
   premiumPlaybackReady,
   getPremiumAccessSnapshot,
   awaitRecoverBoot,
@@ -376,6 +377,7 @@ function BannerCarousel({
         verifySubscriptionBeforePlay,
         verifySubscriptionInBackground: (reason) =>
           verifySubscriptionInBackground(verifySubscriptionBeforePlay, reason),
+        awaitEntitlementForTap,
         security,
         Alert,
       });

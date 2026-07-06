@@ -1300,6 +1300,7 @@ export function OsmaniAppProvider({ children }) {
   const getPremiumAccessSnapshot = useCallback(
     () => ({
       premiumPlaybackReady: subscriptionSyncLoaded && trialWatchSettingsLoaded,
+      subscriptionSyncLoaded,
       isSubscribed: isSubscribedRef.current,
       freeMode: settingsRef.current.freeMode,
       trialWatchSettings: trialWatchSettingsRef.current,
@@ -1308,12 +1309,55 @@ export function OsmaniAppProvider({ children }) {
   );
 
   const awaitPremiumAccessSnapshot = useCallback(async () => {
-    await Promise.all([awaitTrialWatchSettingsReady(), awaitSubscriptionSyncReady()]);
+    await awaitTrialWatchSettingsReady();
+    if (!isSubscribedRef.current && !subscriptionSyncLoaded) {
+      try {
+        await hydrateSubscriptionFromCache('premium-await-hydrate');
+      } catch {
+        /* non-fatal */
+      }
+    }
+    if (isSubscribedRef.current) {
+      return getPremiumAccessSnapshot();
+    }
+    await awaitSubscriptionSyncReady();
     return getPremiumAccessSnapshot();
   }, [
     awaitSubscriptionSyncReady,
     awaitTrialWatchSettingsReady,
     getPremiumAccessSnapshot,
+    hydrateSubscriptionFromCache,
+    subscriptionSyncLoaded,
+  ]);
+
+  /** Bounded cold-start / tap entitlement resolution — preserves original tap intent. */
+  const awaitEntitlementForTap = useCallback(async () => {
+    if (!isSubscribedRef.current) {
+      try {
+        await hydrateSubscriptionFromCache('tap-entitlement-hydrate');
+      } catch {
+        /* non-fatal */
+      }
+    }
+    if (isSubscribedRef.current) {
+      await awaitTrialWatchSettingsReady();
+      return getPremiumAccessSnapshot();
+    }
+    await awaitRecoverBoot();
+    if (!isSubscribedRef.current) {
+      try {
+        await hydrateSubscriptionFromCache('tap-entitlement-post-boot');
+      } catch {
+        /* non-fatal */
+      }
+    }
+    await awaitTrialWatchSettingsReady();
+    return getPremiumAccessSnapshot();
+  }, [
+    awaitRecoverBoot,
+    awaitTrialWatchSettingsReady,
+    getPremiumAccessSnapshot,
+    hydrateSubscriptionFromCache,
   ]);
 
   const awaitPremiumGateReady = awaitPremiumAccessSnapshot;
@@ -1951,6 +1995,7 @@ export function OsmaniAppProvider({ children }) {
       premiumPlaybackReady,
       getPremiumAccessSnapshot,
       awaitPremiumAccessSnapshot,
+      awaitEntitlementForTap,
       awaitRecoverBoot,
       awaitTrialWatchSettingsReady,
       awaitSubscriptionSyncReady,
@@ -2011,6 +2056,7 @@ export function OsmaniAppProvider({ children }) {
       premiumPlaybackReady,
       getPremiumAccessSnapshot,
       awaitPremiumAccessSnapshot,
+      awaitEntitlementForTap,
       awaitRecoverBoot,
       awaitTrialWatchSettingsReady,
       awaitSubscriptionSyncReady,

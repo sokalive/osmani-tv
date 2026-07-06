@@ -25,6 +25,7 @@ export default function OsmaniDeepLinkGate({ navigationRef, pendingUrlRef }) {
     emergencyMode,
     premiumPlaybackReady,
     awaitPremiumAccessSnapshot,
+    awaitEntitlementForTap,
     getPremiumAccessSnapshot,
     requestPaymentModal,
     requestEmergencyModal,
@@ -66,6 +67,7 @@ export default function OsmaniDeepLinkGate({ navigationRef, pendingUrlRef }) {
         requestPaymentModal,
         requestEmergencyModal,
         verifySubscriptionBeforePlay: gateForPlayback,
+        awaitEntitlementForTap,
         security,
       });
 
@@ -94,6 +96,7 @@ export default function OsmaniDeepLinkGate({ navigationRef, pendingUrlRef }) {
       emergencyMode,
       premiumPlaybackReady,
       awaitPremiumAccessSnapshot,
+      awaitEntitlementForTap,
       getPremiumAccessSnapshot,
       requestPaymentModal,
       requestEmergencyModal,

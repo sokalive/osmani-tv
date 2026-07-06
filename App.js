@@ -334,6 +334,7 @@ function ChannelCatalogScreen({
     requestEmergencyModal,
     trialWatchSettings,
     awaitPremiumAccessSnapshot,
+    awaitEntitlementForTap,
     awaitRecoverBoot,
     getPremiumAccessSnapshot,
     subscriptionSyncLoaded,
@@ -930,6 +931,7 @@ function ChannelCatalogScreen({
         verifySubscriptionBeforePlay,
         verifySubscriptionInBackground: (reason) =>
           verifySubscriptionInBackground(verifySubscriptionBeforePlay, reason),
+        awaitEntitlementForTap,
         security,
         Alert,
       });
@@ -940,6 +942,7 @@ function ChannelCatalogScreen({
     },
     [
       awaitPremiumAccessSnapshot,
+      awaitEntitlementForTap,
       verifySubscriptionBeforePlay,
       navigation,
       security,
@@ -1179,6 +1182,7 @@ function ChannelCatalogScreen({
             onPremiumRequired={onBannerPremiumRequired}
             verifySubscriptionBeforePlay={verifySubscriptionBeforePlay}
             awaitPremiumAccessSnapshot={awaitPremiumAccessSnapshot}
+            awaitEntitlementForTap={awaitEntitlementForTap}
             premiumPlaybackReady={premiumPlaybackReady}
             getPremiumAccessSnapshot={getPremiumAccessSnapshot}
             awaitRecoverBoot={awaitRecoverBoot}

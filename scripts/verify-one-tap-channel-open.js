@@ -47,6 +47,13 @@ else pass('gate-bg background verify helper');
 if (!gate.includes('gate-bg:')) fail('background verify uses gate-bg prefix');
 else pass('gate-bg prefix for non-blocking reconcile');
 
+if (gate.includes('isSubscribed === false) return initial')) {
+  fail('must not short-circuit unresolved false');
+} else pass('no unresolved false short-circuit');
+
+if (!gate.includes('snapshotIsConfirmedInactive')) fail('confirmed inactive helper');
+else pass('confirmed inactive tri-state');
+
 if (!app.includes('verifySubscriptionInBackground')) fail('App passes background verify');
 else pass('App wires background verify');
 
