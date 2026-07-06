@@ -34,6 +34,7 @@ const SCRIPTS = [
   'scripts/verify-sonicpesa-activation-visibility.js',
   'scripts/verify-kulipia-badge.js',
   'scripts/verify-subscription-revocation-visibility.js',
+  'scripts/verify-v24-realtime-state.js',
   // Subscription activation paths
   'scripts/verify-subscription-instant-ux.js',
   'scripts/verify-subscription-pending-activation.js',

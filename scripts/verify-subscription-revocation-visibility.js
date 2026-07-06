@@ -133,5 +133,22 @@ if (shouldShowKulipiaBadge({ isPremium: true, freeMode: false, isSubscribed: tru
   fail('sim: active hides KULIPIA');
 } else pass('sim: active hides KULIPIA');
 
+function resolveSubscriptionLossModalReason(verifyResult) {
+  if (!isAuthoritativeInactiveEntitlement(verifyResult)) return null;
+  const reason = String(verifyResult.inactiveReason ?? '').toLowerCase();
+  const status = String(verifyResult.status ?? '').toLowerCase();
+  if (reason === 'revoked' || status === 'revoked') return null;
+  if (reason === 'suspended' || status === 'suspended') return 'suspended';
+  return 'expired';
+}
+
+if (resolveSubscriptionLossModalReason(revoked) !== null) {
+  fail('sim: admin revoke must not return modal reason');
+} else pass('sim: silent admin revoke modal');
+
+if (resolveSubscriptionLossModalReason({ active: false, resolveSource: 'inactive', inactiveReason: 'expired' }) !== 'expired') {
+  fail('sim: natural expiry still shows modal');
+} else pass('sim: natural expiry modal preserved');
+
 if (process.exitCode) process.exit(1);
 console.log('\n[verify-subscription-revocation-visibility] ok');

@@ -73,7 +73,7 @@ import OsmaniDeepLinkGate from './components/OsmaniDeepLinkGate';
 import { resolveStream } from './lib/channelStream';
 import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBarLayout';
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
-import { buildPlayerChannelFromRow } from './lib/playerChannelFromRow';
+import { buildPlayerChannelFromRow, findRawChannelById } from './lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
 import { awaitPremiumSnapshotCapped, shouldShowKulipiaBadge } from './lib/premiumTapGate';
 import { instructionVideoVisibleForInstall, isInstructionVideoChannel } from './lib/instructionVideoChannel';
@@ -226,7 +226,8 @@ function findServerHealthForChannel(serverHealth, name) {
   return serverHealth.channels.find((row) => String(row?.name ?? '').trim().toLowerCase() === wanted) || null;
 }
 
-function ChannelAccessBadge({ item, freeMode, isSubscribed, styles: s }) {
+function ChannelAccessBadge({ item, freeMode, isSubscribed, catalogAccessReady, styles: s }) {
+  if (!catalogAccessReady) return null;
   if (item.isPremium) {
     if (!shouldShowKulipiaBadge({ isPremium: true, freeMode, isSubscribed })) {
       return null;
@@ -244,7 +245,13 @@ function ChannelAccessBadge({ item, freeMode, isSubscribed, styles: s }) {
   );
 }
 
-function mapApiChannelToCard(raw, index, freeMode = false, serverHealth = null) {
+function mapApiChannelToCard(
+  raw,
+  index,
+  freeMode = false,
+  serverHealth = null,
+  catalogAccessReady = true,
+) {
   const name = raw?.name != null ? String(raw.name) : `Channel ${index + 1}`;
   const stableId =
     raw?.id != null && String(raw.id).length > 0 ? String(raw.id) : `ch-${index}-${name.slice(0, 24)}`;
@@ -273,7 +280,7 @@ function mapApiChannelToCard(raw, index, freeMode = false, serverHealth = null) 
     showHD: isHD,
     liveLabel: isLive ? 'LIVE' : 'OFFLINE',
     livePillColor: isLive ? '#DC2626' : '#4B5563',
-    accessBadge: isPremium ? 'KULIPIA' : 'BURE',
+    accessBadge: !catalogAccessReady ? '' : isPremium ? 'KULIPIA' : 'BURE',
     accessBadgeColor: isPremium ? COLORS.yellow : COLORS.free,
     thumbnailUri,
     placeholderLetter: placeholderLetterFromName(name),
@@ -308,6 +315,7 @@ function ChannelCatalogScreen({
     maintenanceMode,
     rawChannels,
     rawBanners,
+    catalogAccessReady,
     serverHealth,
     loading,
     error,
@@ -805,14 +813,18 @@ function ChannelCatalogScreen({
   const popularChannelCards = useMemo(() => {
     if (navigatorTabKey !== 'home' || selectedFilter !== 'Zote') return [];
     const hits = homeZotePool.filter(channelIsPopular);
-    return hits.map((raw, i) => mapApiChannelToCard(raw, i, freeMode, serverHealth));
-  }, [homeZotePool, navigatorTabKey, selectedFilter, freeMode, serverHealth]);
+    return hits.map((raw, i) =>
+      mapApiChannelToCard(raw, i, freeMode, serverHealth, catalogAccessReady),
+    );
+  }, [homeZotePool, navigatorTabKey, selectedFilter, freeMode, serverHealth, catalogAccessReady]);
 
   const featuredChannelCards = useMemo(() => {
     if (navigatorTabKey !== 'home' || selectedFilter !== 'Zote') return [];
     const hits = homeZotePool.filter((r) => channelIsFeatured(r) && !channelIsPopular(r));
-    return hits.map((raw, i) => mapApiChannelToCard(raw, i, freeMode, serverHealth));
-  }, [homeZotePool, navigatorTabKey, selectedFilter, freeMode, serverHealth]);
+    return hits.map((raw, i) =>
+      mapApiChannelToCard(raw, i, freeMode, serverHealth, catalogAccessReady),
+    );
+  }, [homeZotePool, navigatorTabKey, selectedFilter, freeMode, serverHealth, catalogAccessReady]);
 
   const displayChannels = useMemo(() => {
     if (maintenanceMode) return [];
@@ -823,13 +835,16 @@ function ChannelCatalogScreen({
     } else if (selectedFilter === 'Sports' || selectedFilter === 'Tamthilia') {
       rows = rows.filter((r) => matchesHomePillFilter(r, selectedFilter));
     }
-    return rows.map((raw, i) => mapApiChannelToCard(raw, i, freeMode, serverHealth));
+    return rows.map((raw, i) =>
+      mapApiChannelToCard(raw, i, freeMode, serverHealth, catalogAccessReady),
+    );
   }, [
     rawChannels,
     navigatorTabKey,
     selectedFilter,
     freeMode,
     serverHealth,
+    catalogAccessReady,
     maintenanceMode,
   ]);
 
@@ -870,8 +885,15 @@ function ChannelCatalogScreen({
 
   const navigateToChannel = useCallback(
     async (playerChannel, { isPremium = false } = {}) => {
+      const channelId = String(
+        playerChannel?.id ?? playerChannel?.channel_id ?? '',
+      ).trim();
+      const found = channelId ? findRawChannelById(rawChannels, channelId) : null;
+      const freshPlayerChannel = found
+        ? buildPlayerChannelFromRow(found.raw, found.index, freeMode)
+        : playerChannel;
       const channelKey = String(
-        playerChannel?.id ?? playerChannel?.channel_id ?? playerChannel?.name ?? '',
+        freshPlayerChannel?.id ?? freshPlayerChannel?.channel_id ?? freshPlayerChannel?.name ?? '',
       ).trim();
       const startedAt = Date.now();
       logChannelCardTap('navigation_start', {
@@ -881,11 +903,11 @@ function ChannelCatalogScreen({
         subscriptionSyncLoaded,
         trialWatchSettingsLoaded,
       });
-      if (!playerChannel) {
+      if (!freshPlayerChannel) {
         logChannelCardTap('navigation_blocked', { channelKey, reason: 'missing_channel' });
         return;
       }
-      const isFree = freeMode || channelIsFreeAccess(playerChannel, { freeMode });
+      const isFree = freeMode || channelIsFreeAccess(freshPlayerChannel, { freeMode });
       const snapshot = isFree
         ? getPremiumAccessSnapshot()
         : await awaitPremiumSnapshotCapped(getPremiumAccessSnapshot, awaitPremiumAccessSnapshot);
@@ -896,10 +918,10 @@ function ChannelCatalogScreen({
         waitedMs: Date.now() - startedAt,
       });
       await openPremiumChannelFromSnapshot(snapshot, {
-        playerChannel,
+        playerChannel: freshPlayerChannel,
         cardIsPremium: isPremium,
         navigation,
-        openPaymentModal: () => openPremiumModal(playerChannel),
+        openPaymentModal: () => openPremiumModal(freshPlayerChannel),
         verifySubscriptionBeforePlay,
         security,
         Alert,
@@ -916,6 +938,7 @@ function ChannelCatalogScreen({
       security,
       openPremiumModal,
       freeMode,
+      rawChannels,
       premiumPlaybackReady,
       getPremiumAccessSnapshot,
       subscriptionSyncLoaded,
@@ -1024,6 +1047,7 @@ function ChannelCatalogScreen({
               item={item}
               freeMode={freeMode}
               isSubscribed={isSubscribed}
+              catalogAccessReady={catalogAccessReady}
               styles={styles}
             />
           </View>
@@ -1084,6 +1108,7 @@ function ChannelCatalogScreen({
               item={item}
               freeMode={freeMode}
               isSubscribed={isSubscribed}
+              catalogAccessReady={catalogAccessReady}
               styles={styles}
             />
           </View>

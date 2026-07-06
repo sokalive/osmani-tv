@@ -37,6 +37,10 @@ import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { startSubscriptionDeviceStream } from '../lib/subscriptionDeviceStream';
 import {
+  CHANNEL_ACCESS_IMMEDIATE_SSE_EVENTS,
+  isAuthoritativeReconcileReason,
+} from '../lib/subscriptionReconcile';
+import {
   devicesShareIdentity,
   isAuthoritativeInactiveEntitlement,
   isConfirmedSubscriptionLoss,
@@ -167,6 +171,8 @@ export function OsmaniAppProvider({ children }) {
   const [availablePlans, setAvailablePlans] = useState([]);
   /** Bumps after subscription fetch so consumers can invalidate memos tied to premium access. */
   const [subscriptionVersion, setSubscriptionVersion] = useState(0);
+  /** True after first successful network channel fetch — gates access badges to avoid stale disk flicker. */
+  const [catalogAccessReady, setCatalogAccessReady] = useState(false);
   /** Set when the backend reports the subscription is no longer active on this device. */
   const [revokedReason, setRevokedReason] = useState(null);
   /** Source device: transfer-out success popup (replaces transferred TransferredAwayModal). */
@@ -216,6 +222,8 @@ export function OsmaniAppProvider({ children }) {
   const lastVerifyKeyRef = useRef(0);
   /** Authoritative subscription flag for playback gates (updated synchronously on verify). */
   const isSubscribedRef = useRef(false);
+  /** Prevents duplicate Hongera popups for the same grant within a session. */
+  const lastActivationSuccessKeyRef = useRef('');
   const trialWatchSettingsRef = useRef(TRIAL_WATCH_FAIL_CLOSED);
   const settingsRef = useRef(defaultSettings);
   const rawChannelsRef = useRef([]);
@@ -323,6 +331,12 @@ export function OsmaniAppProvider({ children }) {
   const showActivationSuccess = useCallback((details, source = 'admin_grant') => {
     const built = buildPaymentSuccessDetails(details);
     if (!built?.expiresAt && !built?.planName) return;
+    const dedupeKey = `${source}:${built.expiresAt ?? ''}:${built.planName ?? ''}`;
+    if (lastActivationSuccessKeyRef.current === dedupeKey) {
+      console.log('[ACTIVATION_SUCCESS]', 'deduped', { dedupeKey });
+      return;
+    }
+    lastActivationSuccessKeyRef.current = dedupeKey;
     setActivationSuccessDetails(built);
     setActivationSuccessSource(source);
     setActivationSuccessVisible(true);
@@ -372,13 +386,21 @@ export function OsmaniAppProvider({ children }) {
     const run = (async () => {
       verifyInFlightRef.current = true;
       const verifyKey = ++lastVerifyKeyRef.current;
+      const authoritativeReconcile = isAuthoritativeReconcileReason(reason);
       try {
       const identity = await getDeviceIdentity();
       const { deviceId, deviceFingerprint } = identity;
+      if (authoritativeReconcile && String(reason).includes('subscription_revoked')) {
+        try {
+          await clearSubscriptionCache(`pre-reconcile:${reason}`);
+        } catch {
+          /* ignore */
+        }
+      }
       let r;
       try {
         r = await withTimeout(
-          resolveActiveSubscription(identity),
+          resolveActiveSubscription(identity, { skipFastProbe: authoritativeReconcile }),
           SUBSCRIPTION_VERIFY_TIMEOUT_MS,
           'resolve-active-subscription',
         );
@@ -416,7 +438,7 @@ export function OsmaniAppProvider({ children }) {
           }
         }
 
-        if (!active && !authoritativeInactive && isSubscriptionTransportFailure(r)) {
+        if (!active && !authoritativeInactive && !authoritativeReconcile && isSubscriptionTransportFailure(r)) {
           if (transferLockActive) {
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'skipped_transport_cache_after_source_transfer');
           } else {
@@ -440,6 +462,7 @@ export function OsmaniAppProvider({ children }) {
 
         if (
           !authoritativeInactive &&
+          !authoritativeReconcile &&
           !active &&
           !transferLockActive &&
           (isSubscriptionTransportFailure(r) || String(r.resolveSource ?? '').includes('timeout'))
@@ -470,6 +493,7 @@ export function OsmaniAppProvider({ children }) {
           }
         } else if (
           !authoritativeInactive &&
+          !authoritativeReconcile &&
           !transferLockActive &&
           !active &&
           r.resolveSource === 'inactive' &&
@@ -491,6 +515,7 @@ export function OsmaniAppProvider({ children }) {
           }
         } else if (
           !authoritativeInactive &&
+          !authoritativeReconcile &&
           !transferLockActive &&
           !active &&
           r.resolveSource !== 'inactive' &&
@@ -514,9 +539,17 @@ export function OsmaniAppProvider({ children }) {
 
         if (
           verifyKey !== lastVerifyKeyRef.current ||
-          (active === false && r.resolveSource !== 'inactive' && !transferLockActive)
+          (active === false &&
+            r.resolveSource !== 'inactive' &&
+            !transferLockActive &&
+            !authoritativeReconcile)
         ) {
-          if (active === false && r.resolveSource !== 'inactive' && !transferLockActive) {
+          if (
+            active === false &&
+            r.resolveSource !== 'inactive' &&
+            !transferLockActive &&
+            !authoritativeReconcile
+          ) {
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'preserved_subscribed_state', {
               resolveSource: r.resolveSource ?? null,
               hadActive: isSubscribedRef.current,
@@ -527,10 +560,13 @@ export function OsmaniAppProvider({ children }) {
         }
 
         if (authoritativeInactive) {
-          setRevokedReason((cur) => {
-            if (cur) return cur;
-            return resolveSubscriptionLossModalReason(r);
-          });
+          const modalReason = resolveSubscriptionLossModalReason(r);
+          if (modalReason) {
+            setRevokedReason((cur) => {
+              if (cur) return cur;
+              return modalReason;
+            });
+          }
         }
         isSubscribedRef.current = active;
         const serverTimeFetchedAt = Date.now();
@@ -683,6 +719,7 @@ export function OsmaniAppProvider({ children }) {
               (identity.androidId && cached.deviceId === identity.androidId));
           if (
             sourceTransferClearLockUntilRef.current <= Date.now() &&
+            !authoritativeReconcile &&
             cached?.active &&
             sameDevice
           ) {
@@ -992,6 +1029,7 @@ export function OsmaniAppProvider({ children }) {
       }
       const nextChannels = sortChannelsByAdminOrder(Array.isArray(list) ? list : []);
       catalogNetworkHydratedRef.current.channels = true;
+      setCatalogAccessReady(true);
       setRawChannels(nextChannels);
       await writeChannelsCache(nextChannels);
       devLog('[CATALOG_SYNC]', 'channels', {
@@ -1345,22 +1383,42 @@ export function OsmaniAppProvider({ children }) {
     const offRevoked = subscribeRealtimeEvent('subscription_revoked', (payload) => {
       void (async () => {
         const role = await subscriptionTransferSseRole(payload, 'subscription_revoked');
-        if (role === 'none' || role === 'other') return;
+        if (role === 'other') return;
         console.log('[SUBSCRIPTION_REVOKED]', 'sse', payload, { role });
         const hadActiveBefore = isSubscribedRef.current;
         const inner = unwrapSubscriptionSsePayload(payload);
         const sseReason = pickTransferSseReason(inner, 'subscription_revoked');
+
+        if (hadActiveBefore) {
+          try {
+            await clearSubscriptionCache('sse:subscription_revoked:pre-verify');
+          } catch {
+            /* ignore */
+          }
+          if (role === 'device' || role === 'source') {
+            isSubscribedRef.current = false;
+            setIsSubscribed(false);
+            setSubscriptionExpiresAt(null);
+            setSubscriptionDetails(null);
+            setSubscriptionVersion((v) => v + 1);
+            console.log('[SUBSCRIPTION_REVOKED]', 'optimistic_clear', {
+              at: Date.now(),
+              role,
+            });
+          }
+        }
+
         const r = await reverifySubscription('sse:subscription_revoked');
         if (r?.active === true) {
-          logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'cleared', {
+          logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'skipped', {
             role,
             hadActiveBefore,
             sseReason,
+            skip: 'verify_still_active',
           });
-          setRevokedReason(null);
           return;
         }
-        if (!hadActiveBefore) {
+        if (!hadActiveBefore && !isConfirmedSubscriptionLoss(r)) {
           logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'skipped', {
             role,
             hadActiveBefore,
@@ -1396,22 +1454,11 @@ export function OsmaniAppProvider({ children }) {
           });
           return;
         }
-        if (!isConfirmedSubscriptionLoss(r)) {
-          logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'skipped', {
-            role,
-            hadActiveBefore,
-            sseReason,
-            skip: 'not_confirmed_loss',
-          });
-          return;
-        }
-        const modalReason = resolveSubscriptionLossModalReason(r);
-        logSubscriptionLossModalDecision('sse:subscription_revoked', r, modalReason ?? 'cleared', {
+        logSubscriptionLossModalDecision('sse:subscription_revoked', r, 'silent_admin_revoke', {
           role,
           hadActiveBefore,
           sseReason,
         });
-        if (modalReason) setRevokedReason(modalReason);
         await clearLocalActiveSubscription('sse:subscription_revoked');
       })();
     });
@@ -1569,6 +1616,15 @@ export function OsmaniAppProvider({ children }) {
         if (patch) {
           setSettings((prev) => ({ ...prev, ...patch }));
           console.log('[SETTINGS_SYNC]', ev, patch);
+          if (Object.prototype.hasOwnProperty.call(patch, 'freeMode')) {
+            invalidateCatalogCache();
+            void refresh({
+              showGlobalLoading: false,
+              preserveDataOnError: true,
+              skipSettingsFromHttp: true,
+              forceNetwork: true,
+            });
+          }
         } else {
           console.log('[SETTINGS_SYNC]', ev, 'no_mode_keys_in_payload');
         }
@@ -1591,6 +1647,15 @@ export function OsmaniAppProvider({ children }) {
         if (patch) {
           setSettings((prev) => ({ ...prev, ...patch }));
           console.log('[SETTINGS_SYNC]', ev, patch);
+        }
+        if (CHANNEL_ACCESS_IMMEDIATE_SSE_EVENTS.has(ev)) {
+          invalidateCatalogCache();
+          void refresh({
+            showGlobalLoading: false,
+            preserveDataOnError: true,
+            skipSettingsFromHttp: true,
+            forceNetwork: true,
+          });
         }
         scheduleAdminDrivenSoftSync(`sse:${ev}`);
       }),
@@ -1844,6 +1909,7 @@ export function OsmaniAppProvider({ children }) {
       maintenanceMode: settings.maintenanceMode,
       rawChannels,
       rawBanners,
+      catalogAccessReady,
       serverHealth,
       loading,
       error,
@@ -1909,6 +1975,7 @@ export function OsmaniAppProvider({ children }) {
       settings,
       rawChannels,
       rawBanners,
+      catalogAccessReady,
       serverHealth,
       loading,
       error,

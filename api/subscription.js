@@ -1151,24 +1151,31 @@ async function fastStatusProbe(deviceIds) {
 
 /**
  * Full resolve chain for package migration / reinstall — recover before giving up.
+ * @param {object} identity
+ * @param {{ skipFastProbe?: boolean }} [opts]
  */
-export async function resolveActiveSubscription(identity) {
-  const fastHit = await fastStatusProbe([
-    identity.packageAndroidId,
-    identity.legacyPackageAndroidId,
-    identity.subscriptionDeviceId,
-    identity.deviceId,
-  ]);
-  if (fastHit) {
-    console.log(
-      '[SUBSCRIPTION_RESTORE_RESULT]',
-      JSON.stringify({
-        active: true,
-        resolveSource: fastHit.resolveSource,
-        expiresAt: fastHit.expiresAt ?? null,
-      }),
-    );
-    return fastHit;
+export async function resolveActiveSubscription(identity, opts = {}) {
+  const skipFastProbe = opts.skipFastProbe === true;
+  if (!skipFastProbe) {
+    const fastHit = await fastStatusProbe([
+      identity.packageAndroidId,
+      identity.legacyPackageAndroidId,
+      identity.subscriptionDeviceId,
+      identity.deviceId,
+    ]);
+    if (fastHit) {
+      console.log(
+        '[SUBSCRIPTION_RESTORE_RESULT]',
+        JSON.stringify({
+          active: true,
+          resolveSource: fastHit.resolveSource,
+          expiresAt: fastHit.expiresAt ?? null,
+        }),
+      );
+      return fastHit;
+    }
+  } else {
+    console.log('[SUBSCRIPTION_RESTORE]', 'skip_fast_probe', { reason: 'authoritative_reconcile' });
   }
 
   const candidates = Array.isArray(identity.identityCandidates)

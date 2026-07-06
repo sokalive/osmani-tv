@@ -866,7 +866,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         String(p.userAgent ?? '') !== String(next.userAgent ?? '') ||
         String(p.playerType ?? '') !== String(next.playerType ?? '') ||
         String(p.streamDeliveryMode ?? '') !== String(next.streamDeliveryMode ?? '') ||
-        String(p.proxyFallbackUrl ?? '') !== String(next.proxyFallbackUrl ?? '');
+        String(p.proxyFallbackUrl ?? '') !== String(next.proxyFallbackUrl ?? '') ||
+        String(p.accessType ?? '') !== String(next.accessType ?? '') ||
+        Boolean(p.accessPremium) !== Boolean(next.accessPremium) ||
+        Boolean(p.access_premium) !== Boolean(next.access_premium);
       return changed ? next : prev;
     });
   }, [rawChannels, freeMode, liveChannel, route?.params?.channel, navigation, channelDisabledNotified]);
