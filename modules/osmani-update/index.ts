@@ -101,14 +101,6 @@ export async function openPlayStore(url: string): Promise<void> {
   await NativeModule.openPlayStore(url);
 }
 
-export async function handleLandingInstallLink(uri: string): Promise<{
-  status: string;
-}> {
-  return (await NativeModule.handleLandingInstallLink(uri)) as {
-    status: string;
-  };
-}
-
 export function addStateListener(
   listener: (state: UpdateState) => void,
 ): Subscription {
