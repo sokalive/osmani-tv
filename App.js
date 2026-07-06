@@ -75,7 +75,7 @@ import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBa
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow, findRawChannelById } from './lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
-import { awaitPremiumSnapshotCapped, shouldShowKulipiaBadge } from './lib/premiumTapGate';
+import { awaitPremiumSnapshotCapped, shouldShowKulipiaBadge, verifySubscriptionInBackground } from './lib/premiumTapGate';
 import { instructionVideoVisibleForInstall, isInstructionVideoChannel } from './lib/instructionVideoChannel';
 import { readNativeAndroidVersionCode } from './lib/playVpsApiHost';
 import { logChannelCardTap } from './lib/channelCardTapDiagnostics';
@@ -923,6 +923,8 @@ function ChannelCatalogScreen({
         navigation,
         openPaymentModal: () => openPremiumModal(freshPlayerChannel),
         verifySubscriptionBeforePlay,
+        verifySubscriptionInBackground: (reason) =>
+          verifySubscriptionInBackground(verifySubscriptionBeforePlay, reason),
         security,
         Alert,
       });

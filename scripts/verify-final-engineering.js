@@ -35,6 +35,7 @@ const SCRIPTS = [
   'scripts/verify-kulipia-badge.js',
   'scripts/verify-subscription-revocation-visibility.js',
   'scripts/verify-v24-realtime-state.js',
+  'scripts/verify-one-tap-channel-open.js',
   // Subscription activation paths
   'scripts/verify-subscription-instant-ux.js',
   'scripts/verify-subscription-pending-activation.js',

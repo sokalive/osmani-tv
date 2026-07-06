@@ -47,6 +47,14 @@ if (!nav.includes('snapshotHasActiveSubscription')) {
   fail('subscribed cache-fast path required');
 } else pass('subscribed cache-fast navigation');
 
+if (nav.includes("await verifySubscriptionBeforePlay")) {
+  fail('subscribed tap must not await blocking verify before navigation');
+} else pass('no blocking pre-navigation verify');
+
+if (!nav.includes('verifySubscriptionInBackground')) {
+  fail('background verify after navigation required');
+} else pass('background verify after navigation');
+
 if (nav.includes('shouldBlockChannelForUpdate')) {
   fail('channel update gate must not intercept unsubscribed payment modal');
 } else pass('payment modal not blocked by channel update gate');

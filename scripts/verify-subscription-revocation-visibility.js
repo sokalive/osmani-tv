@@ -48,9 +48,13 @@ if (!ctx.includes('await reverifySubscription(`gate:${reason}`)')) {
   fail('foreground gate must await reverify');
 } else pass('foreground gate awaits reverify');
 
-if (!nav.includes("verifySubscriptionBeforePlay('channel-tap-premium')")) {
-  fail('premium tap must gate before navigate');
-} else pass('premium tap authoritative gate');
+if (nav.includes("await verifySubscriptionBeforePlay('channel-tap-premium')")) {
+  fail('premium tap must not await blocking verify before navigation');
+} else pass('no blocking pre-navigation verify on premium tap');
+
+if (!nav.includes('verifySubscriptionInBackground')) {
+  fail('premium tap must background-verify after navigate');
+} else pass('premium tap background verify after navigate');
 
 if (!app.includes("reverifySubscription('catalog-focus')")) fail('catalog focus reverify');
 else pass('catalog focus reverify');

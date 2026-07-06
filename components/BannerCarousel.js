@@ -22,7 +22,7 @@ import {
   findRawChannelById,
 } from '../lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from '../lib/premiumChannelNavigation';
-import { awaitPremiumSnapshotCapped } from '../lib/premiumTapGate';
+import { awaitPremiumSnapshotCapped, verifySubscriptionInBackground } from '../lib/premiumTapGate';
 
 const COLORS = {
   white: '#FFFFFF',
@@ -374,6 +374,8 @@ function BannerCarousel({
           fn(playerChannel);
         },
         verifySubscriptionBeforePlay,
+        verifySubscriptionInBackground: (reason) =>
+          verifySubscriptionInBackground(verifySubscriptionBeforePlay, reason),
         security,
         Alert,
       });
