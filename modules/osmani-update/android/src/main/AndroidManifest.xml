@@ -1,12 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application>
-        <!--
-          FileProvider used to expose the cached APK file to the
-          system PackageInstaller intent (which refuses file:// URIs
-          on API 24+). The authority is namespaced to avoid clashing
-          with any other FileProvider in the host app.
-        -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.osmaniupdate.fileprovider"
@@ -16,5 +10,29 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/osmani_update_paths" />
         </provider>
+
+        <activity
+            android:name=".LandingInstallActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="osmani-tv-landing.vercel.app"
+                    android:pathPrefix="/install" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="osmani"
+                    android:host="install" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

@@ -66,6 +66,11 @@ import { startPresence, stopPresence } from './lib/presenceTracker';
 import { startRealtimeSync, stopRealtimeSync } from './lib/realtimeSync';
 import { startExpoUpdatesClient } from './lib/expoUpdatesClient';
 import { startUpdateClient, stopUpdateClient } from './lib/updateClient';
+import {
+  flushInitialLandingInstallUrl,
+  handleLandingInstallUrl,
+  subscribeLandingInstallLinks,
+} from './lib/landingInstallBridge';
 import { setupOneSignal } from './lib/oneSignal';
 import { ensureOneSignalPushRegistration } from './lib/oneSignalPushRegistration';
 import { dispatchOsmaniDeepLink } from './lib/osmaniDeepLinkDispatch';
@@ -1642,6 +1647,10 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
         logStartupStep('presence', 'fail', { message: String(e?.message ?? e) }),
       );
     logStartupStep('live_sync', 'start');
+    void flushInitialLandingInstallUrl().catch(() => {});
+    const unsubscribeLandingInstall = subscribeLandingInstallLinks((url) => {
+      void handleLandingInstallUrl(url);
+    });
     try {
       startRealtimeSync();
       logStartupStep('live_sync', 'ok');
@@ -1681,6 +1690,7 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
       }
     });
     return () => {
+      unsubscribeLandingInstall();
       pushResumeSub.remove();
       if (typeof globalThis?.removeEventListener === 'function') {
         globalThis.removeEventListener('unhandledrejection', onUnhandled);

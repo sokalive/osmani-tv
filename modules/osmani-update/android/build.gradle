@@ -63,6 +63,6 @@ android {
 
 dependencies {
   implementation project(':expo-modules-core')
-  // kotlinx-coroutines & androidx.core ship transitively from expo-modules-core.
-  // We rely on android.jar's HttpURLConnection + org.json so no extra runtime deps are needed.
+  implementation "androidx.appcompat:appcompat:1.7.0"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
 }
