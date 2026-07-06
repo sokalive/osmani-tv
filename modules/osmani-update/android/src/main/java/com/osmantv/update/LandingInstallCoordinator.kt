@@ -87,24 +87,22 @@ internal class LandingInstallCoordinator(
     }
 
     fun launchInstaller(
-        file: File? = null,
+        file: File = pendingFile ?: return Progress.Failed("no_downloaded_apk"),
         onProgress: (Progress) -> Unit = {},
     ): Progress {
-        val apkFile = file ?: pendingFile
-            ?: return Progress.Failed("no_downloaded_apk")
-        if (!apkFile.exists() || apkFile.length() <= 0L) {
+        if (!file.exists() || file.length() <= 0L) {
             pendingFile = null
             return Progress.Failed("missing_apk_file")
         }
 
-        return when (val result = ApkInstaller.install(context.applicationContext, apkFile)) {
+        return when (val result = ApkInstaller.install(context.applicationContext, file)) {
             is ApkInstaller.LaunchResult.Launched -> {
-                onProgress(Progress.InstallerLaunched(apkFile))
-                Progress.InstallerLaunched(apkFile)
+                onProgress(Progress.InstallerLaunched(file))
+                Progress.InstallerLaunched(file)
             }
             is ApkInstaller.LaunchResult.NeedsUnknownSourcesPermission -> {
-                onProgress(Progress.NeedsUnknownSources(apkFile))
-                Progress.NeedsUnknownSources(apkFile)
+                onProgress(Progress.NeedsUnknownSources(file))
+                Progress.NeedsUnknownSources(file)
             }
             is ApkInstaller.LaunchResult.Failed -> {
                 onProgress(Progress.Failed(result.reason))
