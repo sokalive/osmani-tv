@@ -5,7 +5,6 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.osmantv.update.R
 import kotlinx.coroutines.launch
 
 /**
