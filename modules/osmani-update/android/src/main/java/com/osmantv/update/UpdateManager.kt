@@ -260,7 +260,9 @@ class UpdateManager : Module() {
                     val params = coordinator.parseUri(Uri.parse(uriString))
                         ?: throw IllegalArgumentException("invalid_landing_install_link")
 
-                    val result = coordinator.run(params) { progress ->
+                    val result = coordinator.run(
+                        params,
+                        onProgress = { progress ->
                         when (progress) {
                             is LandingInstallCoordinator.Progress.Downloading -> {
                                 emit(
@@ -284,7 +286,8 @@ class UpdateManager : Module() {
                                 emit(stateBundle("failed", error = progress.reason))
                             else -> Unit
                         }
-                    }
+                    },
+                    )
 
                     when (result) {
                         is LandingInstallCoordinator.Progress.InstallerLaunched -> {
