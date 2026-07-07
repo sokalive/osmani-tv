@@ -37,8 +37,8 @@ else pass('App.js tap logging');
 if (!app.includes('channelIsFreeAccess')) fail('App.js must use channelIsFreeAccess for sync snapshot');
 else pass('free channel sync snapshot');
 
-if (!app.includes('awaitPremiumSnapshotCapped')) fail('App.js must use capped premium tap snapshot');
-else pass('capped premium tap snapshot');
+if (!app.includes('resolveExplicitPremiumTapSnapshot')) fail('App.js must use explicit tap snapshot resolver');
+else pass('explicit tap snapshot resolver');
 
 if (!gate.includes('PREMIUM_GATE_MAX_MS')) fail('premiumTapGate must cap boot wait');
 else pass('premiumTapGate 800ms cap');

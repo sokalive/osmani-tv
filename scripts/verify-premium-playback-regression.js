@@ -29,15 +29,15 @@ const banner = read('components/BannerCarousel.js');
 const nav = read('lib/premiumChannelNavigation.js');
 const gate = read('lib/premiumTapGate.js');
 
-if (!gate.includes('awaitPremiumSnapshotCapped')) fail('premiumTapGate helper');
-else pass('premiumTapGate helper');
+if (!gate.includes('resolveExplicitPremiumTapSnapshot')) fail('premiumTapGate explicit tap resolver');
+else pass('premiumTapGate explicit tap resolver');
 
-if (!app.includes('awaitPremiumSnapshotCapped')) fail('App.js uses capped tap snapshot');
-else pass('App.js capped tap snapshot');
+if (!app.includes('resolveExplicitPremiumTapSnapshot')) fail('App.js uses explicit tap snapshot');
+else pass('App.js explicit tap snapshot');
 
-if (!banner.includes('awaitPremiumSnapshotCapped')) {
-  fail('BannerCarousel must use capped tap snapshot');
-} else pass('BannerCarousel capped tap snapshot');
+if (!banner.includes('resolveExplicitPremiumTapSnapshot')) {
+  fail('BannerCarousel must use explicit tap snapshot');
+} else pass('BannerCarousel explicit tap snapshot');
 
 if (nav.includes('await openPaymentModal()')) {
   fail('payment modal must open synchronously for instant UI');

@@ -23,7 +23,7 @@ import {
 } from '../lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from '../lib/premiumChannelNavigation';
 import { grantPremiumAccessIntent, setPremiumPendingChannel, touchPremiumAccessIntent } from '../lib/premiumAccessIntent';
-import { awaitPremiumSnapshotCapped, verifySubscriptionInBackground } from '../lib/premiumTapGate';
+import { resolveExplicitPremiumTapSnapshot, verifySubscriptionInBackground } from '../lib/premiumTapGate';
 
 const COLORS = {
   white: '#FFFFFF',
@@ -258,6 +258,7 @@ function BannerCarousel({
   verifySubscriptionBeforePlay,
   awaitPremiumAccessSnapshot,
   awaitEntitlementForTap,
+  hydrateSubscriptionFromCache,
   premiumPlaybackReady,
   getPremiumAccessSnapshot,
   awaitRecoverBoot,
@@ -366,10 +367,9 @@ function BannerCarousel({
       if (isPremium) {
         grantPremiumAccessIntent({ channel: playerChannel });
       }
-      const snapshot = await awaitPremiumSnapshotCapped(
-        getPremiumAccessSnapshot,
-        awaitPremiumAccessSnapshot,
-      );
+      const snapshot = await resolveExplicitPremiumTapSnapshot(getPremiumAccessSnapshot, {
+        hydrateCache: () => hydrateSubscriptionFromCache?.('banner-tap-hydrate'),
+      });
       await openPremiumChannelFromSnapshot(snapshot, {
         playerChannel,
         cardIsPremium: isPremium,
@@ -399,7 +399,7 @@ function BannerCarousel({
       onEmergency,
       onPremiumRequired,
       verifySubscriptionBeforePlay,
-      awaitPremiumAccessSnapshot,
+      hydrateSubscriptionFromCache,
       getPremiumAccessSnapshot,
       openPaymentModal,
       security,

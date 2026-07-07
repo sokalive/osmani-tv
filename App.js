@@ -74,7 +74,8 @@ import { getScrollContentBottomPadding, getTabBarTotalHeight } from './lib/tabBa
 import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow, findRawChannelById } from './lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
-import { awaitPremiumSnapshotCapped, shouldShowKulipiaBadge, verifySubscriptionInBackground } from './lib/premiumTapGate';
+import { resolveExplicitPremiumTapSnapshot, shouldShowKulipiaBadge, verifySubscriptionInBackground } from './lib/premiumTapGate';
+import { mayOpenPaymentOnExplicitTap } from './lib/paymentAffordancePolicy';
 import {
   snapshotHasActiveSubscription,
   snapshotAllowsExplicitTapPayment,
@@ -239,10 +240,9 @@ function findServerHealthForChannel(serverHealth, name) {
   return serverHealth.channels.find((row) => String(row?.name ?? '').trim().toLowerCase() === wanted) || null;
 }
 
-function ChannelAccessBadge({ item, freeMode, isSubscribed, catalogAccessReady, styles: s }) {
-  if (!catalogAccessReady) return null;
+function ChannelAccessBadge({ item, freeMode, isSubscribed, cacheTrustedActive, styles: s }) {
   if (item.isPremium) {
-    if (!shouldShowKulipiaBadge({ isPremium: true, freeMode, isSubscribed })) {
+    if (!shouldShowKulipiaBadge({ isPremium: true, freeMode, isSubscribed, cacheTrustedActive })) {
       return null;
     }
     return (
@@ -263,7 +263,6 @@ function mapApiChannelToCard(
   index,
   freeMode = false,
   serverHealth = null,
-  catalogAccessReady = true,
 ) {
   const name = raw?.name != null ? String(raw.name) : `Channel ${index + 1}`;
   const stableId =
@@ -293,7 +292,7 @@ function mapApiChannelToCard(
     showHD: isHD,
     liveLabel: isLive ? 'LIVE' : 'OFFLINE',
     livePillColor: isLive ? '#DC2626' : '#4B5563',
-    accessBadge: !catalogAccessReady ? '' : isPremium ? 'KULIPIA' : 'BURE',
+    accessBadge: isPremium ? 'KULIPIA' : 'BURE',
     accessBadgeColor: isPremium ? COLORS.yellow : COLORS.free,
     thumbnailUri,
     placeholderLetter: placeholderLetterFromName(name),
@@ -344,6 +343,7 @@ function ChannelCatalogScreen({
     awaitPremiumAccessSnapshot,
     awaitEntitlementForTap,
     awaitRecoverBoot,
+    hydrateSubscriptionFromCache,
     getPremiumAccessSnapshot,
     subscriptionSyncLoaded,
     subscriptionRecoveryComplete,
@@ -385,6 +385,11 @@ function ChannelCatalogScreen({
   const [refreshKey, setRefreshKey] = useState(0);
   const [bannerVisibilityClock, setBannerVisibilityClock] = useState(() => Date.now());
   const wasOfflineRef = useRef(false);
+
+  const cacheTrustedActive = useMemo(
+    () => getPremiumAccessSnapshot().cacheTrustedActive === true,
+    [getPremiumAccessSnapshot, isSubscribed, subscriptionVersion, subscriptionSyncLoaded],
+  );
 
   /** Once per mount: log real API shape + derived section (production-safe diagnostic). */
   const catalogShapeLoggedRef = useRef(false);
@@ -821,17 +826,17 @@ function ChannelCatalogScreen({
     if (navigatorTabKey !== 'home' || selectedFilter !== 'Zote') return [];
     const hits = homeZotePool.filter(channelIsPopular);
     return hits.map((raw, i) =>
-      mapApiChannelToCard(raw, i, freeMode, serverHealth, catalogAccessReady),
+      mapApiChannelToCard(raw, i, freeMode, serverHealth),
     );
-  }, [homeZotePool, navigatorTabKey, selectedFilter, freeMode, serverHealth, catalogAccessReady]);
+  }, [homeZotePool, navigatorTabKey, selectedFilter, freeMode, serverHealth]);
 
   const featuredChannelCards = useMemo(() => {
     if (navigatorTabKey !== 'home' || selectedFilter !== 'Zote') return [];
     const hits = homeZotePool.filter((r) => channelIsFeatured(r) && !channelIsPopular(r));
     return hits.map((raw, i) =>
-      mapApiChannelToCard(raw, i, freeMode, serverHealth, catalogAccessReady),
+      mapApiChannelToCard(raw, i, freeMode, serverHealth),
     );
-  }, [homeZotePool, navigatorTabKey, selectedFilter, freeMode, serverHealth, catalogAccessReady]);
+  }, [homeZotePool, navigatorTabKey, selectedFilter, freeMode, serverHealth]);
 
   const displayChannels = useMemo(() => {
     if (maintenanceMode) return [];
@@ -843,7 +848,7 @@ function ChannelCatalogScreen({
       rows = rows.filter((r) => matchesHomePillFilter(r, selectedFilter));
     }
     return rows.map((raw, i) =>
-      mapApiChannelToCard(raw, i, freeMode, serverHealth, catalogAccessReady),
+      mapApiChannelToCard(raw, i, freeMode, serverHealth),
     );
   }, [
     rawChannels,
@@ -851,7 +856,6 @@ function ChannelCatalogScreen({
     selectedFilter,
     freeMode,
     serverHealth,
-    catalogAccessReady,
     maintenanceMode,
   ]);
 
@@ -920,7 +924,9 @@ function ChannelCatalogScreen({
       }
       const snapshot = isFree
         ? getPremiumAccessSnapshot()
-        : await awaitPremiumSnapshotCapped(getPremiumAccessSnapshot, awaitPremiumAccessSnapshot);
+        : await resolveExplicitPremiumTapSnapshot(getPremiumAccessSnapshot, {
+            hydrateCache: () => hydrateSubscriptionFromCache('tap-immediate-hydrate'),
+          });
       logChannelCardTap(isFree || snapshot.premiumPlaybackReady ? 'snapshot_sync' : 'snapshot_ready', {
         channelKey,
         isFree,
@@ -951,8 +957,8 @@ function ChannelCatalogScreen({
       });
     },
     [
-      awaitPremiumAccessSnapshot,
       awaitEntitlementForTap,
+      hydrateSubscriptionFromCache,
       verifySubscriptionBeforePlay,
       navigation,
       security,
@@ -980,12 +986,7 @@ function ChannelCatalogScreen({
       void navigateToChannel(channel, { isPremium: true });
       return;
     }
-    if (
-      snapshotAllowsExplicitTapPayment(snap) ||
-      (hasFreshPremiumAccessIntent() &&
-        !snapshotHasActiveSubscription(snap) &&
-        snap.subscriptionSyncLoaded === true)
-    ) {
+    if (hasFreshPremiumAccessIntent() && mayOpenPaymentOnExplicitTap(snap)) {
       pendingPremiumTapRef.current = null;
       takePremiumPendingChannel();
       logChannelCardTap('deferred_tap_resume', {
@@ -1006,7 +1007,7 @@ function ChannelCatalogScreen({
   const onBannerPremiumRequired = useCallback(() => {
     grantPremiumAccessIntent({ channelKey: 'banner-premium' });
     const snap = getPremiumAccessSnapshot();
-    if (snapshotAllowsExplicitTapPayment(snap)) {
+    if (mayOpenPaymentOnExplicitTap(snap) || snapshotAllowsExplicitTapPayment(snap)) {
       openPremiumModal(null);
     }
   }, [getPremiumAccessSnapshot, openPremiumModal]);
@@ -1108,7 +1109,7 @@ function ChannelCatalogScreen({
               item={item}
               freeMode={freeMode}
               isSubscribed={isSubscribed}
-              catalogAccessReady={catalogAccessReady}
+              cacheTrustedActive={cacheTrustedActive}
               styles={styles}
             />
           </View>
@@ -1128,7 +1129,7 @@ function ChannelCatalogScreen({
         </View>
       </Pressable>
     ),
-    [handleCardPress, freeMode, isSubscribed],
+    [handleCardPress, freeMode, isSubscribed, cacheTrustedActive],
   );
 
   const renderHighlightCard = useCallback(
@@ -1169,7 +1170,7 @@ function ChannelCatalogScreen({
               item={item}
               freeMode={freeMode}
               isSubscribed={isSubscribed}
-              catalogAccessReady={catalogAccessReady}
+              cacheTrustedActive={cacheTrustedActive}
               styles={styles}
             />
           </View>
@@ -1189,7 +1190,7 @@ function ChannelCatalogScreen({
         </View>
       </Pressable>
     ),
-    [handleCardPress, freeMode, isSubscribed],
+    [handleCardPress, freeMode, isSubscribed, cacheTrustedActive],
   );
 
   const listHeader = useMemo(
@@ -1234,6 +1235,7 @@ function ChannelCatalogScreen({
             verifySubscriptionBeforePlay={verifySubscriptionBeforePlay}
             awaitPremiumAccessSnapshot={awaitPremiumAccessSnapshot}
             awaitEntitlementForTap={awaitEntitlementForTap}
+            hydrateSubscriptionFromCache={hydrateSubscriptionFromCache}
             premiumPlaybackReady={premiumPlaybackReady}
             getPremiumAccessSnapshot={getPremiumAccessSnapshot}
             awaitRecoverBoot={awaitRecoverBoot}
@@ -1384,7 +1386,7 @@ function ChannelCatalogScreen({
       <FlatList
         key={String(refreshKey)}
         data={displayChannels}
-        extraData={{ isSubscribed, subscriptionVersion, maintenanceMode }}
+        extraData={{ isSubscribed, cacheTrustedActive, subscriptionVersion, maintenanceMode }}
         renderItem={renderCard}
         keyExtractor={(item) => item.id}
         numColumns={2}

@@ -915,6 +915,7 @@ export function OsmaniAppProvider({ children }) {
         cachedChannels?.channels?.length
       ) {
         setRawChannels(sortChannelsByAdminOrder(cachedChannels.channels));
+        setCatalogAccessReady(true);
       }
       const cached = await readBannersCache();
       if (
@@ -2090,6 +2091,7 @@ export function OsmaniAppProvider({ children }) {
       awaitPremiumAccessSnapshot,
       awaitEntitlementForTap,
       awaitRecoverBoot,
+      hydrateSubscriptionFromCache,
       awaitTrialWatchSettingsReady,
       awaitSubscriptionSyncReady,
       awaitPremiumGateReady,
@@ -2151,6 +2153,7 @@ export function OsmaniAppProvider({ children }) {
       awaitPremiumAccessSnapshot,
       awaitEntitlementForTap,
       awaitRecoverBoot,
+      hydrateSubscriptionFromCache,
       awaitTrialWatchSettingsReady,
       awaitSubscriptionSyncReady,
       awaitPremiumGateReady,

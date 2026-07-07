@@ -50,7 +50,7 @@ else fail('nav uses d3ba89c explicit tap payment');
 
 if (
   nav.includes('payment_modal_d3ba89c_explicit_tap') ||
-  nav.includes('payment_modal_d3ba89c_fallback')
+  nav.includes('payment_modal_explicit_tap_no_bootstrap')
 ) {
   pass('nav d3ba89c terminal fallback');
 } else fail('nav d3ba89c terminal fallback');

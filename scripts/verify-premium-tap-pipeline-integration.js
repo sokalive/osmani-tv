@@ -89,12 +89,27 @@ function clearIntent() {
   intent = false;
 }
 
+function mayOpenPaymentOnExplicitTap(snapshot) {
+  const s = snapshot ?? {};
+  if (snapshotHasActiveSubscription(s)) return false;
+  const phase = deriveEntitlementPhase(s);
+  if (phase === 'INACTIVE' || phase === 'EXPIRED') return true;
+  if (phase === 'ACTIVE' || phase === 'STALE_ACTIVE' || s.cacheTrustedActive === true) return false;
+  return true;
+}
+
 function simulateTapPipeline(snapshot) {
   if (snapshotHasActiveSubscription(snapshot)) {
     navigations += 1;
     pending = null;
     clearIntent();
     return 'navigated';
+  }
+  if (intent && mayOpenPaymentOnExplicitTap(snapshot)) {
+    modalOpens += 1;
+    pending = null;
+    clearIntent();
+    return 'payment';
   }
   if (
     snapshotAllowsExplicitTapPayment(snapshot) ||
@@ -107,12 +122,6 @@ function simulateTapPipeline(snapshot) {
   }
   if (intent && snapshot.subscriptionSyncLoaded !== true) {
     return 'deferred';
-  }
-  if (intent && snapshot.subscriptionSyncLoaded === true && !snapshotHasActiveSubscription(snapshot)) {
-    modalOpens += 1;
-    pending = null;
-    clearIntent();
-    return 'payment';
   }
   return 'noop';
 }
@@ -133,6 +142,16 @@ sim('INACTIVE UNKNOWN sync loaded opens modal', () => {
   return simulateTapPipeline({
     isSubscribed: false,
     subscriptionSyncLoaded: true,
+    authoritativeInactiveConfirmed: false,
+  }) === 'payment' && modalOpens === 1;
+});
+
+sim('CHECKING unpaid first tap opens modal without sync', () => {
+  modalOpens = 0;
+  tap({ id: 'bein' });
+  return simulateTapPipeline({
+    isSubscribed: false,
+    subscriptionSyncLoaded: false,
     authoritativeInactiveConfirmed: false,
   }) === 'payment' && modalOpens === 1;
 });

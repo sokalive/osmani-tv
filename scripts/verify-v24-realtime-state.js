@@ -76,8 +76,12 @@ else pass('resolveActiveSubscription skipFastProbe');
 if (!ctx.includes('catalogAccessReady')) fail('catalogAccessReady exported');
 else pass('catalogAccessReady state');
 
-if (!app.includes('catalogAccessReady')) fail('App uses catalogAccessReady for badges');
-else pass('App badge gate on catalogAccessReady');
+if (!app.includes('catalogAccessReady')) fail('App may still read catalogAccessReady');
+else pass('catalogAccessReady state');
+
+if (!app.includes('mayShowPaymentAffordance') && !app.includes('shouldShowKulipiaBadge')) {
+  fail('App must use payment affordance for badges');
+} else pass('App badge uses payment affordance not bootstrap');
 
 if (!app.includes('findRawChannelById')) fail('App rebuilds channel at tap');
 else pass('App fresh channel at tap');
