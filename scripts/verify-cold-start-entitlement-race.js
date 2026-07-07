@@ -62,68 +62,97 @@ else pass('context awaitEntitlementForTap');
 if (!ctx.includes('premium-await-hydrate')) fail('premium await hydrates cache first');
 else pass('premium await cache hydrate');
 
-if (!ctx.includes('subscriptionSyncLoaded')) fail('snapshot includes subscriptionSyncLoaded');
-else pass('snapshot subscriptionSyncLoaded');
+if (!ctx.includes('authoritativeInactiveConfirmed')) fail('authoritative inactive in snapshot');
+else pass('authoritative inactive in snapshot');
+
+if (!read('lib/entitlementStateMachine.js').includes('deriveEntitlementPhase')) {
+  fail('canonical entitlement state machine');
+} else pass('canonical entitlement state machine');
 
 if (!app.includes('awaitEntitlementForTap')) fail('App wires awaitEntitlementForTap');
 else pass('App wires awaitEntitlementForTap');
 
-// Simulation: cold start false must be resolving not inactive
-function withEntitlementState(snapshot) {
-  const active = snapshot?.isSubscribed === true;
-  const ready = snapshot?.premiumPlaybackReady === true;
+// Simulation via inline canonical state machine (Node CJS)
+function deriveEntitlementPhase(snapshot) {
+  const s = snapshot ?? {};
+  if (s.isSubscribed === true) return 'ACTIVE';
+  if (s.cacheTrustedActive === true) return 'STALE_ACTIVE';
+  if (s.authoritativeInactiveConfirmed === true) return 'INACTIVE';
+  if (s.subscriptionSyncLoaded !== true) return 'CHECKING';
+  if (s.lastResolveSource && String(s.lastResolveSource).startsWith('transport:')) return 'ERROR_UNKNOWN';
+  return 'UNKNOWN';
+}
+
+function mayOpenPaymentPopup(phase) {
+  return phase === 'INACTIVE' || phase === 'EXPIRED';
+}
+
+function withCanonicalEntitlement(snapshot) {
+  const entitlementPhase = deriveEntitlementPhase(snapshot);
   let entitlementState = 'resolving';
-  if (active) entitlementState = 'active';
-  else if (ready) entitlementState = 'inactive';
-  return { ...snapshot, entitlementState };
+  if (entitlementPhase === 'ACTIVE') entitlementState = 'active';
+  else if (mayOpenPaymentPopup(entitlementPhase)) entitlementState = 'inactive';
+  return { ...snapshot, entitlementPhase, entitlementState };
 }
 
-function snapshotIsConfirmedInactive(snapshot) {
-  if (snapshot?.entitlementState === 'inactive') return true;
-  return snapshot?.premiumPlaybackReady === true && snapshot?.isSubscribed !== true;
+function simConfirmedInactive(snapshot) {
+  return mayOpenPaymentPopup(snapshot?.entitlementPhase ?? deriveEntitlementPhase(snapshot));
 }
 
-const coldFalse = withEntitlementState({
+const coldFalse = withCanonicalEntitlement({
   isSubscribed: false,
-  premiumPlaybackReady: false,
   subscriptionSyncLoaded: false,
+  authoritativeInactiveConfirmed: false,
 });
-if (coldFalse.entitlementState !== 'resolving') fail('sim: cold false is resolving');
+if (coldFalse.entitlementPhase !== 'CHECKING') fail('sim: cold false is CHECKING');
 else pass('sim: cold false is resolving');
 
-if (snapshotIsConfirmedInactive(coldFalse)) fail('sim: cold false not confirmed inactive');
-else pass('sim: no false popup on cold false');
+if (simConfirmedInactive(coldFalse) || mayOpenPaymentPopup(coldFalse.entitlementPhase)) {
+  fail('sim: cold false not confirmed inactive');
+} else pass('sim: no false popup on cold false');
 
-const coldActive = withEntitlementState({
+const coldActive = withCanonicalEntitlement({
   isSubscribed: true,
-  premiumPlaybackReady: false,
   subscriptionSyncLoaded: false,
 });
-if (coldActive.entitlementState !== 'active') fail('sim: hydrated active');
+if (coldActive.entitlementPhase !== 'ACTIVE') fail('sim: hydrated active');
 else pass('sim: hydrated active immediate');
 
-const bootInactive = withEntitlementState({
+const bootInactive = withCanonicalEntitlement({
+  isSubscribed: false,
+  subscriptionSyncLoaded: true,
+  authoritativeInactiveConfirmed: true,
+});
+if (!simConfirmedInactive(bootInactive)) fail('sim: boot inactive confirmed');
+else pass('sim: confirmed inactive after sync');
+
+const oldBug = withCanonicalEntitlement({
   isSubscribed: false,
   premiumPlaybackReady: true,
   subscriptionSyncLoaded: true,
+  authoritativeInactiveConfirmed: false,
 });
-if (!snapshotIsConfirmedInactive(bootInactive)) fail('sim: boot inactive confirmed');
-else pass('sim: confirmed inactive after sync');
+if (simConfirmedInactive(oldBug)) fail('sim: sync loaded alone must not be inactive');
+else pass('sim: sync loaded without authoritative inactive');
 
 let navigated = 0;
 let popup = 0;
 function decide(snap) {
-  const s = withEntitlementState(snap);
-  if (s.entitlementState === 'active') {
+  const s = withCanonicalEntitlement(snap);
+  if (s.entitlementPhase === 'ACTIVE' || s.entitlementPhase === 'STALE_ACTIVE') {
     navigated += 1;
     return;
   }
-  if (snapshotIsConfirmedInactive(s)) {
+  if (simConfirmedInactive(s) || mayOpenPaymentPopup(s.entitlementPhase)) {
     popup += 1;
     return;
   }
 }
-decide({ isSubscribed: false, premiumPlaybackReady: false, subscriptionSyncLoaded: false });
+decide({
+  isSubscribed: false,
+  subscriptionSyncLoaded: false,
+  authoritativeInactiveConfirmed: false,
+});
 if (popup > 0) fail('sim: cold tap opened popup');
 else pass('sim: cold tap no popup');
 

@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { getBanners, getChannels, getServerHealth, invalidateCatalogCache } from '../api';
 import { devLog } from '../lib/devLog';
@@ -59,7 +59,8 @@ import {
   subscriptionDetailsFromCache,
   subscriptionDetailsFromVerifyResult,
 } from '../lib/subscriptionCacheHydrate';
-import { isStaleActiveSubscriptionCache } from '../lib/subscriptionCacheRepair';
+import { isStaleActiveSubscriptionCache, shouldHydrateSubscriptionCache } from '../lib/subscriptionCacheRepair';
+import { deriveEntitlementPhase, isTrustworthyActiveCache } from '../lib/entitlementStateMachine';
 import { purgeUnreliableSubscriptionCache, SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS } from '../lib/subscriptionRecoveryBoot';
 import {
   extractPlanSnapshotFromDetails,
@@ -222,6 +223,12 @@ export function OsmaniAppProvider({ children }) {
   const lastVerifyKeyRef = useRef(0);
   /** Authoritative subscription flag for playback gates (updated synchronously on verify). */
   const isSubscribedRef = useRef(false);
+  /** Backend confirmed inactive — only then may payment popup open on cold start. */
+  const authoritativeInactiveRef = useRef(false);
+  /** Same-device unexpired cache trusted while server reconcile in flight. */
+  const cacheTrustedActiveRef = useRef(false);
+  /** Last cold-start resolve result for gate diagnostics. */
+  const lastBootResolveRef = useRef(null);
   /** Prevents duplicate Hongera popups for the same grant within a session. */
   const lastActivationSuccessKeyRef = useRef('');
   const trialWatchSettingsRef = useRef(TRIAL_WATCH_FAIL_CLOSED);
@@ -243,8 +250,10 @@ export function OsmaniAppProvider({ children }) {
       return false;
     }
     const { cached } = await readHydratableSubscriptionCache();
-    if (!cached?.active) return false;
+    if (!cached?.active || !shouldHydrateSubscriptionCache(cached)) return false;
     isSubscribedRef.current = true;
+    authoritativeInactiveRef.current = false;
+    cacheTrustedActiveRef.current = true;
     setIsSubscribed(true);
     setSubscriptionExpiresAt(cached.expiresAt ?? null);
     setSubscriptionDetails((prev) =>
@@ -271,11 +280,11 @@ export function OsmaniAppProvider({ children }) {
     if (!hint || hint.active !== true) return null;
     const expiresAt = hint.expiresAt ?? null;
     isSubscribedRef.current = true;
+    authoritativeInactiveRef.current = false;
+    cacheTrustedActiveRef.current = false;
     setIsSubscribed(true);
     setSubscriptionExpiresAt(expiresAt);
     setRevokedReason(null);
-
-    const catalogPlans = [
       ...(Array.isArray(hint.plans) ? hint.plans : []),
       ...(getCachedPaymentPlansSync() ?? []),
     ];
@@ -560,6 +569,8 @@ export function OsmaniAppProvider({ children }) {
         }
 
         if (authoritativeInactive) {
+          authoritativeInactiveRef.current = true;
+          cacheTrustedActiveRef.current = false;
           const modalReason = resolveSubscriptionLossModalReason(r);
           if (modalReason) {
             setRevokedReason((cur) => {
@@ -569,6 +580,16 @@ export function OsmaniAppProvider({ children }) {
           }
         }
         isSubscribedRef.current = active;
+        if (active) {
+          authoritativeInactiveRef.current = false;
+          if (effectiveResult.transportPreserved === true || effectiveResult.pendingPreserved === true) {
+            cacheTrustedActiveRef.current = true;
+          } else {
+            cacheTrustedActiveRef.current = false;
+          }
+        } else if (!authoritativeInactive) {
+          authoritativeInactiveRef.current = false;
+        }
         const serverTimeFetchedAt = Date.now();
         setIsSubscribed(active);
         setSubscriptionExpiresAt(active ? expiresAt : null);
@@ -1152,6 +1173,11 @@ export function OsmaniAppProvider({ children }) {
     void refreshTrialWatchSettings('boot').then(() => logStartupStep('remote_config', 'ok'));
   }, [refreshTrialWatchSettings]);
 
+  // Eager cache hydrate before first paint — premium tap must not wait for useEffect boot.
+  useLayoutEffect(() => {
+    void hydrateSubscriptionFromCache('provider-eager-hydrate');
+  }, [hydrateSubscriptionFromCache]);
+
   // Cold-start: purge wrong-device hints → hydrate cache → fast resolve (reinstall) → sync ready → background verify.
   useEffect(() => {
     let cancelled = false;
@@ -1183,13 +1209,61 @@ export function OsmaniAppProvider({ children }) {
           RECOVER_BOOT_TIMEOUT_MS,
           'cold-start-resolve',
         );
+        lastBootResolveRef.current = r;
+        const authoritativeInactive = isAuthoritativeInactiveEntitlement(r);
         console.log('[SUBSCRIPTION_RECOVER]', 'cold-start', {
           active: r?.active,
           expiresAt: r?.expiresAt,
           resolveSource: r?.resolveSource ?? null,
           recoverRefreshed: r?.recoverRefreshed === true,
+          authoritativeInactive,
         });
-        if (r?.active === true || r?.recoverRefreshed === true) {
+
+        let bootActive = r?.active === true || r?.recoverRefreshed === true;
+
+        if (!bootActive && !authoritativeInactive) {
+          const { cached } = await readHydratableSubscriptionCache();
+          if (
+            isTrustworthyActiveCache(cached) &&
+            isSameDeviceSubscriptionCache(cached, identity)
+          ) {
+            bootActive = true;
+            cacheTrustedActiveRef.current = true;
+            authoritativeInactiveRef.current = false;
+            if (!isSubscribedRef.current) {
+              isSubscribedRef.current = true;
+              setIsSubscribed(true);
+              setSubscriptionExpiresAt(cached.expiresAt ?? null);
+              setSubscriptionDetails((prev) =>
+                mergeSubscriptionDetails(
+                  prev,
+                  enrichSubscriptionDetailsForDisplay(
+                    subscriptionDetailsFromCache(cached),
+                    getCachedPaymentPlansSync() ?? [],
+                  ),
+                ),
+              );
+              setSubscriptionVersion((v) => v + 1);
+            }
+            console.log('[SUBSCRIPTION_COLD_START]', 'cache_preserved_after_resolve', {
+              resolveSource: r?.resolveSource ?? null,
+              expiresAt: cached.expiresAt ?? null,
+            });
+          }
+        }
+
+        if (authoritativeInactive) {
+          authoritativeInactiveRef.current = true;
+          cacheTrustedActiveRef.current = false;
+          isSubscribedRef.current = false;
+          setIsSubscribed(false);
+          setSubscriptionExpiresAt(null);
+        } else if (bootActive && r?.active === true) {
+          authoritativeInactiveRef.current = false;
+          cacheTrustedActiveRef.current = false;
+        }
+
+        if (bootActive && (r?.active === true || r?.recoverRefreshed === true)) {
           isSubscribedRef.current = true;
           setIsSubscribed(true);
           setSubscriptionExpiresAt(r.expiresAt ?? null);
@@ -1298,14 +1372,22 @@ export function OsmaniAppProvider({ children }) {
   }, [subscriptionSyncLoaded, awaitSubscriptionSyncReady]);
 
   const getPremiumAccessSnapshot = useCallback(
-    () => ({
-      premiumPlaybackReady: subscriptionSyncLoaded && trialWatchSettingsLoaded,
-      subscriptionSyncLoaded,
-      isSubscribed: isSubscribedRef.current,
-      freeMode: settingsRef.current.freeMode,
-      trialWatchSettings: trialWatchSettingsRef.current,
-    }),
-    [subscriptionSyncLoaded, trialWatchSettingsLoaded],
+    () => {
+      const base = {
+        premiumPlaybackReady: subscriptionSyncLoaded && trialWatchSettingsLoaded,
+        subscriptionSyncLoaded,
+        isSubscribed: isSubscribedRef.current,
+        freeMode: settingsRef.current.freeMode,
+        trialWatchSettings: trialWatchSettingsRef.current,
+        authoritativeInactiveConfirmed: authoritativeInactiveRef.current,
+        cacheTrustedActive:
+          cacheTrustedActiveRef.current && isSubscribedRef.current && !authoritativeInactiveRef.current,
+        lastResolveSource: lastBootResolveRef.current?.resolveSource ?? null,
+        subscriptionExpiresAt: subscriptionExpiresAt,
+      };
+      return { ...base, entitlementPhase: deriveEntitlementPhase(base) };
+    },
+    [subscriptionSyncLoaded, trialWatchSettingsLoaded, subscriptionExpiresAt],
   );
 
   const awaitPremiumAccessSnapshot = useCallback(async () => {
@@ -1344,11 +1426,25 @@ export function OsmaniAppProvider({ children }) {
       return getPremiumAccessSnapshot();
     }
     await awaitRecoverBoot();
-    if (!isSubscribedRef.current) {
+    if (!isSubscribedRef.current && !authoritativeInactiveRef.current) {
       try {
         await hydrateSubscriptionFromCache('tap-entitlement-post-boot');
       } catch {
         /* non-fatal */
+      }
+    }
+    if (!isSubscribedRef.current && !authoritativeInactiveRef.current) {
+      try {
+        await withTimeout(reverifySubscription('tap-entitlement-resolve'), 4_000, 'tap-entitlement-verify');
+      } catch {
+        /* bounded — gate uses cache/phase, not false inactive */
+      }
+      if (!isSubscribedRef.current) {
+        try {
+          await hydrateSubscriptionFromCache('tap-entitlement-post-verify');
+        } catch {
+          /* non-fatal */
+        }
       }
     }
     await awaitTrialWatchSettingsReady();
@@ -1358,6 +1454,7 @@ export function OsmaniAppProvider({ children }) {
     awaitTrialWatchSettingsReady,
     getPremiumAccessSnapshot,
     hydrateSubscriptionFromCache,
+    reverifySubscription,
   ]);
 
   const awaitPremiumGateReady = awaitPremiumAccessSnapshot;

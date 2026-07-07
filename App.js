@@ -362,6 +362,7 @@ function ChannelCatalogScreen({
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const pendingChannelAfterPaymentRef = useRef(null);
+  const pendingPremiumTapRef = useRef(null);
   const [homeFloaterVisible, setHomeFloaterVisible] = useState(false);
   const [manualGiftVisible, setManualGiftVisible] = useState(false);
   const [offlineModalVisible, setOfflineModalVisible] = useState(false);
@@ -916,6 +917,7 @@ function ChannelCatalogScreen({
         channelKey,
         isFree,
         isSubscribed: snapshot.isSubscribed,
+        entitlementPhase: snapshot.entitlementPhase ?? null,
         waitedMs: Date.now() - startedAt,
       });
       await openPremiumChannelFromSnapshot(snapshot, {
@@ -927,6 +929,9 @@ function ChannelCatalogScreen({
         verifySubscriptionInBackground: (reason) =>
           verifySubscriptionInBackground(verifySubscriptionBeforePlay, reason),
         awaitEntitlementForTap,
+        onEntitlementDeferred: (ch) => {
+          pendingPremiumTapRef.current = ch;
+        },
         security,
         Alert,
       });
@@ -950,6 +955,16 @@ function ChannelCatalogScreen({
       trialWatchSettingsLoaded,
     ],
   );
+
+  useEffect(() => {
+    if (!isSubscribed || !pendingPremiumTapRef.current) return;
+    const channel = pendingPremiumTapRef.current;
+    pendingPremiumTapRef.current = null;
+    logChannelCardTap('deferred_tap_resume', {
+      channelKey: String(channel?.id ?? channel?.name ?? '').trim(),
+    });
+    void navigateToChannel(channel, { isPremium: true });
+  }, [isSubscribed, navigateToChannel]);
 
   const onBannerPremiumRequired = useCallback(() => {
     openPremiumModal();

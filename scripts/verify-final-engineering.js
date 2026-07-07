@@ -37,6 +37,7 @@ const SCRIPTS = [
   'scripts/verify-v24-realtime-state.js',
   'scripts/verify-one-tap-channel-open.js',
   'scripts/verify-cold-start-entitlement-race.js',
+  'scripts/verify-entitlement-state-machine.js',
   // Subscription activation paths
   'scripts/verify-subscription-instant-ux.js',
   'scripts/verify-subscription-pending-activation.js',

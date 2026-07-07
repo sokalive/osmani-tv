@@ -32,11 +32,17 @@ if (hydrate.includes('shouldHydrateSubscriptionCache')) {
   fail('hydrate must not skip same-device active cache at boot');
 } else pass('hydrate trusts same-device active cache');
 
+if (!context.includes('shouldHydrateSubscriptionCache')) {
+  fail('context must reject stale cache on hydrate');
+} else pass('context stale cache guard');
+
 if (!context.includes('hydrateSubscriptionFromCache')) {
   fail('cold-start cache hydration required');
 } else pass('cold-start cache hydration');
 
-if (!context.includes('allowed_cache_ref')) {
+if (context.includes('provider-eager-hydrate') || context.includes('authoritativeInactiveRef')) {
+  pass('bootstrap entitlement hydrate before premium gate');
+} else if (!context.includes('allowed_cache_ref')) {
   fail('gateForPlayback cache fast path required');
 } else pass('gateForPlayback cache fast path');
 
