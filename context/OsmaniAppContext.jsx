@@ -285,6 +285,8 @@ export function OsmaniAppProvider({ children }) {
     setIsSubscribed(true);
     setSubscriptionExpiresAt(expiresAt);
     setRevokedReason(null);
+
+    const catalogPlans = [
       ...(Array.isArray(hint.plans) ? hint.plans : []),
       ...(getCachedPaymentPlansSync() ?? []),
     ];
