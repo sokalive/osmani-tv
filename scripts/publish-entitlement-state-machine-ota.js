@@ -35,7 +35,7 @@ function sleepSec(sec) {
 }
 
 function publishRuntime(runtime) {
-  const msg = `fix(premium): restore d3ba89c one-tap deferred completion runtime ${runtime}`;
+  const msg = `fix(premium): d3ba89c explicit tap payment for inactive users runtime ${runtime}`;
   const quotedMsg = msg.replace(/"/g, '');
   const cmd =
     `${NPX} eas-cli update --channel production --environment production ` +

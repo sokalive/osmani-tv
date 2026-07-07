@@ -39,6 +39,18 @@ const nav = read('lib/premiumChannelNavigation.js');
 const intent = read('lib/premiumAccessIntent.js');
 const policy = read('lib/premiumAccessPromptPolicy.js');
 
+if (app.includes('openPremiumModal(freshPlayerChannel)')) pass('App direct openPremiumModal on tap');
+else fail('App direct openPremiumModal on tap');
+
+if (!app.includes('openPremiumModalFromExplicitTap')) pass('removed blocking intent gate wrapper');
+else fail('removed blocking intent gate wrapper');
+
+if (nav.includes('snapshotAllowsExplicitTapPayment')) pass('nav uses d3ba89c explicit tap payment');
+else fail('nav uses d3ba89c explicit tap payment');
+
+if (nav.includes('payment_modal_d3ba89c_fallback')) pass('nav d3ba89c terminal fallback');
+else fail('nav d3ba89c terminal fallback');
+
 if (app.includes('touchPremiumAccessIntent')) pass('App retains intent during resolve');
 else fail('App retains intent during resolve');
 
@@ -119,14 +131,20 @@ function takePremiumPendingChannel() {
   return ch;
 }
 
-function snapshotAuthorizesPremiumPayment(snapshot) {
-  return mayOpenPaymentPopup(deriveEntitlementPhase(snapshot));
+function snapshotAllowsExplicitTapPayment(snapshot) {
+  const s = snapshot ?? {};
+  const phase = s.entitlementPhase ?? deriveEntitlementPhase(s);
+  if (mayOpenPaymentPopup(phase)) return true;
+  if (phase === 'CHECKING' || phase === 'ERROR_UNKNOWN') return false;
+  if (phase === 'ACTIVE' || phase === 'STALE_ACTIVE' || s.isSubscribed === true) return false;
+  if (s.cacheTrustedActive === true) return false;
+  return s.subscriptionSyncLoaded === true;
 }
 
 function openPremiumModalFromExplicitTap(channel) {
   if (!hasFreshPremiumAccessIntent()) return false;
   const snap = snapshot;
-  if (!snapshotAuthorizesPremiumPayment(snap)) {
+  if (!snapshotAllowsExplicitTapPayment(snap)) {
     touchPremiumAccessIntent();
     return false;
   }
@@ -134,6 +152,12 @@ function openPremiumModalFromExplicitTap(channel) {
   paymentModalOpens += 1;
   takePremiumPendingChannel();
   return true;
+}
+
+function openPremiumModalDirect(channel) {
+  consumePremiumAccessIntent();
+  paymentModalOpens += 1;
+  takePremiumPendingChannel();
 }
 
 function deferredResume(snap) {
@@ -144,11 +168,8 @@ function deferredResume(snap) {
     takePremiumPendingChannel();
     return;
   }
-  if (mayOpenPaymentPopup(deriveEntitlementPhase(snap))) {
-    if (!openPremiumModalFromExplicitTap(channel)) {
-      paymentModalOpens += 1;
-      takePremiumPendingChannel();
-    }
+  if (snapshotAllowsExplicitTapPayment(snap)) {
+    openPremiumModalDirect(channel);
   }
 }
 
@@ -161,8 +182,20 @@ sim('inactive cold: first tap deferred retains action', () => {
   clearPremiumAccessIntent();
   grantPremiumAccessIntent();
   setPremiumPendingChannel({ id: 'bein' });
-  openPremiumModalFromExplicitTap({ id: 'bein' });
-  return paymentModalOpens === 0 && hasFreshPremiumAccessIntent() && pendingChannel;
+  snapshot = { isSubscribed: false, subscriptionSyncLoaded: false };
+  openPremiumModalDirect({ id: 'bein' });
+  return paymentModalOpens === 0 && pendingChannel;
+});
+
+sim('inactive UNKNOWN sync loaded opens payment on tap', () => {
+  paymentModalOpens = 0;
+  grantPremiumAccessIntent();
+  snapshot = {
+    isSubscribed: false,
+    subscriptionSyncLoaded: true,
+    authoritativeInactiveConfirmed: false,
+  };
+  return snapshotAllowsExplicitTapPayment(snapshot);
 });
 
 sim('inactive cold: deferred opens PremiumModal once', () => {
@@ -189,15 +222,14 @@ sim('6523df0 bug: clearing intent blocks deferred (repro)', () => {
   return paymentModalOpens === 0;
 });
 
-sim('fix: touch not clear allows deferred payment', () => {
+sim('fix: UNKNOWN sync loaded deferred payment', () => {
   paymentModalOpens = 0;
   pendingChannel = { id: 'bein' };
   grantPremiumAccessIntent();
-  touchPremiumAccessIntent();
   snapshot = {
     isSubscribed: false,
     subscriptionSyncLoaded: true,
-    authoritativeInactiveConfirmed: true,
+    authoritativeInactiveConfirmed: false,
   };
   deferredResume(snapshot);
   return paymentModalOpens === 1;

@@ -41,7 +41,7 @@ assertContains('App.js', 'startUpdateClient', 'update client started');
 assertContains('App.js', 'startExpoUpdatesClient', 'expo updates client started');
 assertContains('screens/ChannelPlayerScreen.js', 'TrialWatchOverlay', 'trial overlay on player');
 assertContains('screens/ChannelPlayerScreen.js', 'User-intent only', 'trial expiry does not auto-open payment');
-assertContains('App.js', 'openPremiumModalFromExplicitTap', 'direct premium modal from explicit tap');
+assertContains('App.js', 'openPremiumModal(freshPlayerChannel)', 'direct premium modal from explicit tap');
 assertContains('lib/premiumAccessIntent.js', 'grantPremiumAccessIntent', 'premium tap intent module');
 assertNotContains('App.js', 'PremiumAccessPromptModal', 'no intermediate premium prompt');
 assertContains('lib/normalizeBanner.js', 'enrichBannerForViewer', 'banner serializer in normalize path');

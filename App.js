@@ -77,19 +77,17 @@ import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
 import { awaitPremiumSnapshotCapped, shouldShowKulipiaBadge, verifySubscriptionInBackground } from './lib/premiumTapGate';
 import {
   snapshotHasActiveSubscription,
-  snapshotIsReadyForPaymentFlow,
+  snapshotAllowsExplicitTapPayment,
 } from './lib/entitlementStateMachine';
 import {
   clearPremiumAccessIntent,
   consumePremiumAccessIntent,
   grantPremiumAccessIntent,
   getPremiumPendingChannel,
-  hasFreshPremiumAccessIntent,
   setPremiumPendingChannel,
   takePremiumPendingChannel,
   touchPremiumAccessIntent,
 } from './lib/premiumAccessIntent';
-import { snapshotAuthorizesPremiumPayment } from './lib/premiumAccessPromptPolicy';
 import { instructionVideoVisibleForInstall, isInstructionVideoChannel } from './lib/instructionVideoChannel';
 import { readNativeAndroidVersionCode } from './lib/playVpsApiHost';
 import { logChannelCardTap } from './lib/channelCardTapDiagnostics';
@@ -796,23 +794,9 @@ function ChannelCatalogScreen({
   const openPremiumModal = useCallback((pendingChannel) => {
     if (guardDeviceIntelligence().ok === false) return;
     if (pendingChannel) pendingChannelAfterPaymentRef.current = pendingChannel;
+    consumePremiumAccessIntent();
     setPremiumModalVisible(true);
   }, [guardDeviceIntelligence]);
-
-  const openPremiumModalFromExplicitTap = useCallback(
-    (pendingChannel) => {
-      if (!hasFreshPremiumAccessIntent()) return false;
-      const snap = getPremiumAccessSnapshot();
-      if (!snapshotAuthorizesPremiumPayment(snap)) {
-        touchPremiumAccessIntent();
-        return false;
-      }
-      consumePremiumAccessIntent();
-      openPremiumModal(pendingChannel);
-      return true;
-    },
-    [getPremiumAccessSnapshot, openPremiumModal],
-  );
 
   const mountManualGiftModal = enableHomeExpiryReminder && manualGiftVisible;
 
@@ -947,7 +931,7 @@ function ChannelCatalogScreen({
         playerChannel: freshPlayerChannel,
         cardIsPremium: isPremium,
         navigation,
-        openPaymentModal: () => openPremiumModalFromExplicitTap(freshPlayerChannel),
+        openPaymentModal: () => openPremiumModal(freshPlayerChannel),
         verifySubscriptionBeforePlay,
         verifySubscriptionInBackground: (reason) =>
           verifySubscriptionInBackground(verifySubscriptionBeforePlay, reason),
@@ -972,7 +956,6 @@ function ChannelCatalogScreen({
       navigation,
       security,
       openPremiumModal,
-      openPremiumModalFromExplicitTap,
       freeMode,
       rawChannels,
       premiumPlaybackReady,
@@ -996,16 +979,14 @@ function ChannelCatalogScreen({
       void navigateToChannel(channel, { isPremium: true });
       return;
     }
-    if (snapshotIsReadyForPaymentFlow(snap)) {
+    if (snapshotAllowsExplicitTapPayment(snap)) {
       pendingPremiumTapRef.current = null;
       takePremiumPendingChannel();
       logChannelCardTap('deferred_tap_resume', {
         channelKey: String(channel?.id ?? channel?.name ?? '').trim(),
         path: 'payment',
       });
-      if (!openPremiumModalFromExplicitTap(channel)) {
-        openPremiumModal(channel);
-      }
+      openPremiumModal(channel);
     }
   }, [
     isSubscribed,
@@ -1013,13 +994,16 @@ function ChannelCatalogScreen({
     subscriptionVersion,
     navigateToChannel,
     getPremiumAccessSnapshot,
-    openPremiumModalFromExplicitTap,
+    openPremiumModal,
   ]);
 
   const onBannerPremiumRequired = useCallback(() => {
     grantPremiumAccessIntent({ channelKey: 'banner-premium' });
-    openPremiumModalFromExplicitTap(null);
-  }, [openPremiumModalFromExplicitTap]);
+    const snap = getPremiumAccessSnapshot();
+    if (snapshotAllowsExplicitTapPayment(snap)) {
+      openPremiumModal(null);
+    }
+  }, [getPremiumAccessSnapshot, openPremiumModal]);
 
   const handleCardPress = useCallback(
     async (item) => {
@@ -1247,7 +1231,7 @@ function ChannelCatalogScreen({
             premiumPlaybackReady={premiumPlaybackReady}
             getPremiumAccessSnapshot={getPremiumAccessSnapshot}
             awaitRecoverBoot={awaitRecoverBoot}
-            openPaymentModal={openPremiumModalFromExplicitTap}
+            openPaymentModal={openPremiumModal}
             requireUpdateBeforeChannelPlayback={requireUpdateBeforeChannelPlayback}
             onChannelUpdateRequired={requestChannelUpdateGate}
           />

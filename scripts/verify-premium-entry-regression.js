@@ -31,8 +31,8 @@ const sm = read('lib/entitlementStateMachine.js');
 if (!sm.includes('snapshotIsReadyForPaymentFlow')) fail('payment flow readiness helper');
 else pass('payment flow readiness helper');
 
-if (!nav.includes('snapshotIsReadyForPaymentFlow')) fail('nav uses payment flow readiness');
-else pass('nav uses payment flow readiness');
+if (!nav.includes('snapshotAllowsExplicitTapPayment')) fail('nav uses explicit tap payment');
+else pass('nav uses explicit tap payment');
 
 if (!nav.includes('snapshotNeedsEntitlementAwait')) fail('nav bounded await only CHECKING/ERROR');
 else pass('nav bounded await only CHECKING/ERROR');
@@ -51,7 +51,7 @@ if (read('screens/AkauntiYanguScreen.js').includes('openPremiumAfterExpiry')) {
   fail('openPremiumAfterExpiry removed from account');
 } else pass('openPremiumAfterExpiry removed from account');
 
-if (!app.includes('snapshotIsReadyForPaymentFlow')) fail('App pending tap payment resume');
+if (!app.includes('snapshotAllowsExplicitTapPayment')) fail('App pending tap payment resume');
 else pass('App pending tap payment resume');
 
 function deriveEntitlementPhase(snapshot) {
@@ -75,13 +75,23 @@ function sim(name, cond) {
   else pass(`sim: ${name}`);
 }
 
-sim('inactive sync loaded requires authoritative inactive', () =>
-  !snapshotIsReadyForPaymentFlow({
+sim('inactive sync loaded opens explicit tap payment', () =>
+  snapshotAllowsExplicitTapPayment({
     isSubscribed: false,
     subscriptionSyncLoaded: true,
     authoritativeInactiveConfirmed: false,
   }),
 );
+
+function snapshotAllowsExplicitTapPayment(snapshot) {
+  const s = snapshot ?? {};
+  const phase = deriveEntitlementPhase(s);
+  if (phase === 'INACTIVE' || phase === 'EXPIRED') return true;
+  if (phase === 'CHECKING' || phase === 'ERROR_UNKNOWN') return false;
+  if (phase === 'ACTIVE' || phase === 'STALE_ACTIVE' || s.isSubscribed === true) return false;
+  if (s.cacheTrustedActive === true) return false;
+  return s.subscriptionSyncLoaded === true;
+}
 
 sim('checking blocks payment', () =>
   !snapshotIsReadyForPaymentFlow({

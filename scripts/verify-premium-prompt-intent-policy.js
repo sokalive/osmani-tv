@@ -43,7 +43,7 @@ const deep = read('lib/openOsmaniDeepLink.js');
 const player = read('screens/ChannelPlayerScreen.js');
 const premium = read('components/PremiumModal.js');
 
-if (app.includes('openPremiumModalFromExplicitTap')) pass('App direct premium modal from tap');
+if (app.includes('openPremiumModal(freshPlayerChannel)')) pass('App direct premium modal from tap');
 else fail('App direct premium modal from tap');
 
 if (!app.includes('PremiumAccessPromptModal')) pass('intermediate prompt not mounted in App');
@@ -82,8 +82,8 @@ else fail('player no auto requestPaymentModal');
 if (deep.includes('grantPremiumAccessIntent')) pass('deep link grants premium intent');
 else fail('deep link grants premium intent');
 
-if (deep.includes('mayOpenPremiumModalFromExplicitTap')) pass('deep link intent-gated payment');
-else fail('deep link intent-gated payment');
+if (deep.includes('consumePremiumAccessIntent')) pass('deep link opens payment on explicit tap');
+else fail('deep link opens payment on explicit tap');
 
 // --- inline policy ---
 function deriveEntitlementPhase(snapshot) {
@@ -134,7 +134,17 @@ function hasFreshPremiumAccessIntent() {
 
 function mayOpenPremiumModalFromExplicitTap(snapshot) {
   if (!hasFreshPremiumAccessIntent()) return false;
-  return mayOpenPaymentPopup(snapshot?.entitlementPhase ?? deriveEntitlementPhase(snapshot));
+  return snapshotAllowsExplicitTapPayment(snapshot);
+}
+
+function snapshotAllowsExplicitTapPayment(snapshot) {
+  const s = snapshot ?? {};
+  const phase = s.entitlementPhase ?? deriveEntitlementPhase(s);
+  if (mayOpenPaymentPopup(phase)) return true;
+  if (phase === 'CHECKING' || phase === 'ERROR_UNKNOWN') return false;
+  if (phase === 'ACTIVE' || phase === 'STALE_ACTIVE' || s.isSubscribed === true) return false;
+  if (s.cacheTrustedActive === true) return false;
+  return s.subscriptionSyncLoaded === true;
 }
 
 function startupMayOpenModal() {
@@ -157,7 +167,7 @@ sim('CASE 2 inactive tap opens payment path', () => {
   const snap = {
     isSubscribed: false,
     subscriptionSyncLoaded: true,
-    authoritativeInactiveConfirmed: true,
+    authoritativeInactiveConfirmed: false,
   };
   snap.entitlementPhase = deriveEntitlementPhase(snap);
   return mayOpenPremiumModalFromExplicitTap(snap);
@@ -189,11 +199,11 @@ sim('CASE 8 checking no payment', () => {
   return !mayOpenPremiumModalFromExplicitTap(snap);
 });
 
-sim('CASE 9 unknown no payment', () => {
+sim('CASE 9 unknown with sync opens payment on explicit tap', () => {
   grantPremiumAccessIntent();
   const snap = { isSubscribed: false, subscriptionSyncLoaded: true, authoritativeInactiveConfirmed: false };
   snap.entitlementPhase = deriveEntitlementPhase(snap);
-  return !mayOpenPremiumModalFromExplicitTap(snap) && !snapshotIsReadyForPaymentFlow(snap);
+  return mayOpenPremiumModalFromExplicitTap(snap) && snap.entitlementPhase === 'UNKNOWN';
 });
 
 sim('CASE 10 error_unknown no payment', () => {
@@ -237,9 +247,8 @@ sim('unknown sync loaded not payment ready', () =>
   }),
 );
 
-if (policy.includes('mayOpenPremiumModalFromExplicitTap')) {
-  pass('policy helper for direct PremiumModal');
-} else fail('policy helper for direct PremiumModal');
+if (policy.includes('snapshotAllowsExplicitTapPayment')) pass('policy uses d3ba89c explicit tap payment');
+else fail('policy uses d3ba89c explicit tap payment');
 
 if (intent.includes('grantPremiumAccessIntent')) pass('intent module present');
 else fail('intent module present');
