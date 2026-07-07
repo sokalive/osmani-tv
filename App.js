@@ -83,9 +83,13 @@ import {
   clearPremiumAccessIntent,
   consumePremiumAccessIntent,
   grantPremiumAccessIntent,
+  getPremiumPendingChannel,
   hasFreshPremiumAccessIntent,
+  setPremiumPendingChannel,
+  takePremiumPendingChannel,
+  touchPremiumAccessIntent,
 } from './lib/premiumAccessIntent';
-import { mayOpenPremiumModalFromExplicitTap } from './lib/premiumAccessPromptPolicy';
+import { snapshotAuthorizesPremiumPayment } from './lib/premiumAccessPromptPolicy';
 import { instructionVideoVisibleForInstall, isInstructionVideoChannel } from './lib/instructionVideoChannel';
 import { readNativeAndroidVersionCode } from './lib/playVpsApiHost';
 import { logChannelCardTap } from './lib/channelCardTapDiagnostics';
@@ -439,7 +443,11 @@ function ChannelCatalogScreen({
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
-      if (next !== 'active') clearPremiumAccessIntent();
+      if (next !== 'active') {
+        clearPremiumAccessIntent();
+        takePremiumPendingChannel();
+        pendingPremiumTapRef.current = null;
+      }
     });
     return () => sub.remove();
   }, []);
@@ -795,8 +803,8 @@ function ChannelCatalogScreen({
     (pendingChannel) => {
       if (!hasFreshPremiumAccessIntent()) return false;
       const snap = getPremiumAccessSnapshot();
-      if (!mayOpenPremiumModalFromExplicitTap(snap)) {
-        clearPremiumAccessIntent();
+      if (!snapshotAuthorizesPremiumPayment(snap)) {
+        touchPremiumAccessIntent();
         return false;
       }
       consumePremiumAccessIntent();
@@ -946,7 +954,8 @@ function ChannelCatalogScreen({
         awaitEntitlementForTap,
         onEntitlementDeferred: (ch) => {
           pendingPremiumTapRef.current = ch;
-          grantPremiumAccessIntent({ channel: ch });
+          setPremiumPendingChannel(ch);
+          touchPremiumAccessIntent();
         },
         security,
         Alert,
@@ -974,11 +983,12 @@ function ChannelCatalogScreen({
   );
 
   useEffect(() => {
-    if (!pendingPremiumTapRef.current) return;
-    const channel = pendingPremiumTapRef.current;
+    const channel = pendingPremiumTapRef.current ?? getPremiumPendingChannel();
+    if (!channel) return;
     const snap = getPremiumAccessSnapshot();
     if (snapshotHasActiveSubscription(snap)) {
       pendingPremiumTapRef.current = null;
+      takePremiumPendingChannel();
       logChannelCardTap('deferred_tap_resume', {
         channelKey: String(channel?.id ?? channel?.name ?? '').trim(),
         path: 'active',
@@ -986,13 +996,16 @@ function ChannelCatalogScreen({
       void navigateToChannel(channel, { isPremium: true });
       return;
     }
-    if (snapshotIsReadyForPaymentFlow(snap) && hasFreshPremiumAccessIntent()) {
+    if (snapshotIsReadyForPaymentFlow(snap)) {
       pendingPremiumTapRef.current = null;
+      takePremiumPendingChannel();
       logChannelCardTap('deferred_tap_resume', {
         channelKey: String(channel?.id ?? channel?.name ?? '').trim(),
         path: 'payment',
       });
-      openPremiumModalFromExplicitTap(channel);
+      if (!openPremiumModalFromExplicitTap(channel)) {
+        openPremiumModal(channel);
+      }
     }
   }, [
     isSubscribed,

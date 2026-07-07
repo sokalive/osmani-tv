@@ -22,7 +22,7 @@ import {
   findRawChannelById,
 } from '../lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from '../lib/premiumChannelNavigation';
-import { grantPremiumAccessIntent } from '../lib/premiumAccessIntent';
+import { grantPremiumAccessIntent, setPremiumPendingChannel, touchPremiumAccessIntent } from '../lib/premiumAccessIntent';
 import { awaitPremiumSnapshotCapped, verifySubscriptionInBackground } from '../lib/premiumTapGate';
 
 const COLORS = {
@@ -382,6 +382,10 @@ function BannerCarousel({
         verifySubscriptionInBackground: (reason) =>
           verifySubscriptionInBackground(verifySubscriptionBeforePlay, reason),
         awaitEntitlementForTap,
+        onEntitlementDeferred: (ch) => {
+          setPremiumPendingChannel(ch);
+          touchPremiumAccessIntent();
+        },
         security,
         Alert,
       });
