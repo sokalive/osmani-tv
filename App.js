@@ -328,6 +328,7 @@ function ChannelCatalogScreen({
     rawChannels,
     rawBanners,
     catalogAccessReady,
+    catalogRevision,
     serverHealth,
     loading,
     error,
@@ -1129,7 +1130,7 @@ function ChannelCatalogScreen({
         </View>
       </Pressable>
     ),
-    [handleCardPress, freeMode, isSubscribed, cacheTrustedActive],
+    [handleCardPress, freeMode, isSubscribed, cacheTrustedActive, catalogRevision],
   );
 
   const renderHighlightCard = useCallback(
@@ -1190,7 +1191,7 @@ function ChannelCatalogScreen({
         </View>
       </Pressable>
     ),
-    [handleCardPress, freeMode, isSubscribed, cacheTrustedActive],
+    [handleCardPress, freeMode, isSubscribed, cacheTrustedActive, catalogRevision],
   );
 
   const listHeader = useMemo(
@@ -1386,7 +1387,7 @@ function ChannelCatalogScreen({
       <FlatList
         key={String(refreshKey)}
         data={displayChannels}
-        extraData={{ isSubscribed, cacheTrustedActive, subscriptionVersion, maintenanceMode }}
+        extraData={{ isSubscribed, cacheTrustedActive, catalogRevision, subscriptionVersion, maintenanceMode }}
         renderItem={renderCard}
         keyExtractor={(item) => item.id}
         numColumns={2}

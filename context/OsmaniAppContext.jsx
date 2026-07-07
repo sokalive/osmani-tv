@@ -61,6 +61,11 @@ import {
 } from '../lib/subscriptionCacheHydrate';
 import { isStaleActiveSubscriptionCache, shouldHydrateSubscriptionCache } from '../lib/subscriptionCacheRepair';
 import { deriveEntitlementPhase, isTrustworthyActiveCache } from '../lib/entitlementStateMachine';
+import {
+  applyChannelAccessPatches,
+  catalogRealtimeEventMayCarryChannelAccess,
+  parseChannelAccessRealtimePatches,
+} from '../lib/channelCatalogRealtime';
 import { purgeUnreliableSubscriptionCache, SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS } from '../lib/subscriptionRecoveryBoot';
 import {
   extractPlanSnapshotFromDetails,
@@ -172,6 +177,8 @@ export function OsmaniAppProvider({ children }) {
   const [availablePlans, setAvailablePlans] = useState([]);
   /** Bumps after subscription fetch so consumers can invalidate memos tied to premium access. */
   const [subscriptionVersion, setSubscriptionVersion] = useState(0);
+  /** Bumps when channel catalog rows change (access badges, ordering). */
+  const [catalogRevision, setCatalogRevision] = useState(0);
   /** True after first successful network channel fetch — gates access badges to avoid stale disk flicker. */
   const [catalogAccessReady, setCatalogAccessReady] = useState(false);
   /** Set when the backend reports the subscription is no longer active on this device. */
@@ -993,6 +1000,31 @@ export function OsmaniAppProvider({ children }) {
     await refreshTrialWatchSettings(reason);
   }, [refreshTrialWatchSettings]);
 
+  const applyChannelCatalogRealtime = useCallback((eventName, payload, source = 'sse') => {
+    if (!catalogRealtimeEventMayCarryChannelAccess(eventName, payload)) {
+      return false;
+    }
+    const patches = parseChannelAccessRealtimePatches(eventName, payload);
+    if (!patches.length) return false;
+
+    const current = rawChannelsRef.current;
+    const { channels: patched, changed, applied } = applyChannelAccessPatches(current, patches);
+    if (!changed || applied === 0) return false;
+
+    const sorted = sortChannelsByAdminOrder(patched);
+    rawChannelsRef.current = sorted;
+    setRawChannels(sorted);
+    setCatalogRevision((v) => v + 1);
+    setCatalogAccessReady(true);
+    void writeChannelsCache(sorted);
+    devLog('[CHANNEL_ACCESS_PATCH]', source, eventName, {
+      applied,
+      at: Date.now(),
+      patches,
+    });
+    return true;
+  }, []);
+
   const refresh = useCallback(async (opts = {}) => {
     const showGlobalLoading = opts.showGlobalLoading !== false;
     const preserveDataOnError = opts.preserveDataOnError !== false;
@@ -1049,6 +1081,7 @@ export function OsmaniAppProvider({ children }) {
       catalogNetworkHydratedRef.current.channels = true;
       setCatalogAccessReady(true);
       setRawChannels(nextChannels);
+      setCatalogRevision((v) => v + 1);
       await writeChannelsCache(nextChannels);
       devLog('[CATALOG_SYNC]', 'channels', {
         total: nextChannels.length,
@@ -1504,6 +1537,16 @@ export function OsmaniAppProvider({ children }) {
       void reverifySubscription(reason);
     });
     const offSnapshot = subscribeRealtimeEvent('snapshot', (payload) => {
+      const patched = applyChannelCatalogRealtime('snapshot', payload, 'sse:snapshot');
+      if (patched) {
+        invalidateCatalogCache();
+        void refresh({
+          showGlobalLoading: false,
+          preserveDataOnError: true,
+          skipSettingsFromHttp: true,
+          forceNetwork: true,
+        });
+      }
       const inner = unwrapSubscriptionSsePayload(payload);
       if (!inner || typeof inner !== 'object') return;
       const hasSubHint =
@@ -1786,7 +1829,8 @@ export function OsmaniAppProvider({ children }) {
           setSettings((prev) => ({ ...prev, ...patch }));
           console.log('[SETTINGS_SYNC]', ev, patch);
         }
-        if (CHANNEL_ACCESS_IMMEDIATE_SSE_EVENTS.has(ev)) {
+        const patched = applyChannelCatalogRealtime(ev, payload, 'sse');
+        if (CHANNEL_ACCESS_IMMEDIATE_SSE_EVENTS.has(ev) || patched) {
           invalidateCatalogCache();
           void refresh({
             showGlobalLoading: false,
@@ -1795,7 +1839,9 @@ export function OsmaniAppProvider({ children }) {
             forceNetwork: true,
           });
         }
-        scheduleAdminDrivenSoftSync(`sse:${ev}`);
+        if (!patched) {
+          scheduleAdminDrivenSoftSync(`sse:${ev}`);
+        }
       }),
     );
     return () => {
@@ -1813,7 +1859,7 @@ export function OsmaniAppProvider({ children }) {
       offRuntimeModes.forEach((off) => off());
       offCatalogAliases.forEach((off) => off());
     };
-  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway, tryInstantApplyFromSse, showActivationSuccess]);
+  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway, tryInstantApplyFromSse, showActivationSuccess, applyChannelCatalogRealtime]);
 
   // Foreground sync: refresh catalog + reverify periodically while app is active.
   useEffect(() => {
@@ -2048,6 +2094,7 @@ export function OsmaniAppProvider({ children }) {
       rawChannels,
       rawBanners,
       catalogAccessReady,
+      catalogRevision,
       serverHealth,
       loading,
       error,
@@ -2116,6 +2163,7 @@ export function OsmaniAppProvider({ children }) {
       rawChannels,
       rawBanners,
       catalogAccessReady,
+      catalogRevision,
       serverHealth,
       loading,
       error,

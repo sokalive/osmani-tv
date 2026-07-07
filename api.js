@@ -19,8 +19,11 @@ export function getLegacyBaseUrlSnapshot() {
   return resolveApiBaseUrl();
 }
 
-async function fetchChannelsFromNetwork() {
-  const body = await fetchAdminApiJson('/api/channels', { tag: 'catalog-channels' });
+async function fetchChannelsFromNetwork(opts = {}) {
+  const body = await fetchAdminApiJson('/api/channels', {
+    tag: 'catalog-channels',
+    ...(opts.force || opts.cacheBust ? { cacheBust: true } : {}),
+  });
   if (!Array.isArray(body)) {
     throw new Error('Could not load channels (invalid response)');
   }
@@ -39,7 +42,7 @@ async function fetchBannersFromNetwork() {
  * @param {{ force?: boolean }} [opts] — pass force: true after pull-to-refresh
  */
 export async function getChannels(opts = {}) {
-  return getCachedChannels(() => fetchChannelsFromNetwork(), opts);
+  return getCachedChannels(() => fetchChannelsFromNetwork(opts), opts);
 }
 
 /**

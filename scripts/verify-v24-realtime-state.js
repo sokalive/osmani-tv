@@ -30,6 +30,7 @@ const reconcile = read('lib/subscriptionReconcile.js');
 const subApi = read('api/subscription.js');
 const devStream = read('lib/subscriptionDeviceStream.js');
 const adminSse = read('lib/adminSseRefreshEvents.js');
+const realtime = read('lib/realtimeSync.js');
 const app = read('App.js');
 const nav = read('lib/premiumChannelNavigation.js');
 const player = read('screens/ChannelPlayerScreen.js');
@@ -95,8 +96,11 @@ else pass('player access field sync');
 if (!vps.includes('api.osmanitv.com')) fail('VPS host');
 else pass('VPS api.osmanitv.com');
 
-if (!ctx.includes('CHANNEL_ACCESS_IMMEDIATE_SSE_EVENTS')) fail('immediate channel SSE refresh');
-else pass('immediate channel SSE refresh');
+if (!ctx.includes('applyChannelCatalogRealtime')) fail('context channel access patch');
+else pass('context channel access patch');
+
+if (!realtime.includes('emit(innerName')) fail('SSE inner envelope fan-out');
+else pass('SSE inner envelope fan-out');
 
 if (!ctx.includes('lastActivationSuccessKeyRef')) fail('Hongera dedup ref');
 else pass('Hongera dedup');
