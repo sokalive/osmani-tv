@@ -22,6 +22,7 @@ import {
   findRawChannelById,
 } from '../lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from '../lib/premiumChannelNavigation';
+import { grantPremiumAccessIntent } from '../lib/premiumAccessIntent';
 import { awaitPremiumSnapshotCapped, verifySubscriptionInBackground } from '../lib/premiumTapGate';
 
 const COLORS = {
@@ -362,6 +363,9 @@ function BannerCarousel({
         raw?.accessType === 'premium' ||
         Boolean(raw?.accessPremium === true || raw?.access_premium === true);
       const isPremium = freeMode ? false : isPremiumApi;
+      if (isPremium) {
+        grantPremiumAccessIntent({ channel: playerChannel });
+      }
       const snapshot = await awaitPremiumSnapshotCapped(
         getPremiumAccessSnapshot,
         awaitPremiumAccessSnapshot,

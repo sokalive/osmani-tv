@@ -107,7 +107,6 @@ function resolveSubscriptionLossModalReason(verifyResult) {
 
 const guard = read('lib/subscriptionSseGuard.js');
 const ctx = read('context/OsmaniAppContext.jsx');
-const modal = read('components/TransferredAwayModal.js');
 
 if (!guard.includes('isExplicitRevokedConfirmation')) {
   fail('guard must export isExplicitRevokedConfirmation');
@@ -133,9 +132,13 @@ if (guard.includes("t.includes('admin')")) {
   fail('revoked guard must not use substring admin match');
 } else pass('no substring admin revoked match');
 
-if (!modal.includes("reason === 'suspended'")) {
-  fail('TransferredAwayModal must handle suspended reason');
-} else pass('suspended modal copy present');
+if (!read('components/PremiumAccessPromptModal.js').includes('PremiumAccessPromptModal')) {
+  fail('PremiumAccessPromptModal component required');
+} else pass('PremiumAccessPromptModal component present');
+
+if (read('components/TransferredAwayModal.js').includes('Rejesha kifurushi')) {
+  fail('TransferredAwayModal must not expose restore button');
+} else pass('TransferredAwayModal restore UI removed');
 
 // --- scenario simulations ---
 const activeUser = { active: true, resolveSource: 'verify:primary', inactiveReason: null };

@@ -33,6 +33,7 @@ import { MaintenanceHomeCentered } from './components/MaintenanceScreen';
 import EmergencyModal from './components/EmergencyModal';
 import DeviceIntelligenceGate from './components/DeviceIntelligenceGate';
 import PremiumModal from './components/PremiumModal';
+import PremiumAccessPromptModal from './components/PremiumAccessPromptModal';
 import HomeExpiryFloatingBanner from './components/HomeExpiryFloatingBanner';
 import NotificationPermissionReminderGate from './components/NotificationPermissionReminderGate';
 import ManualSubscriptionGiftModal from './components/ManualSubscriptionGiftModal';
@@ -79,6 +80,16 @@ import {
   snapshotHasActiveSubscription,
   snapshotIsReadyForPaymentFlow,
 } from './lib/entitlementStateMachine';
+import {
+  clearPremiumAccessIntent,
+  consumePremiumAccessIntent,
+  grantPremiumAccessIntent,
+  hasFreshPremiumAccessIntent,
+} from './lib/premiumAccessIntent';
+import {
+  mayShowPremiumAccessPrompt,
+  resolvePremiumAccessPromptVariant,
+} from './lib/premiumAccessPromptPolicy';
 import { instructionVideoVisibleForInstall, isInstructionVideoChannel } from './lib/instructionVideoChannel';
 import { readNativeAndroidVersionCode } from './lib/playVpsApiHost';
 import { logChannelCardTap } from './lib/channelCardTapDiagnostics';
@@ -364,6 +375,8 @@ function ChannelCatalogScreen({
 
   const [selectedFilter, setSelectedFilter] = useState('Zote');
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
+  const [premiumAccessPromptVisible, setPremiumAccessPromptVisible] = useState(false);
+  const [premiumAccessPromptVariant, setPremiumAccessPromptVariant] = useState('inactive');
   const pendingChannelAfterPaymentRef = useRef(null);
   const pendingPremiumTapRef = useRef(null);
   const [homeFloaterVisible, setHomeFloaterVisible] = useState(false);
@@ -428,7 +441,18 @@ function ChannelCatalogScreen({
         : 'other';
 
   useRegisterBlockingSheet(`catalog-premium-${catalogBlockingSuffix}`, premiumModalVisible);
+  useRegisterBlockingSheet(
+    `catalog-premium-access-prompt-${catalogBlockingSuffix}`,
+    premiumAccessPromptVisible,
+  );
   useRegisterBlockingSheet(`catalog-manual-gift-${catalogBlockingSuffix}`, manualGiftVisible);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') clearPremiumAccessIntent();
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     manualGiftVisibleRef.current = manualGiftVisible;
@@ -777,6 +801,28 @@ function ChannelCatalogScreen({
     setPremiumModalVisible(true);
   }, [guardDeviceIntelligence]);
 
+  const openPremiumAccessPromptFromTap = useCallback(
+    (pendingChannel) => {
+      if (!hasFreshPremiumAccessIntent()) return false;
+      const snap = getPremiumAccessSnapshot();
+      if (!mayShowPremiumAccessPrompt(snap)) {
+        clearPremiumAccessIntent();
+        return false;
+      }
+      const variant = resolvePremiumAccessPromptVariant(snap);
+      if (!variant) {
+        clearPremiumAccessIntent();
+        return false;
+      }
+      consumePremiumAccessIntent();
+      if (pendingChannel) pendingChannelAfterPaymentRef.current = pendingChannel;
+      setPremiumAccessPromptVariant(variant);
+      setPremiumAccessPromptVisible(true);
+      return true;
+    },
+    [getPremiumAccessSnapshot],
+  );
+
   const mountManualGiftModal = enableHomeExpiryReminder && manualGiftVisible;
 
   useEffect(() => {
@@ -893,6 +939,9 @@ function ChannelCatalogScreen({
         return;
       }
       const isFree = freeMode || channelIsFreeAccess(freshPlayerChannel, { freeMode });
+      if (!isFree) {
+        grantPremiumAccessIntent({ channel: freshPlayerChannel });
+      }
       const snapshot = isFree
         ? getPremiumAccessSnapshot()
         : await awaitPremiumSnapshotCapped(getPremiumAccessSnapshot, awaitPremiumAccessSnapshot);
@@ -907,13 +956,14 @@ function ChannelCatalogScreen({
         playerChannel: freshPlayerChannel,
         cardIsPremium: isPremium,
         navigation,
-        openPaymentModal: () => openPremiumModal(freshPlayerChannel),
+        openPaymentModal: () => openPremiumAccessPromptFromTap(freshPlayerChannel),
         verifySubscriptionBeforePlay,
         verifySubscriptionInBackground: (reason) =>
           verifySubscriptionInBackground(verifySubscriptionBeforePlay, reason),
         awaitEntitlementForTap,
         onEntitlementDeferred: (ch) => {
           pendingPremiumTapRef.current = ch;
+          grantPremiumAccessIntent({ channel: ch });
         },
         security,
         Alert,
@@ -930,6 +980,7 @@ function ChannelCatalogScreen({
       navigation,
       security,
       openPremiumModal,
+      openPremiumAccessPromptFromTap,
       freeMode,
       rawChannels,
       premiumPlaybackReady,
@@ -952,13 +1003,13 @@ function ChannelCatalogScreen({
       void navigateToChannel(channel, { isPremium: true });
       return;
     }
-    if (snapshotIsReadyForPaymentFlow(snap)) {
+    if (snapshotIsReadyForPaymentFlow(snap) && hasFreshPremiumAccessIntent()) {
       pendingPremiumTapRef.current = null;
       logChannelCardTap('deferred_tap_resume', {
         channelKey: String(channel?.id ?? channel?.name ?? '').trim(),
         path: 'payment',
       });
-      openPremiumModal(channel);
+      openPremiumAccessPromptFromTap(channel);
     }
   }, [
     isSubscribed,
@@ -966,12 +1017,13 @@ function ChannelCatalogScreen({
     subscriptionVersion,
     navigateToChannel,
     getPremiumAccessSnapshot,
-    openPremiumModal,
+    openPremiumAccessPromptFromTap,
   ]);
 
   const onBannerPremiumRequired = useCallback(() => {
-    openPremiumModal();
-  }, [openPremiumModal]);
+    grantPremiumAccessIntent({ channelKey: 'banner-premium' });
+    openPremiumAccessPromptFromTap(null);
+  }, [openPremiumAccessPromptFromTap]);
 
   const handleCardPress = useCallback(
     async (item) => {
@@ -1199,7 +1251,7 @@ function ChannelCatalogScreen({
             premiumPlaybackReady={premiumPlaybackReady}
             getPremiumAccessSnapshot={getPremiumAccessSnapshot}
             awaitRecoverBoot={awaitRecoverBoot}
-            openPaymentModal={openPremiumModal}
+            openPaymentModal={openPremiumAccessPromptFromTap}
             requireUpdateBeforeChannelPlayback={requireUpdateBeforeChannelPlayback}
             onChannelUpdateRequired={requestChannelUpdateGate}
           />
@@ -1379,6 +1431,18 @@ function ChannelCatalogScreen({
           }}
         />
       ) : null}
+      <PremiumAccessPromptModal
+        visible={premiumAccessPromptVisible}
+        variant={premiumAccessPromptVariant}
+        onChoosePackage={() => {
+          setPremiumAccessPromptVisible(false);
+          openPremiumModal(pendingChannelAfterPaymentRef.current);
+        }}
+        onClose={() => {
+          setPremiumAccessPromptVisible(false);
+          pendingChannelAfterPaymentRef.current = null;
+        }}
+      />
       <PremiumModal
         visible={premiumModalVisible}
         onClose={() => setPremiumModalVisible(false)}

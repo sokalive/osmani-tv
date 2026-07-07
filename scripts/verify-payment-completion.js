@@ -104,7 +104,11 @@ else pass('subscription_activated SSE during wait');
 if (!app.includes('pendingChannelAfterPaymentRef')) fail('pending channel after payment ref');
 else pass('pending channel after payment ref');
 
-if (!app.includes('openPremiumModal(freshPlayerChannel)') && !app.includes('openPremiumModal(playerChannel)')) {
+if (
+  !app.includes('openPremiumAccessPromptFromTap(freshPlayerChannel)') &&
+  !app.includes('openPremiumModal(freshPlayerChannel)') &&
+  !app.includes('openPremiumModal(playerChannel)')
+) {
   fail('store channel on premium tap');
 } else pass('store channel on premium tap');
 

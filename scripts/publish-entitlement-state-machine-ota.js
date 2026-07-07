@@ -35,7 +35,7 @@ function sleepSec(sec) {
 }
 
 function publishRuntime(runtime) {
-  const msg = `fix(entitlement): canonical state machine runtime ${runtime}`;
+  const msg = `fix(premium): context-aware access prompt + intent-only display runtime ${runtime}`;
   const quotedMsg = msg.replace(/"/g, '');
   const cmd =
     `${NPX} eas-cli update --channel production --environment production ` +
@@ -93,7 +93,7 @@ const summary = {
   groups,
 };
 
-const summaryPath = path.join(__dirname, '..', 'ota-publish-entitlement-state-machine-summary.json');
+const summaryPath = path.join(__dirname, '..', 'ota-publish-premium-entry-regression-summary.json');
 fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
 console.log('\n[publish-entitlement-state-machine-ota] all runtimes published');
 console.log(JSON.stringify(groups, null, 2));

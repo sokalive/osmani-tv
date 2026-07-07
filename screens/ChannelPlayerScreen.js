@@ -162,7 +162,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     subscriptionExpiresAt,
     subscriptionVersion,
     trialWatchSettings,
-    requestPaymentModal,
   } = useOsmaniApp();
   const security = useSecurity();
   const { blocked: deviceIntelligenceBlocked } = useDeviceIntelligence();
@@ -1563,7 +1562,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     isPlaybackActive:
       isPlaying && accessAllowed && Boolean(uri) && !playbackError && !playbackSuppressed,
     stopPlayback: stopTrialPlayback,
-    onExpired: () => requestPaymentModal(),
+    onExpired: () => {
+      /* User-intent only: no automatic payment popup on trial expiry. */
+    },
     navigation,
     lifecycleRef: playerLifecycleRef,
   });

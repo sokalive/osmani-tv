@@ -67,11 +67,7 @@ function deriveEntitlementPhase(snapshot) {
 function snapshotIsReadyForPaymentFlow(snapshot) {
   const s = snapshot ?? {};
   const phase = deriveEntitlementPhase(s);
-  if (phase === 'INACTIVE' || phase === 'EXPIRED') return true;
-  if (phase === 'CHECKING' || phase === 'ERROR_UNKNOWN') return false;
-  if (phase === 'ACTIVE' || phase === 'STALE_ACTIVE' || s.isSubscribed === true) return false;
-  if (s.cacheTrustedActive === true) return false;
-  return s.subscriptionSyncLoaded === true;
+  return phase === 'INACTIVE' || phase === 'EXPIRED';
 }
 
 function sim(name, cond) {
@@ -79,8 +75,8 @@ function sim(name, cond) {
   else pass(`sim: ${name}`);
 }
 
-sim('inactive sync loaded opens payment path', () =>
-  snapshotIsReadyForPaymentFlow({
+sim('inactive sync loaded requires authoritative inactive', () =>
+  !snapshotIsReadyForPaymentFlow({
     isSubscribed: false,
     subscriptionSyncLoaded: true,
     authoritativeInactiveConfirmed: false,
