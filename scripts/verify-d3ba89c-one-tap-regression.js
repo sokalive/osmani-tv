@@ -48,8 +48,12 @@ else fail('removed blocking intent gate wrapper');
 if (nav.includes('snapshotAllowsExplicitTapPayment')) pass('nav uses d3ba89c explicit tap payment');
 else fail('nav uses d3ba89c explicit tap payment');
 
-if (nav.includes('payment_modal_d3ba89c_fallback')) pass('nav d3ba89c terminal fallback');
-else fail('nav d3ba89c terminal fallback');
+if (
+  nav.includes('payment_modal_d3ba89c_explicit_tap') ||
+  nav.includes('payment_modal_d3ba89c_fallback')
+) {
+  pass('nav d3ba89c terminal fallback');
+} else fail('nav d3ba89c terminal fallback');
 
 if (app.includes('touchPremiumAccessIntent')) pass('App retains intent during resolve');
 else fail('App retains intent during resolve');

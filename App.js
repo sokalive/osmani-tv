@@ -84,6 +84,7 @@ import {
   consumePremiumAccessIntent,
   grantPremiumAccessIntent,
   getPremiumPendingChannel,
+  hasFreshPremiumAccessIntent,
   setPremiumPendingChannel,
   takePremiumPendingChannel,
   touchPremiumAccessIntent,
@@ -979,7 +980,12 @@ function ChannelCatalogScreen({
       void navigateToChannel(channel, { isPremium: true });
       return;
     }
-    if (snapshotAllowsExplicitTapPayment(snap)) {
+    if (
+      snapshotAllowsExplicitTapPayment(snap) ||
+      (hasFreshPremiumAccessIntent() &&
+        !snapshotHasActiveSubscription(snap) &&
+        snap.subscriptionSyncLoaded === true)
+    ) {
       pendingPremiumTapRef.current = null;
       takePremiumPendingChannel();
       logChannelCardTap('deferred_tap_resume', {
