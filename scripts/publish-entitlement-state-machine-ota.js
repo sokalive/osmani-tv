@@ -35,7 +35,7 @@ function sleepSec(sec) {
 }
 
 function publishRuntime(runtime) {
-  const msg = `fix(premium): context-aware access prompt + intent-only display runtime ${runtime}`;
+  const msg = `fix(premium): direct PremiumModal on tap, remove intermediate prompt runtime ${runtime}`;
   const quotedMsg = msg.replace(/"/g, '');
   const cmd =
     `${NPX} eas-cli update --channel production --environment production ` +

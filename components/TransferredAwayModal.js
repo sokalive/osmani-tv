@@ -1,5 +1,5 @@
 /**
- * @deprecated Removed from app shell — use PremiumAccessPromptModal (user-intent only).
+ * @deprecated Removed from app shell — premium tap opens PremiumModal directly (user-intent only).
  * Kept as stub so stale imports fail visibly in dev; no restore UI.
  */
 export default function TransferredAwayModal() {

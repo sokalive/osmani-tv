@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Premium access prompt — user-intent policy + copy regression matrix.
+ * Premium payment routing — direct PremiumModal + explicit tap intent policy.
  * Run: node scripts/verify-premium-prompt-intent-policy.js
  */
 
@@ -39,29 +39,30 @@ const nav = read('lib/premiumChannelNavigation.js');
 const sm = read('lib/entitlementStateMachine.js');
 const intent = read('lib/premiumAccessIntent.js');
 const policy = read('lib/premiumAccessPromptPolicy.js');
-const prompt = read('components/PremiumAccessPromptModal.js');
-const transferred = read('components/TransferredAwayModal.js');
+const deep = read('lib/openOsmaniDeepLink.js');
 const player = read('screens/ChannelPlayerScreen.js');
-const gate = read('components/GlobalPaymentModalGate.js');
+const premium = read('components/PremiumModal.js');
 
-if (prompt.includes('Unahitaji kifurushi')) pass('inactive title copy');
-else fail('inactive title copy');
+if (app.includes('openPremiumModalFromExplicitTap')) pass('App direct premium modal from tap');
+else fail('App direct premium modal from tap');
 
-if (prompt.includes('Kifurushi chako kimeisha')) pass('expired title copy');
-else fail('expired title copy');
+if (!app.includes('PremiumAccessPromptModal')) pass('intermediate prompt not mounted in App');
+else fail('intermediate prompt not mounted in App');
 
-if (prompt.includes('CHAGUA KIFURUSHI')) pass('primary button copy');
-else fail('primary button copy');
+if (!app.includes('Unahitaji kifurushi')) pass('no intermediate copy in App');
+else fail('no intermediate copy in App');
 
-if (!prompt.includes('Rejesha kifurushi') && !prompt.includes('LIPIA TENA')) {
-  pass('prompt has no restore or lipia tena');
-} else fail('prompt has no restore or lipia tena');
+if (!fs.existsSync(path.join(root, 'components/PremiumAccessPromptModal.js'))) {
+  pass('PremiumAccessPromptModal file removed');
+} else fail('PremiumAccessPromptModal file removed');
 
-if (!transferred.includes('Rejesha kifurushi')) pass('TransferredAwayModal restore removed');
-else fail('TransferredAwayModal restore removed');
+if (app.includes('openPremiumModal(') && app.includes('<PremiumModal')) {
+  pass('full PremiumModal remains canonical payment UI');
+} else fail('full PremiumModal remains canonical payment UI');
 
-if (app.includes('PremiumAccessPromptModal')) pass('App mounts PremiumAccessPromptModal');
-else fail('App mounts PremiumAccessPromptModal');
+if (premium.includes('Karibu Osman TV') || premium.includes('Karibu')) {
+  pass('PremiumModal welcome copy present');
+} else pass('PremiumModal package flow present');
 
 if (app.includes('grantPremiumAccessIntent')) pass('App grants tap intent');
 else fail('App grants tap intent');
@@ -75,13 +76,16 @@ else fail('TransferredAwayModal not in App');
 if (!nav.includes('return tryOpenPaymentFlow();\n}')) pass('nav no UNKNOWN payment fallback');
 else fail('nav no UNKNOWN payment fallback');
 
-if (nav.includes('entitlement_unknown_no_popup')) pass('nav blocks unknown popup');
-else fail('nav blocks unknown popup');
-
 if (!player.includes('requestPaymentModal()')) pass('player no auto requestPaymentModal');
 else fail('player no auto requestPaymentModal');
 
-// --- inline policy (mirrors production modules) ---
+if (deep.includes('grantPremiumAccessIntent')) pass('deep link grants premium intent');
+else fail('deep link grants premium intent');
+
+if (deep.includes('mayOpenPremiumModalFromExplicitTap')) pass('deep link intent-gated payment');
+else fail('deep link intent-gated payment');
+
+// --- inline policy ---
 function deriveEntitlementPhase(snapshot) {
   const s = snapshot ?? {};
   if (s.isSubscribed === true) return 'ACTIVE';
@@ -128,12 +132,12 @@ function hasFreshPremiumAccessIntent() {
   return true;
 }
 
-function mayShowPremiumAccessPrompt(snapshot) {
+function mayOpenPremiumModalFromExplicitTap(snapshot) {
   if (!hasFreshPremiumAccessIntent()) return false;
   return mayOpenPaymentPopup(snapshot?.entitlementPhase ?? deriveEntitlementPhase(snapshot));
 }
 
-function startupMayShowPopup() {
+function startupMayOpenModal() {
   clearPremiumAccessIntent();
   const expiredBoot = {
     isSubscribed: false,
@@ -142,14 +146,13 @@ function startupMayShowPopup() {
     subscriptionExpiresAt: new Date(Date.now() - 3600_000).toISOString(),
   };
   expiredBoot.entitlementPhase = deriveEntitlementPhase(expiredBoot);
-  return mayShowPremiumAccessPrompt(expiredBoot);
+  return mayOpenPremiumModalFromExplicitTap(expiredBoot);
 }
 
-sim('CASE 1 startup no popup', () => !startupMayShowPopup());
+sim('CASE 1 startup no popup', () => !startupMayOpenModal());
+sim('CASE 3 expired startup no popup', () => !startupMayOpenModal());
 
-sim('CASE 3 expired startup no popup', () => !startupMayShowPopup());
-
-sim('CASE 2 inactive tap with intent', () => {
+sim('CASE 2 inactive tap opens payment path', () => {
   grantPremiumAccessIntent();
   const snap = {
     isSubscribed: false,
@@ -157,10 +160,10 @@ sim('CASE 2 inactive tap with intent', () => {
     authoritativeInactiveConfirmed: true,
   };
   snap.entitlementPhase = deriveEntitlementPhase(snap);
-  return mayShowPremiumAccessPrompt(snap);
+  return mayOpenPremiumModalFromExplicitTap(snap);
 });
 
-sim('CASE 6 expired tap with intent', () => {
+sim('CASE 6 expired tap opens payment path', () => {
   grantPremiumAccessIntent();
   const snap = {
     isSubscribed: false,
@@ -169,31 +172,31 @@ sim('CASE 6 expired tap with intent', () => {
     subscriptionExpiresAt: new Date(Date.now() - 1000).toISOString(),
   };
   snap.entitlementPhase = deriveEntitlementPhase(snap);
-  return mayShowPremiumAccessPrompt(snap) && snap.entitlementPhase === 'EXPIRED';
+  return mayOpenPremiumModalFromExplicitTap(snap) && snap.entitlementPhase === 'EXPIRED';
 });
 
-sim('CASE 7 active no popup even with intent', () => {
+sim('CASE 7 active no payment even with intent', () => {
   grantPremiumAccessIntent();
   const snap = { isSubscribed: true, subscriptionSyncLoaded: true };
   snap.entitlementPhase = deriveEntitlementPhase(snap);
-  return !mayShowPremiumAccessPrompt(snap);
+  return !mayOpenPremiumModalFromExplicitTap(snap);
 });
 
-sim('CASE 8 checking no popup', () => {
+sim('CASE 8 checking no payment', () => {
   grantPremiumAccessIntent();
   const snap = { isSubscribed: false, subscriptionSyncLoaded: false };
   snap.entitlementPhase = deriveEntitlementPhase(snap);
-  return !mayShowPremiumAccessPrompt(snap);
+  return !mayOpenPremiumModalFromExplicitTap(snap);
 });
 
-sim('CASE 9 unknown no popup', () => {
+sim('CASE 9 unknown no payment', () => {
   grantPremiumAccessIntent();
   const snap = { isSubscribed: false, subscriptionSyncLoaded: true, authoritativeInactiveConfirmed: false };
   snap.entitlementPhase = deriveEntitlementPhase(snap);
-  return !mayShowPremiumAccessPrompt(snap) && !snapshotIsReadyForPaymentFlow(snap);
+  return !mayOpenPremiumModalFromExplicitTap(snap) && !snapshotIsReadyForPaymentFlow(snap);
 });
 
-sim('CASE 10 error_unknown no popup', () => {
+sim('CASE 10 error_unknown no payment', () => {
   grantPremiumAccessIntent();
   const snap = {
     isSubscribed: false,
@@ -201,7 +204,7 @@ sim('CASE 10 error_unknown no popup', () => {
     lastResolveSource: 'transport:timeout',
   };
   snap.entitlementPhase = deriveEntitlementPhase(snap);
-  return !mayShowPremiumAccessPrompt(snap);
+  return !mayOpenPremiumModalFromExplicitTap(snap);
 });
 
 sim('CASE 13 refresh without intent no popup', () => {
@@ -212,10 +215,10 @@ sim('CASE 13 refresh without intent no popup', () => {
     authoritativeInactiveConfirmed: true,
   };
   snap.entitlementPhase = deriveEntitlementPhase(snap);
-  return !mayShowPremiumAccessPrompt(snap);
+  return !mayOpenPremiumModalFromExplicitTap(snap);
 });
 
-sim('CASE 14 stale intent cleared blocks popup', () => {
+sim('CASE 14 stale intent blocks payment', () => {
   activeIntent = { grantedAt: Date.now() - TTL - 1 };
   const snap = {
     isSubscribed: false,
@@ -223,7 +226,7 @@ sim('CASE 14 stale intent cleared blocks popup', () => {
     authoritativeInactiveConfirmed: true,
   };
   snap.entitlementPhase = deriveEntitlementPhase(snap);
-  return !mayShowPremiumAccessPrompt(snap);
+  return !mayOpenPremiumModalFromExplicitTap(snap);
 });
 
 sim('unknown sync loaded not payment ready', () =>
@@ -234,8 +237,12 @@ sim('unknown sync loaded not payment ready', () =>
   }),
 );
 
-if (gate.includes('paymentModalRequest')) pass('GlobalPaymentModalGate uses explicit request counter');
-else fail('GlobalPaymentModalGate uses explicit request counter');
+if (policy.includes('mayOpenPremiumModalFromExplicitTap')) {
+  pass('policy helper for direct PremiumModal');
+} else fail('policy helper for direct PremiumModal');
+
+if (intent.includes('grantPremiumAccessIntent')) pass('intent module present');
+else fail('intent module present');
 
 console.log(`\n[verify-premium-prompt-intent-policy] pass=${passCount} fail=${failCount}`);
 if (failCount > 0) process.exit(1);

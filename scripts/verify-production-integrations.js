@@ -25,14 +25,25 @@ function assertContains(rel, needle, label) {
   console.log('PASS:', label);
 }
 
+function assertNotContains(rel, needle, label) {
+  const text = read(rel);
+  if (text.includes(needle)) {
+    console.error('FAIL:', label, rel, 'still contains', needle);
+    process.exitCode = 1;
+    return;
+  }
+  console.log('PASS:', label);
+}
+
 assertContains('App.js', 'GlobalPaymentModalGate', 'payment modal gate mounted');
 assertContains('App.js', 'UpdateOverlay', 'update overlay mounted');
 assertContains('App.js', 'startUpdateClient', 'update client started');
 assertContains('App.js', 'startExpoUpdatesClient', 'expo updates client started');
 assertContains('screens/ChannelPlayerScreen.js', 'TrialWatchOverlay', 'trial overlay on player');
 assertContains('screens/ChannelPlayerScreen.js', 'User-intent only', 'trial expiry does not auto-open payment');
-assertContains('App.js', 'PremiumAccessPromptModal', 'premium access prompt mounted');
+assertContains('App.js', 'openPremiumModalFromExplicitTap', 'direct premium modal from explicit tap');
 assertContains('lib/premiumAccessIntent.js', 'grantPremiumAccessIntent', 'premium tap intent module');
+assertNotContains('App.js', 'PremiumAccessPromptModal', 'no intermediate premium prompt');
 assertContains('lib/normalizeBanner.js', 'enrichBannerForViewer', 'banner serializer in normalize path');
 assertContains('api.js', 'enrichBannersForViewer', 'banner serializer on API fetch');
 assertContains('context/OsmaniAppContext.jsx', 'tryGetViewerTrialWatchSettings', 'trial settings fetch');

@@ -132,9 +132,9 @@ if (guard.includes("t.includes('admin')")) {
   fail('revoked guard must not use substring admin match');
 } else pass('no substring admin revoked match');
 
-if (!read('components/PremiumAccessPromptModal.js').includes('PremiumAccessPromptModal')) {
-  fail('PremiumAccessPromptModal component required');
-} else pass('PremiumAccessPromptModal component present');
+if (!read('lib/premiumAccessPromptPolicy.js').includes('mayOpenPremiumModalFromExplicitTap')) {
+  fail('premium payment policy helper required');
+} else pass('premium payment policy helper present');
 
 if (read('components/TransferredAwayModal.js').includes('Rejesha kifurushi')) {
   fail('TransferredAwayModal must not expose restore button');

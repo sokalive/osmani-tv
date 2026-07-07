@@ -105,7 +105,7 @@ if (!app.includes('pendingChannelAfterPaymentRef')) fail('pending channel after 
 else pass('pending channel after payment ref');
 
 if (
-  !app.includes('openPremiumAccessPromptFromTap(freshPlayerChannel)') &&
+  !app.includes('openPremiumModalFromExplicitTap(freshPlayerChannel)') &&
   !app.includes('openPremiumModal(freshPlayerChannel)') &&
   !app.includes('openPremiumModal(playerChannel)')
 ) {
