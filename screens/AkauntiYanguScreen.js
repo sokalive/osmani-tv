@@ -111,14 +111,6 @@ export default function AkauntiYanguScreen() {
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
   const [offerCodeInput, setOfferCodeInput] = useState('');
 
-  useEffect(() => {
-    if (!subscriptionRecoveryComplete) return;
-    if (route?.params?.openPremiumAfterExpiry === true) {
-      setPremiumModalVisible(true);
-      navigation.setParams({ openPremiumAfterExpiry: false });
-    }
-  }, [navigation, route?.params?.openPremiumAfterExpiry, subscriptionRecoveryComplete]);
-
   const [redeemBusy, setRedeemBusy] = useState(false);
   const [cooldownEndMs, setCooldownEndMs] = useState(null);
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);

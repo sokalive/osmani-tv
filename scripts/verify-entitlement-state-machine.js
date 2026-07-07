@@ -64,8 +64,8 @@ if (gate.includes('premiumPlaybackReady === true') && gate.includes('inactive'))
 if (!nav.includes('onEntitlementDeferred')) fail('deferred tap callback');
 else pass('deferred tap callback');
 
-if (!nav.includes('entitlement_ambiguous_no_popup')) fail('ambiguous no popup path');
-else pass('ambiguous no popup path');
+if (!nav.includes('entitlement_still_resolving_no_popup')) fail('checking defer without popup');
+else pass('checking defer without popup');
 
 if (!hydrate.includes('readStoredIdentityHints')) fail('stored identity hints for cache');
 else pass('stored identity hints for cache');

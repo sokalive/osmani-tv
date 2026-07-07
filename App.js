@@ -40,7 +40,6 @@ import PopupSettingsModal from './components/PopupSettingsModal';
 import TransferConfirmModal from './components/TransferConfirmModal';
 import TransferSuccessModal from './components/TransferSuccessModal';
 import SubscriptionActivationSuccessModal from './components/SubscriptionActivationSuccessModal';
-import TransferredAwayModal from './components/TransferredAwayModal';
 import UpdateOverlay from './components/UpdateOverlay';
 import ChannelUpdateGateHost from './components/ChannelUpdateGateHost';
 import OtaDebugOverlay, { OtaDebugTitleTap } from './components/OtaDebugOverlay';
@@ -76,6 +75,10 @@ import { isBannerVisibleAt, normalizeBanner } from './lib/normalizeBanner';
 import { buildPlayerChannelFromRow, findRawChannelById } from './lib/playerChannelFromRow';
 import { openPremiumChannelFromSnapshot } from './lib/premiumChannelNavigation';
 import { awaitPremiumSnapshotCapped, shouldShowKulipiaBadge, verifySubscriptionInBackground } from './lib/premiumTapGate';
+import {
+  snapshotHasActiveSubscription,
+  snapshotIsReadyForPaymentFlow,
+} from './lib/entitlementStateMachine';
 import { instructionVideoVisibleForInstall, isInstructionVideoChannel } from './lib/instructionVideoChannel';
 import { readNativeAndroidVersionCode } from './lib/playVpsApiHost';
 import { logChannelCardTap } from './lib/channelCardTapDiagnostics';
@@ -430,26 +433,6 @@ function ChannelCatalogScreen({
   useEffect(() => {
     manualGiftVisibleRef.current = manualGiftVisible;
   }, [manualGiftVisible]);
-
-  useEffect(() => {
-    if (!enableHomeExpiryReminder) return;
-    if (!subscriptionRecoveryComplete) return;
-    if (route?.params?.openPremiumAfterExpiry === true) {
-      void (async () => {
-        if (guardDeviceIntelligence().ok === false) return;
-        await awaitPremiumAccessSnapshot?.();
-        setPremiumModalVisible(true);
-      })();
-      navigation.setParams({ openPremiumAfterExpiry: false });
-    }
-  }, [
-    enableHomeExpiryReminder,
-    navigation,
-    route?.params?.openPremiumAfterExpiry,
-    awaitPremiumAccessSnapshot,
-    guardDeviceIntelligence,
-    subscriptionRecoveryComplete,
-  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -957,14 +940,34 @@ function ChannelCatalogScreen({
   );
 
   useEffect(() => {
-    if (!isSubscribed || !pendingPremiumTapRef.current) return;
+    if (!pendingPremiumTapRef.current) return;
     const channel = pendingPremiumTapRef.current;
-    pendingPremiumTapRef.current = null;
-    logChannelCardTap('deferred_tap_resume', {
-      channelKey: String(channel?.id ?? channel?.name ?? '').trim(),
-    });
-    void navigateToChannel(channel, { isPremium: true });
-  }, [isSubscribed, navigateToChannel]);
+    const snap = getPremiumAccessSnapshot();
+    if (snapshotHasActiveSubscription(snap)) {
+      pendingPremiumTapRef.current = null;
+      logChannelCardTap('deferred_tap_resume', {
+        channelKey: String(channel?.id ?? channel?.name ?? '').trim(),
+        path: 'active',
+      });
+      void navigateToChannel(channel, { isPremium: true });
+      return;
+    }
+    if (snapshotIsReadyForPaymentFlow(snap)) {
+      pendingPremiumTapRef.current = null;
+      logChannelCardTap('deferred_tap_resume', {
+        channelKey: String(channel?.id ?? channel?.name ?? '').trim(),
+        path: 'payment',
+      });
+      openPremiumModal(channel);
+    }
+  }, [
+    isSubscribed,
+    subscriptionSyncLoaded,
+    subscriptionVersion,
+    navigateToChannel,
+    getPremiumAccessSnapshot,
+    openPremiumModal,
+  ]);
 
   const onBannerPremiumRequired = useCallback(() => {
     openPremiumModal();
@@ -1784,35 +1787,23 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
  *     backend pushes `transfer_requested` over /api/sync/stream.
  *   - TransferSuccessModal:   source device after transfer-out completes
  *     (instant clear + optional repurchase).
- *   - TransferredAwayModal:    hard-block for expired/revoked (not transfer-out).
  */
 function SubscriptionLifecycleGates() {
   const {
-    revokedReason,
-    dismissRevoked,
-    subscriptionRecoveryComplete,
     sourceTransferSuccessVisible,
     applySourceTransferCompleted,
     dismissSourceTransferSuccess,
     requestPaymentModal,
     pendingTransfer,
     dismissPendingTransfer,
-    reverifySubscription,
     activationSuccessVisible,
     activationSuccessDetails,
     activationSuccessSource,
     dismissActivationSuccess,
   } = useOsmaniApp();
-  const [recovering, setRecovering] = useState(false);
-  const [plansOpen, setPlansOpen] = useState(false);
 
-  useRegisterBlockingSheet('lifecycle-plans', plansOpen);
   useRegisterBlockingSheet('lifecycle-transfer', Boolean(pendingTransfer));
   useRegisterBlockingSheet('lifecycle-activation-success', activationSuccessVisible);
-  useRegisterBlockingSheet(
-    'lifecycle-revoked',
-    Boolean(revokedReason) && revokedReason !== 'transferred' && !plansOpen,
-  );
 
   const onTransferApproved = useCallback(() => {
     void applySourceTransferCompleted('transfer-approved');
@@ -1822,33 +1813,6 @@ function SubscriptionLifecycleGates() {
     dismissSourceTransferSuccess();
     requestPaymentModal();
   }, [dismissSourceTransferSuccess, requestPaymentModal]);
-
-  const onRecover = useCallback(async () => {
-    if (recovering) return;
-    setRecovering(true);
-    try {
-      const r = await reverifySubscription('user-recover');
-      if (r?.active === true) {
-        dismissRevoked();
-      }
-    } finally {
-      setRecovering(false);
-    }
-  }, [dismissRevoked, recovering, reverifySubscription]);
-
-  const onOpenPlans = useCallback(() => {
-    setPlansOpen(true);
-    dismissRevoked();
-  }, [dismissRevoked]);
-
-  const onPlansClose = useCallback(() => {
-    setPlansOpen(false);
-  }, []);
-
-  const onPlansUnlock = useCallback(() => {
-    setPlansOpen(false);
-    void reverifySubscription('plan-unlock');
-  }, [reverifySubscription]);
 
   return (
     <>
@@ -1864,19 +1828,6 @@ function SubscriptionLifecycleGates() {
         onBuyAgain={onBuyAgainAfterTransfer}
         onDismiss={dismissSourceTransferSuccess}
       />
-      <TransferredAwayModal
-        visible={
-          subscriptionRecoveryComplete &&
-          Boolean(revokedReason) &&
-          revokedReason !== 'transferred' &&
-          !plansOpen
-        }
-        reason={revokedReason ?? 'expired'}
-        recovering={recovering}
-        onRecover={onRecover}
-        onOpenPlans={onOpenPlans}
-      />
-      <PremiumModal visible={plansOpen} onClose={onPlansClose} onUnlockSuccess={onPlansUnlock} />
       <SubscriptionActivationSuccessModal
         visible={activationSuccessVisible}
         details={activationSuccessDetails}

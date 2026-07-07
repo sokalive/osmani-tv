@@ -574,12 +574,9 @@ export function OsmaniAppProvider({ children }) {
           authoritativeInactiveRef.current = true;
           cacheTrustedActiveRef.current = false;
           const modalReason = resolveSubscriptionLossModalReason(r);
-          if (modalReason) {
-            setRevokedReason((cur) => {
-              if (cur) return cur;
-              return modalReason;
-            });
-          }
+          logSubscriptionLossModalDecision(reason, r, modalReason ?? 'silent_no_modal', {
+            authoritativeInactive,
+          });
         }
         isSubscribedRef.current = active;
         if (active) {
@@ -866,12 +863,9 @@ export function OsmaniAppProvider({ children }) {
       console.log('[PLAYBACK_GATE]', 'denied', reason);
       if (hadSubscriptionBefore && isConfirmedSubscriptionLoss(r)) {
         const modalReason = resolveSubscriptionLossModalReason(r);
-        logSubscriptionLossModalDecision(`gate:${reason}`, r, modalReason ?? 'cleared', {
+        logSubscriptionLossModalDecision(`gate:${reason}`, r, modalReason ?? 'silent_no_modal', {
           hadSubscriptionBefore,
         });
-        if (modalReason) {
-          setRevokedReason((cur) => cur ?? modalReason);
-        }
       } else if (hadSubscriptionBefore) {
         logSubscriptionLossModalDecision(`gate:${reason}`, r, 'skipped', {
           hadSubscriptionBefore,

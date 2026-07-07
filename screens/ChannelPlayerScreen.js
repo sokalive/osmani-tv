@@ -1533,22 +1533,12 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
     allowNavigationRemoveRef.current = true;
     try {
-      navigation.navigate('MainTabs', {
-        screen: 'Home',
-        params: { openPremiumAfterExpiry: true },
-      });
+      navigation.navigate('MainTabs', { screen: 'Home' });
     } catch {
       try {
-        navigation.navigate('MainTabs', {
-          screen: 'Akaunti Yangu',
-          params: { openPremiumAfterExpiry: true },
-        });
+        navigation.goBack();
       } catch {
-        try {
-          navigation.goBack();
-        } catch {
-          /* ignore */
-        }
+        /* ignore */
       }
     }
   }, [clearHideTimer, navigation, reverifySubscription, runPlaybackTeardown]);
