@@ -121,6 +121,7 @@ function looksLikeHls(uri) {
 function pickRoute(url, pt) {
   const s = String(url ?? '').trim();
   if (!s) return 'embed-webview';
+  if (pt === 'direct_hls') return 'native';
   if (isEmbed(s)) return 'embed-webview';
   if (looksLikeHls(s)) {
     if (pt === 'webview') return 'hls-webview';
@@ -152,6 +153,7 @@ const cases = [
   { name: 'Bein native', url: directRender, pt: 'native', want: 'native' },
   { name: 'Bein ijk', url: directRender, pt: 'ijk', want: 'native' },
   { name: 'Bein webview', url: directRender, pt: 'webview', want: 'hls-webview' },
+  { name: 'Direct HLS okcdn', url: 'https://vsd272.okcdn.ru/hls/live/index.m3u8?p', pt: 'direct_hls', want: 'native' },
   { name: 'YCN raw exo', url: ycn, pt: 'exo', want: 'native' },
   { name: 'Mpingo webview', url: mpingo, pt: 'webview', want: 'embed-webview' },
   { name: 'Mpingo exo', url: mpingo, pt: 'exo', want: 'embed-webview' },

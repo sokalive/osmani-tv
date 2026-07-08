@@ -42,6 +42,11 @@ import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
 import { buildEmbedBridgeJs, buildEmbedPageBootstrapJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
 import { resolveProviderEmbedPageUrl } from '../lib/embedPlaybackUrl';
 import { pickPlaybackRoute } from '../lib/playbackRoute';
+import {
+  buildDirectHlsStreamHeaders,
+  isDirectHlsPlayerType,
+  resolveDirectHlsManifestUrl,
+} from '../lib/directHlsPlayback';
 import { getServerAnchoredRemainingMs } from '../lib/subscriptionMath';
 import {
   SecurityPlaybackBlock,
@@ -238,15 +243,18 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       cancelled = true;
     };
   }, [channel, channelPlaybackKey, isInstructionVideo]);
-  const headers = useMemo(
-    () => ({
+  const headers = useMemo(() => {
+    if (isDirectHls) {
+      return buildDirectHlsStreamHeaders(channel) ?? {};
+    }
+    return {
       ...(channel?.referer && { Referer: channel.referer }),
       ...(channel?.origin && { Origin: channel.origin }),
       ...(channel?.userAgent && { 'User-Agent': channel.userAgent }),
-    }),
-    [channel?.referer, channel?.origin, channel?.userAgent],
-  );
+    };
+  }, [isDirectHls, channel?.referer, channel?.origin, channel?.userAgent, channel?.user_agent]);
   const normalizedPlayerType = normalizePlayerType(channel?.playerType);
+  const isDirectHls = isDirectHlsPlayerType(normalizedPlayerType);
   const streamIdentity = useMemo(() => playbackStreamIdentity(channel), [channel]);
   const playbackRoute = useMemo(() => {
     if (isInstructionVideo) return 'native';
@@ -261,6 +269,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   /** HLS manifest for native Exo / hls.js (direct, proxy, or auto with fallback). */
   const hlsManifestUrl = useMemo(() => {
     if (!uri || !isHlsManifest) return '';
+    if (isDirectHls) {
+      return resolveDirectHlsManifestUrl(uri);
+    }
     return resolveHlsPlaybackManifestUrl(
       uri,
       {
@@ -277,6 +288,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     );
   }, [
     isHlsManifest,
+    isDirectHls,
     uri,
     channel?.referer,
     channel?.origin,
@@ -287,10 +299,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     hlsForceProxy,
   ]);
 
-  const useDirectHlsSegments = useMemo(
-    () => shouldUseDirectHlsSegments(channel?.streamDeliveryMode, hlsForceProxy),
-    [channel?.streamDeliveryMode, hlsForceProxy],
-  );
+  const useDirectHlsSegments = useMemo(() => {
+    if (isDirectHls) return true;
+    return shouldUseDirectHlsSegments(channel?.streamDeliveryMode, hlsForceProxy);
+  }, [isDirectHls, channel?.streamDeliveryMode, hlsForceProxy]);
 
   const refreshManifestFromCatalog = useCallback(
     (reason = 'manifest_refresh') => {
@@ -894,6 +906,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       if (
         isHlsManifest &&
         !hlsForceProxy &&
+        !isDirectHls &&
         canFallbackToProxyPlayback({
           deliveryMode: channel?.streamDeliveryMode,
           proxyFallbackUrl: channel?.proxyFallbackUrl,
@@ -937,6 +950,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     [
       isHlsManifest,
       hlsForceProxy,
+      isDirectHls,
       channel?.streamDeliveryMode,
       channel?.proxyFallbackUrl,
       channel?.name,

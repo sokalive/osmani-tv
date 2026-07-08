@@ -35,7 +35,7 @@ function sleepSec(sec) {
 }
 
 function publishRuntime(runtime) {
-  const msg = `fix(catalog): instant FREE/PREMIUM channel access via SSE patch runtime ${runtime}`;
+  const msg = `feat(player): direct_hls isolated native playback runtime ${runtime}`;
   const quotedMsg = msg.replace(/"/g, '');
   const cmd =
     `${NPX} eas-cli update --channel production --environment production ` +
