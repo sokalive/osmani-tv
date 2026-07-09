@@ -35,7 +35,7 @@ function sleepSec(sec) {
 }
 
 function publishRuntime(runtime) {
-  const msg = `feat(player): direct_hls isolated native playback runtime ${runtime}`;
+  const msg = `fix(account): OMBA KIFURUSHI plan dedupe runtime ${runtime}`;
   const quotedMsg = msg.replace(/"/g, '');
   const cmd =
     `${NPX} eas-cli update --channel production --environment production ` +

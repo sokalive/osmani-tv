@@ -105,13 +105,24 @@ export default function OmbaKifurushiModal({ visible, onClose }) {
   }, [opacity, scale]);
 
   const loadPlans = useCallback(async () => {
-    const fromContext = Array.isArray(availablePlans) ? availablePlans : [];
-    const cached = getCachedPaymentPlansSync() ?? [];
-    const hydrated = (await hydratePaymentPlansCacheFromStorage()) ?? [];
+    const cached = getCachedPaymentPlansSync();
+    if (cached?.length) {
+      setPlans(cached);
+    } else if (Array.isArray(availablePlans) && availablePlans.length > 0) {
+      const fromContext = normalizePaymentPlansList(availablePlans);
+      if (fromContext.length) setPlans(fromContext);
+    } else {
+      const hydrated = await hydratePaymentPlansCacheFromStorage();
+      if (hydrated?.length) setPlans(hydrated);
+    }
+
     const fresh = (await refreshPaymentPlansCache({ reason: 'omba-kifurushi' })) ?? [];
-    const merged = normalizePaymentPlansList([...fromContext, ...cached, ...hydrated, ...fresh]);
-    setPlans(merged);
-    return merged;
+    const list =
+      fresh.length > 0
+        ? fresh
+        : getCachedPaymentPlansSync() ?? normalizePaymentPlansList(availablePlans ?? []);
+    setPlans(list);
+    return list;
   }, [availablePlans]);
 
   const resetState = useCallback(() => {
