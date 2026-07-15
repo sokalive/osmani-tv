@@ -1,0 +1,38 @@
+﻿{
+  "id": "40c09d10-e7d9-4551-aede-7908a0b45c3d",
+  "status": "IN_QUEUE",
+  "platform": "ANDROID",
+  "artifacts": {},
+  "fingerprint": {
+    "id": "019f3884-71f9-7a69-8dd4-efcfa377b588",
+    "hash": "5f8a39672f8942f5e095fb5cbff684c49c9ce26a"
+  },
+  "initiatingActor": {
+    "id": "880b14f5-f98a-4e7a-bdce-df65e68316b6",
+    "displayName": "isamu_123"
+  },
+  "logFiles": [],
+  "project": {
+    "id": "adf835d4-ad5d-425d-9e5b-de9a803066e0",
+    "name": "osmani-tv",
+    "slug": "osmani-tv",
+    "ownerAccount": {
+      "id": "b905793e-0a74-43b9-bcd1-19ed14fc1339",
+      "name": "isamu_123"
+    }
+  },
+  "channel": "vps-preview",
+  "distribution": "INTERNAL",
+  "buildProfile": "vps-preview",
+  "sdkVersion": "54.0.0",
+  "appVersion": "1.8.2",
+  "appBuildVersion": "24",
+  "runtimeVersion": "1.8.2",
+  "gitCommitHash": "5c1aa5f59e2c77f279f55b520f96f9ea42095665",
+  "gitCommitMessage": "fix(bridge): add expo-linking dependency for landing install warm-start.\n\nThe landing install bridge imports expo-linking but the dependency was missing from package.json, causing EAS Bundle JavaScript phase failures.\n\nCo-authored-by: Cursor <cursoragent@cursor.com>",
+  "priority": "NORMAL",
+  "createdAt": "2026-07-06T18:14:17.728Z",
+  "updatedAt": "2026-07-06T18:14:18.634Z",
+  "expirationDate": "2026-07-20T18:14:17.758Z",
+  "isForIosSimulator": false
+}

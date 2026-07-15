@@ -1,0 +1,107 @@
+{
+  "timestamp": "2026-07-03T14:47:14.405Z",
+  "commit": "d0be6deaeb5e89c9f18660b74eab034f8b26229c",
+  "automated": [
+    {
+      "script": "scripts/verify-startup-health.mjs",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-account-display-sparse.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-account-subscription-cards.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-account-subscription-price.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-startup-crash-guard.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-phone-subscription-guard.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-phone-number-gate.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-payment-waiting-ui.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-payment-success-ui.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-payment-completion.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-instant-ux.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-sse-guard.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-cache-hydrate.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-canonical-display.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-premium-playback-regression.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-recovery-boot.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-payment-plans-instant.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-user-center-sync.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-push-notification-registration.js",
+      "status": "PASS",
+      "exitCode": 0
+    }
+  ],
+  "passed": 19,
+  "failed": 0,
+  "skipped": 0,
+  "physicalDeviceQa": "NOT_RUN — requires Tecno BG6, Samsung, +1 Android",
+  "productionPopulationAudit": "NOT_RUN — requires DEVICE_IDS_FILE from Admin",
+  "deployment": "BLOCKED"
+}

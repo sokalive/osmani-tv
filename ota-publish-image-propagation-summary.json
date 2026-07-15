@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-07-04T07:52:51.727Z",
+  "commit": "e827e2823c564aa7f7ac9531ce19765b121fbc97",
+  "groups": [
+    {
+      "runtime": "1.6.0",
+      "groupId": "17293f06-bb9a-4383-b584-0ed20c8aad69",
+      "androidUpdateId": "019f2c10-4afe-7c2c-b0be-84ea3cf8a65a"
+    },
+    {
+      "runtime": "1.7.0",
+      "groupId": "054a5f87-a107-4260-a8d8-4ccec6483052",
+      "androidUpdateId": "019f2c13-0899-73f9-a451-db6d5818be6f"
+    },
+    {
+      "runtime": "1.7.1",
+      "groupId": "1d013e9e-ae4b-47fc-a8e0-e1e45bc100f5",
+      "androidUpdateId": "019f2c15-bdbc-7fa3-ac05-b7142f911f97"
+    },
+    {
+      "runtime": "1.7.2",
+      "groupId": "50bc275a-d257-4be7-a1aa-2b6a31b7182c",
+      "androidUpdateId": "019f2c18-1cc1-78c0-b820-776cf8d170b9"
+    },
+    {
+      "runtime": "1.8.0",
+      "groupId": "c291ed10-609d-4b45-a00f-2cdcd285defc",
+      "androidUpdateId": "019f2c19-b487-7679-b137-cdaf1c6f62e7"
+    },
+    {
+      "runtime": "1.8.1",
+      "groupId": "9e685e3d-5eda-43ba-b484-818f3a9a3bbd",
+      "androidUpdateId": "019f2c1b-36ff-7751-8f2c-def81447c3d7"
+    },
+    {
+      "runtime": "1.8.2",
+      "groupId": "03158ac3-548a-4193-a08b-51b1ce65cc76",
+      "androidUpdateId": "019f2c1d-b600-7f95-8647-b7538bae64b2"
+    }
+  ]
+}

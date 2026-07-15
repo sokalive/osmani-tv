@@ -1,0 +1,131 @@
+{
+  "timestamp": "2026-07-04T17:32:03.112Z",
+  "results": [
+    {
+      "deviceId": "a05c6bbed811e16e",
+      "before": {
+        "statusActive": true,
+        "verifyActive": true,
+        "ui": {
+          "accountStatus": "ACTIVE",
+          "paymentLabel": "Wiki 1 · TSh 3,000",
+          "durationDays": "7",
+          "remainingDays": 2,
+          "expiresAt": "2026-07-06T17:50:00.000Z",
+          "cardsComplete": true,
+          "premiumUnlock": true,
+          "paymentDialog": "blocked"
+        },
+        "expiresAt": "2026-07-06T17:50:00.000Z",
+        "status": "active"
+      },
+      "after": {
+        "recoverAck": false,
+        "recoverFrom": null,
+        "statusActive": true,
+        "verifyActive": true,
+        "ui": {
+          "accountStatus": "ACTIVE",
+          "paymentLabel": "Wiki 1 · TSh 3,000",
+          "durationDays": "7",
+          "remainingDays": 2,
+          "expiresAt": "2026-07-06T17:50:00.000Z",
+          "cardsComplete": true,
+          "premiumUnlock": true,
+          "paymentDialog": "blocked"
+        },
+        "expiresAt": "2026-07-06T17:50:00.000Z"
+      },
+      "clientSimulation": {
+        "reinstallRecovery": true,
+        "otaWouldReflect": true,
+        "cacheRefresh": "stable"
+      },
+      "conclusion": "Valid payment and subscription restored"
+    },
+    {
+      "deviceId": "3C849B55163CF",
+      "before": {
+        "statusActive": false,
+        "verifyActive": false,
+        "ui": {
+          "accountStatus": "INACTIVE",
+          "paymentLabel": "—",
+          "durationDays": "—",
+          "remainingDays": 0,
+          "expiresAt": null,
+          "cardsComplete": false,
+          "premiumUnlock": false,
+          "paymentDialog": "would_show"
+        },
+        "expiresAt": null,
+        "status": false
+      },
+      "after": {
+        "recoverAck": false,
+        "recoverFrom": null,
+        "statusActive": false,
+        "verifyActive": false,
+        "ui": {
+          "accountStatus": "INACTIVE",
+          "paymentLabel": "—",
+          "durationDays": "—",
+          "remainingDays": 0,
+          "expiresAt": null,
+          "cardsComplete": false,
+          "premiumUnlock": false,
+          "paymentDialog": "would_show"
+        },
+        "expiresAt": null
+      },
+      "clientSimulation": {
+        "reinstallRecovery": false,
+        "otaWouldReflect": false,
+        "cacheRefresh": "stable"
+      },
+      "conclusion": "No completed payment found"
+    },
+    {
+      "deviceId": "58b32841ec6ae98",
+      "before": {
+        "statusActive": false,
+        "verifyActive": false,
+        "ui": {
+          "accountStatus": "INACTIVE",
+          "paymentLabel": "—",
+          "durationDays": "—",
+          "remainingDays": 0,
+          "expiresAt": null,
+          "cardsComplete": false,
+          "premiumUnlock": false,
+          "paymentDialog": "would_show"
+        },
+        "expiresAt": null,
+        "status": false
+      },
+      "after": {
+        "recoverAck": false,
+        "recoverFrom": null,
+        "statusActive": false,
+        "verifyActive": false,
+        "ui": {
+          "accountStatus": "INACTIVE",
+          "paymentLabel": "—",
+          "durationDays": "—",
+          "remainingDays": 0,
+          "expiresAt": null,
+          "cardsComplete": false,
+          "premiumUnlock": false,
+          "paymentDialog": "would_show"
+        },
+        "expiresAt": null
+      },
+      "clientSimulation": {
+        "reinstallRecovery": false,
+        "otaWouldReflect": false,
+        "cacheRefresh": "stable"
+      },
+      "conclusion": "No completed payment found"
+    }
+  ]
+}

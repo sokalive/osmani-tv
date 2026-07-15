@@ -1,0 +1,50 @@
+﻿{
+  "id": "40c09d10-e7d9-4551-aede-7908a0b45c3d",
+  "status": "ERRORED",
+  "platform": "ANDROID",
+  "error": {
+    "errorCode": "EAS_BUILD_UNKNOWN_GRADLE_ERROR",
+    "message": "Gradle build failed with unknown error. See logs for the \"Run gradlew\" phase for more information."
+  },
+  "artifacts": {},
+  "fingerprint": {
+    "id": "019f3884-71f9-7a69-8dd4-efcfa377b588",
+    "hash": "5f8a39672f8942f5e095fb5cbff684c49c9ce26a"
+  },
+  "initiatingActor": {
+    "id": "880b14f5-f98a-4e7a-bdce-df65e68316b6",
+    "displayName": "isamu_123"
+  },
+  "logFiles": [
+    "https://storage.googleapis.com/eas-workflows-production/logs/adf835d4-ad5d-425d-9e5b-de9a803066e0/40c09d10-e7d9-4551-aede-7908a0b45c3d/2026-07-06T19%3A22%3A16Z-2624973c-d89d-4979-950a-0cc4717c0c23.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260706%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260706T193239Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=284ca4a91f891aec97d841215ee0d0f5238d32d7f0c28c071a90744b0e2066d738ba1716eb6e0bfa33a85fb1193aa5752d36a1e7b916ec88d18e7a74130fdf8fa4633085801c91a2bdb0158b3e01a42efe7a8000c4e4755c86b32d3a0adf90ac376107fcfeaae84c7674b10d2db8acd7df5209efd2cd455d532556f60e506a0a4cb81ec6ca64490cebe85b0b35e26d738c4dacfbf582cbfffebca1a7f5b861e92a4fef5fe850848eef70d8bbff170ec32369eb5b2fa4eb151cf64ac609dd6741d0ddb42ac5e65f136b4e5582f7ec2e8c82bce6c0fd6ff5411ef17a1dd3ba76c798261cdb41506dac51216dd934daf2fc57a8315cf8203099bb794496ead3b136"
+  ],
+  "project": {
+    "id": "adf835d4-ad5d-425d-9e5b-de9a803066e0",
+    "name": "osmani-tv",
+    "slug": "osmani-tv",
+    "ownerAccount": {
+      "id": "b905793e-0a74-43b9-bcd1-19ed14fc1339",
+      "name": "isamu_123"
+    }
+  },
+  "channel": "vps-preview",
+  "distribution": "INTERNAL",
+  "buildProfile": "vps-preview",
+  "sdkVersion": "54.0.0",
+  "appVersion": "1.8.2",
+  "appBuildVersion": "24",
+  "runtimeVersion": "1.8.2",
+  "gitCommitHash": "5c1aa5f59e2c77f279f55b520f96f9ea42095665",
+  "gitCommitMessage": "fix(bridge): add expo-linking dependency for landing install warm-start.\n\nThe landing install bridge imports expo-linking but the dependency was missing from package.json, causing EAS Bundle JavaScript phase failures.\n\nCo-authored-by: Cursor <cursoragent@cursor.com>",
+  "priority": "NORMAL",
+  "createdAt": "2026-07-06T18:14:17.728Z",
+  "updatedAt": "2026-07-06T19:30:26.870Z",
+  "completedAt": "2026-07-06T19:30:26.675Z",
+  "expirationDate": "2026-07-20T18:14:17.758Z",
+  "isForIosSimulator": false,
+  "metrics": {
+    "buildWaitTime": 820,
+    "buildQueueTime": 4082121,
+    "buildDuration": 486006
+  }
+}

@@ -1,0 +1,1752 @@
+[publish-manual-subscription-ota] started 2026-07-03T23:32:02.923Z
+
+=== OTA runtime 1.6.0 ===
+No environment variables with visibility "Plain text" and "Sensitive" found for the "production" environment on EAS.
+
+- Exporting...
+[expo-cli] --non-interactive is not supported, use $CI=1 instead
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] Starting Metro Bundler
+[expo-cli] warning: Bundler cache is empty, rebuilding (this may take a minute)
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] | (node:8444) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/1)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] | (node:24116) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 16.0% (4/9)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 48.3% (41/59)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] | (node:17292) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (11/20)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% ( 76/170)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 11.1% ( 5/15)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (17/25)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (101/266)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 8/16)
+[expo-cli] | (node:25020) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:17948) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:6084) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% ( 18/113)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (110/296)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (11/43)
+[expo-cli] | (node:10268) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:19788) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% ( 20/114)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (126/398)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 16/203)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% ( 22/118)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (176/463)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 16/203)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% ( 28/122)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (237/546)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 24/209)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% ( 55/197)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (264/600)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 39/217)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% ( 86/235)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (264/600)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 39/217)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (108/288)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (306/633)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 42/219)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (108/288)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (383/710)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 48/228)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (108/288)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (383/710)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (139/384)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (108/288)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (433/744)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (195/474)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (108/288)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (511/794)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (197/476)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (132/360)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (601/890)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (204/509)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (212/451)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (601/890)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (214/532)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (287/519)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (608/893)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (214/532)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (328/558)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (667/954)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (214/532)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (336/561)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (709/993)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% (279/610)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (345/565)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% (709/993)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 30.8% (421/784)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (345/565)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.5% ( 767/1013)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.3% (480/820)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (345/565)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.9% ( 887/1070)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 38.0% (514/834)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (441/696)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.9% ( 887/1070)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 40.3% (535/843)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 46.2% (512/755)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 70.9% ( 902/1071)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 40.3% (535/843)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 48.9% (545/779)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 79.3% ( 982/1103)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 40.3% (535/843)
+[expo-cli] | [33m» [1mandroid[22m: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor[39m
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.1% (555/792)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 80.0% ( 989/1106)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 59.5% (701/909)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.7% (578/796)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 82.9% (1047/1150)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.4% ( 782/1008)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 60.9% (669/857)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.8% (1069/1154)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.4% ( 806/1035)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 71.2% (756/896)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 87.8% (1086/1159)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.4% ( 806/1035)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.5% (786/929)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 89.7% (1106/1168)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.8% ( 858/1058)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.5% (791/929)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.0% (1133/1227)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 71.3% ( 905/1072)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.5% (801/946)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.0% (1154/1242)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 82.5% (1019/1122)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 83.7% ( 907/1019)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.0% (1161/1247)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.5% (1039/1130)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 83.7% ( 929/1026)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.0% (1221/1302)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.9% (1070/1185)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.6% ( 980/1041)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.0% (1242/1330)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.6% (1127/1197)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 89.2% (1023/1111)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.0% (1254/1332)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.5% (1150/1202)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 89.2% (1027/1112)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.3% (1300/1369)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.2% (1181/1258)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 89.2% (1039/1116)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.7% (1330/1374)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.2% (1195/1266)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 89.2% (1105/1182)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.1% (1334/1375)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.2% (1200/1266)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 89.2% (1109/1183)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.6% (1370/1420)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.2% (1257/1328)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.0% (1157/1200)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.6% (1374/1420)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.2% (1260/1332)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 96.7% (1182/1202)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.6% (1397/1451)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.2% (1270/1347)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1185/1203)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.6% (1412/1453)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.2% (1303/1376)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1226/1248)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.2% (1516/1538)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 93.9% (1433/1487)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.8% (1319/1321)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.1% (1539/1546)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.8% (1319/1321)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.5% (1550/1554)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.8% (1319/1321)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.6% (1551/1554)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.8% (1319/1321)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Web Bundled 178941ms node_modules\expo\AppEntry.js (1321 modules)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.8% (1319/1321)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] iOS Bundled 188727ms node_modules\expo\AppEntry.js (1554 modules)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android Bundled 202312ms node_modules\expo\AppEntry.js (1554 modules)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Creating asset map
+[expo-cli] 
+[expo-cli] › Assets (73):
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.0a328cd9c1afd0afe8e3b1ec5165b1b4.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.png (8 variations | 359 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.c94f6478e7ae0cdd9f15de1fcb9e5e55.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.808e1b1b9b53114ec2838071a7e6daa7.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.286d67d3f74808a60a78d3ebf1a5fb57.png (928 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.png (7 variations | 592 B)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.3f78af31cca60105799838a1a7a59fbd.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.31b5ffea3daddc69dd01a1f3d6cf63c5.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.140c53a7643ea949007aa9a282153849.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ca4b48e04dc1ce10bfbddb262c8b835f.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.b06871f281fee6b241d60582ae9369b9.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.3b89dd103490708d19a95adcae52210e.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.1f77739ca9ff2188b539c36f30ffa2be.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.605ed7926cf39a2ad5ec2d1f9d391d3d.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.56c8d80832e37783f12c05db7c8849e2.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.370dd5af19f8364907b6e2c41f45dbbf.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.adec7d6f310bc577f05e8fe06a5daccf.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.b49ae8ab2dbccb02c4d11caaacf09eab.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.e20945d7c929279ef7a6f1db184a4470.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.b4eb097d35f44ed943676fd56f6bdc51.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.6e435534bd35da5fef04168860a9b8fa.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.4e85bc9ebe07e0340c9c4fc2f6c38908.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.871378c6eab492a3e689a9385dc45a12.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.d2285965fe34b05465047401b8595dd0.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.1681f34aaca71b8dfb70756bca331eb2.ttf (25.8 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.ttf (25.8 kB)
+[expo-cli] 
+[expo-cli] › web bundles (6):
+[expo-cli] _expo/static/js/web/AppEntry-5dc6e1cdd1554582d549a84c4e71da49.js (2.98 MB)
+[expo-cli] _expo/static/js/web/AppEntry-5dc6e1cdd1554582d549a84c4e71da49.js.map (8.68 MB)
+[expo-cli] _expo/static/js/web/index-ee187a9bd1be7dd61c66e20ecd012469.js (12.7 kB)
+[expo-cli] _expo/static/js/web/index-ee187a9bd1be7dd61c66e20ecd012469.js.map (58.8 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-67b5e5fd1224bf6ad9f35f5501dcc39f.js (2.48 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-67b5e5fd1224bf6ad9f35f5501dcc39f.js.map (12.5 kB)
+[expo-cli] 
+[expo-cli] › ios bundles (2):
+[expo-cli] _expo/static/js/ios/AppEntry-46de21ea21c6140ee72146ba8c3685a4.hbc (3.31 MB)
+[expo-cli] _expo/static/js/ios/AppEntry-46de21ea21c6140ee72146ba8c3685a4.hbc.map (9.51 MB)
+[expo-cli] 
+[expo-cli] › android bundles (2):
+[expo-cli] _expo/static/js/android/AppEntry-f4a18d3340f639c465e76ae42ad2a6fb.hbc (3.33 MB)
+[expo-cli] _expo/static/js/android/AppEntry-f4a18d3340f639c465e76ae42ad2a6fb.hbc.map (9.55 MB)
+[expo-cli] 
+[expo-cli] › Files (4):
+[expo-cli] assetmap.json (19.4 kB)
+[expo-cli] favicon.ico (14.5 kB)
+[expo-cli] index.html (1.22 kB)
+[expo-cli] metadata.json (5.11 kB)
+[expo-cli] 
+[expo-cli] Exported: dist
+✔ Exported bundle(s)
+- Uploading...
+- Uploading assetmap.json (0 / 19.0 KB)
+✔ Uploaded assetmap.json 1s
+√ Uploaded 2 app bundles
+√ Uploading assets skipped - no new assets found
+i 39 iOS assets, 39 Android assets (maximum: 2000 total per update). Learn more about asset limits: https://expo.fyi/eas-update-asset-limits
+Skipping project fingerprints
+- Publishing...
+✔ Published!
+
+Branch             production
+Runtime version    1.6.0
+Platform           android, ios
+Update group ID    f62a6eee-34c1-4dde-9ba3-e935f1fbb24f
+Android update ID  019f2a57-e208-7745-8bf3-7b4a45b8b0d5
+iOS update ID      019f2a57-e208-70c8-b5c9-286f92e8c0e7
+Message            fix(subscription): stop manual gift popup loop after ASANTE runtime 1.6.0
+Commit             bb668292645eaf8610b9745e25a2a64e1e30a2fb*
+EAS Dashboard      https://expo.dev/accounts/isamu_123/projects/osmani-tv/updates/f62a6eee-34c1-4dde-9ba3-e935f1fbb24f
+
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+
+=== OTA runtime 1.7.0 ===
+No environment variables with visibility "Plain text" and "Sensitive" found for the "production" environment on EAS.
+
+- Exporting...
+[expo-cli] --non-interactive is not supported, use $CI=1 instead
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] Starting Metro Bundler
+[expo-cli] warning: Bundler cache is empty, rebuilding (this may take a minute)
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] | (node:23920) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] | (node:10960) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 16.0% ( 4/10)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] | (node:2124) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 6/12)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 12.8% ( 12/115)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% (  9/105)
+[expo-cli] | (node:24680) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:22860) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:21036) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:19852) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:3444) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 8/95)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 12.8% ( 36/179)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% (  9/105)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 12/101)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 12.8% ( 78/296)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% ( 12/106)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 12/101)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 12.8% (105/319)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% ( 77/256)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 42/228)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 19.1% (148/339)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 11.9% (105/313)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 70/275)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 19.1% (148/339)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 11.9% (105/313)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (100/313)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 26.6% (229/466)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 11.9% (105/313)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (100/313)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.2% (311/607)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 11.9% (105/313)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (100/313)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.2% (318/620)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 16.8% (187/496)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (100/313)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.2% (338/656)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.3% (311/618)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (186/444)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.2% (338/656)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.3% (319/646)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (298/543)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.6% (346/659)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.3% (319/646)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.2% (327/559)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 40.4% (475/749)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.3% (320/648)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.2% (327/559)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.6% (616/875)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 32.0% (394/696)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.2% (327/559)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.7% (643/886)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.8% (618/876)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 45.1% (475/707)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 54.0% (654/890)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.4% (643/888)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.9% (560/777)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 61.5% (740/967)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.4% (643/888)
+[expo-cli] | [33m» [1mandroid[22m: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor[39m
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.0% (561/778)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 68.6% ( 874/1055)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 57.5% (686/905)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.0% (561/778)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.2% ( 882/1060)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 64.1% ( 828/1034)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 59.9% (614/812)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.2% ( 892/1073)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 68.3% ( 867/1049)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 67.3% (698/851)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.2% ( 892/1073)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.0% ( 887/1069)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 72.8% (769/904)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 75.5% ( 947/1090)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.0% ( 887/1069)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 72.8% (769/904)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.1% (1050/1147)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 81.4% ( 979/1085)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 75.8% (815/936)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.7% (1074/1160)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.4% (1059/1153)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 83.2% ( 922/1011)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.9% (1141/1171)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.1% (1069/1159)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 87.9% ( 998/1096)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.9% (1161/1206)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.5% (1158/1204)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 87.9% (1063/1151)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.9% (1204/1279)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.8% (1203/1279)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.9% (1118/1186)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.9% (1278/1367)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.8% (1268/1349)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 96.7% (1182/1202)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.9% (1326/1404)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.8% (1279/1367)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 96.7% (1182/1202)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.9% (1359/1418)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.8% (1339/1404)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.0% (1219/1240)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 96.0% (1463/1493)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.4% (1430/1475)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1531/1545)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Web Bundled 125785ms node_modules\expo\AppEntry.js (1329 modules)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1531/1545)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1531/1545)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] iOS Bundled 139998ms node_modules\expo\AppEntry.js (1545 modules)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1531/1545)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android Bundled 153268ms node_modules\expo\AppEntry.js (1554 modules)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Creating asset map
+[expo-cli] 
+[expo-cli] › Assets (73):
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.0a328cd9c1afd0afe8e3b1ec5165b1b4.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.png (8 variations | 359 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.c94f6478e7ae0cdd9f15de1fcb9e5e55.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.808e1b1b9b53114ec2838071a7e6daa7.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.286d67d3f74808a60a78d3ebf1a5fb57.png (928 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.png (7 variations | 592 B)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.3f78af31cca60105799838a1a7a59fbd.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.31b5ffea3daddc69dd01a1f3d6cf63c5.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.140c53a7643ea949007aa9a282153849.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ca4b48e04dc1ce10bfbddb262c8b835f.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.b06871f281fee6b241d60582ae9369b9.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.3b89dd103490708d19a95adcae52210e.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.1f77739ca9ff2188b539c36f30ffa2be.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.605ed7926cf39a2ad5ec2d1f9d391d3d.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.56c8d80832e37783f12c05db7c8849e2.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.370dd5af19f8364907b6e2c41f45dbbf.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.adec7d6f310bc577f05e8fe06a5daccf.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.b49ae8ab2dbccb02c4d11caaacf09eab.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.e20945d7c929279ef7a6f1db184a4470.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.b4eb097d35f44ed943676fd56f6bdc51.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.6e435534bd35da5fef04168860a9b8fa.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.4e85bc9ebe07e0340c9c4fc2f6c38908.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.871378c6eab492a3e689a9385dc45a12.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.d2285965fe34b05465047401b8595dd0.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.1681f34aaca71b8dfb70756bca331eb2.ttf (25.8 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.ttf (25.8 kB)
+[expo-cli] 
+[expo-cli] › web bundles (6):
+[expo-cli] _expo/static/js/web/AppEntry-b7b25da27ccd5091a2e31e9a16fa5652.js (2.97 MB)
+[expo-cli] _expo/static/js/web/AppEntry-b7b25da27ccd5091a2e31e9a16fa5652.js.map (8.69 MB)
+[expo-cli] _expo/static/js/web/index-0ee9fecda3a3c8c62860e37223c8243f.js (12.7 kB)
+[expo-cli] _expo/static/js/web/index-0ee9fecda3a3c8c62860e37223c8243f.js.map (58.8 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-2be1809245ebfb8ec7f80b54d236b1a6.js (2.48 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-2be1809245ebfb8ec7f80b54d236b1a6.js.map (12.5 kB)
+[expo-cli] 
+[expo-cli] › ios bundles (2):
+[expo-cli] _expo/static/js/ios/AppEntry-566d0a8ef550868110b44b7e250fcc4f.hbc (3.31 MB)
+[expo-cli] _expo/static/js/ios/AppEntry-566d0a8ef550868110b44b7e250fcc4f.hbc.map (9.51 MB)
+[expo-cli] 
+[expo-cli] › android bundles (2):
+[expo-cli] _expo/static/js/android/AppEntry-6bafb1a9d068867850c26c92109f715c.hbc (3.33 MB)
+[expo-cli] _expo/static/js/android/AppEntry-6bafb1a9d068867850c26c92109f715c.hbc.map (9.55 MB)
+[expo-cli] 
+[expo-cli] › Files (4):
+[expo-cli] assetmap.json (19.4 kB)
+[expo-cli] favicon.ico (14.5 kB)
+[expo-cli] index.html (1.22 kB)
+[expo-cli] metadata.json (5.11 kB)
+[expo-cli] 
+[expo-cli] Exported: dist
+✔ Exported bundle(s)
+- Uploading...
+- Uploading assetmap.json (0 / 19.0 KB)
+✔ Uploaded assetmap.json 
+√ Uploaded 2 app bundles
+√ Uploading assets skipped - no new assets found
+i 39 iOS assets, 39 Android assets (maximum: 2000 total per update). Learn more about asset limits: https://expo.fyi/eas-update-asset-limits
+Skipping project fingerprints
+- Publishing...
+✔ Published!
+
+Branch             production
+Runtime version    1.7.0
+Platform           android, ios
+Update group ID    57a112ad-ad58-4fe9-8580-9ed18332e8c6
+Android update ID  019f2a5b-78c1-77fe-bbb9-3680b7391510
+iOS update ID      019f2a5b-78c1-70f7-aee6-66d2b0174a46
+Message            fix(subscription): stop manual gift popup loop after ASANTE runtime 1.7.0
+Commit             bb668292645eaf8610b9745e25a2a64e1e30a2fb*
+EAS Dashboard      https://expo.dev/accounts/isamu_123/projects/osmani-tv/updates/57a112ad-ad58-4fe9-8580-9ed18332e8c6
+
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+
+=== OTA runtime 1.7.1 ===
+No environment variables with visibility "Plain text" and "Sensitive" found for the "production" environment on EAS.
+
+- Exporting...
+[expo-cli] --non-interactive is not supported, use $CI=1 instead
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] Starting Metro Bundler
+[expo-cli] warning: Bundler cache is empty, rebuilding (this may take a minute)
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] | (node:8488) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:2292) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  4.0% (2/3)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] | (node:24944) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 6/12)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.5% ( 15/118)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% ( 10/106)
+[expo-cli] | (node:4772) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:24776) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:23256) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:22880) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:9028) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 8/95)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.5% ( 35/177)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% ( 10/106)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 12/101)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.5% ( 74/294)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% ( 11/106)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 12/101)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.5% ( 99/314)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% ( 64/246)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 45/230)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 19.5% (150/340)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 12.5% (104/294)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 71/276)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 19.5% (150/340)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 12.5% (104/294)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (101/332)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 26.5% (227/468)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 12.5% (104/294)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (101/332)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.3% (304/602)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 12.5% (104/294)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (101/332)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.3% (319/629)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 15.5% (182/492)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (106/333)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.3% (336/656)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.7% (318/627)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (196/447)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.3% (336/656)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.8% (319/628)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (294/543)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.4% (345/659)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.8% (319/628)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.5% (327/557)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 41.3% (468/750)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.8% (319/628)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.5% (327/557)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.1% (613/875)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 26.6% (338/655)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.5% (327/557)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 53.1% (647/888)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.9% (490/830)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 35.8% (344/622)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 54.3% (658/893)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.5% (636/886)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 40.7% (453/710)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 54.3% (658/893)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.9% (646/888)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.8% (559/777)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 58.5% (703/934)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.9% (646/888)
+[expo-cli] | [33m» [1mandroid[22m: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor[39m
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.8% (559/777)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 60.0% ( 793/1024)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.9% (646/888)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.8% (560/778)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.0% ( 876/1057)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 62.1% (771/980)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 57.2% (592/783)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.2% ( 892/1073)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 68.6% ( 878/1060)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 66.2% (694/853)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.2% ( 892/1073)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.1% ( 887/1067)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.7% (775/924)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 75.9% ( 975/1119)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.1% ( 887/1067)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.7% (775/924)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.2% (1060/1155)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.1% (1019/1119)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 81.3% (872/967)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.7% (1074/1160)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.2% (1068/1159)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 83.1% ( 921/1011)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1143/1199)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 86.5% (1085/1191)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.0% ( 976/1062)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1143/1199)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.5% (1158/1204)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.0% (1013/1111)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1203/1279)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.8% (1180/1255)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.0% (1089/1166)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1205/1279)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.8% (1206/1279)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.0% (1105/1185)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1276/1362)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.8% (1254/1338)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 96.2% (1177/1200)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1280/1367)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.8% (1271/1356)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1185/1203)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1344/1414)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.8% (1271/1356)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1185/1203)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1367/1429)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.8% (1338/1406)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.3% (1203/1227)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1417/1468)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.4% (1421/1470)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.3% (1272/1308)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.5% (1520/1539)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.1% (1493/1521)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1553/1554)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Web Bundled 134879ms node_modules\expo\AppEntry.js (1329 modules)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] iOS Bundled 148967ms node_modules\expo\AppEntry.js (1554 modules)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android Bundled 161537ms node_modules\expo\AppEntry.js (1554 modules)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Creating asset map
+[expo-cli] 
+[expo-cli] › Assets (73):
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.0a328cd9c1afd0afe8e3b1ec5165b1b4.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.png (8 variations | 359 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.c94f6478e7ae0cdd9f15de1fcb9e5e55.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.808e1b1b9b53114ec2838071a7e6daa7.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.286d67d3f74808a60a78d3ebf1a5fb57.png (928 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.png (7 variations | 592 B)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.3f78af31cca60105799838a1a7a59fbd.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.31b5ffea3daddc69dd01a1f3d6cf63c5.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.140c53a7643ea949007aa9a282153849.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ca4b48e04dc1ce10bfbddb262c8b835f.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.b06871f281fee6b241d60582ae9369b9.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.3b89dd103490708d19a95adcae52210e.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.1f77739ca9ff2188b539c36f30ffa2be.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.605ed7926cf39a2ad5ec2d1f9d391d3d.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.56c8d80832e37783f12c05db7c8849e2.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.370dd5af19f8364907b6e2c41f45dbbf.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.adec7d6f310bc577f05e8fe06a5daccf.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.b49ae8ab2dbccb02c4d11caaacf09eab.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.e20945d7c929279ef7a6f1db184a4470.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.b4eb097d35f44ed943676fd56f6bdc51.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.6e435534bd35da5fef04168860a9b8fa.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.4e85bc9ebe07e0340c9c4fc2f6c38908.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.871378c6eab492a3e689a9385dc45a12.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.d2285965fe34b05465047401b8595dd0.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.1681f34aaca71b8dfb70756bca331eb2.ttf (25.8 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.ttf (25.8 kB)
+[expo-cli] 
+[expo-cli] › web bundles (6):
+[expo-cli] _expo/static/js/web/AppEntry-7f8c49f011d8423b0a0a80fbd4bdcd05.js (2.97 MB)
+[expo-cli] _expo/static/js/web/AppEntry-7f8c49f011d8423b0a0a80fbd4bdcd05.js.map (8.69 MB)
+[expo-cli] _expo/static/js/web/index-0ee9fecda3a3c8c62860e37223c8243f.js (12.7 kB)
+[expo-cli] _expo/static/js/web/index-0ee9fecda3a3c8c62860e37223c8243f.js.map (58.8 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-2be1809245ebfb8ec7f80b54d236b1a6.js (2.48 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-2be1809245ebfb8ec7f80b54d236b1a6.js.map (12.5 kB)
+[expo-cli] 
+[expo-cli] › ios bundles (2):
+[expo-cli] _expo/static/js/ios/AppEntry-566d0a8ef550868110b44b7e250fcc4f.hbc (3.31 MB)
+[expo-cli] _expo/static/js/ios/AppEntry-566d0a8ef550868110b44b7e250fcc4f.hbc.map (9.51 MB)
+[expo-cli] 
+[expo-cli] › android bundles (2):
+[expo-cli] _expo/static/js/android/AppEntry-6bafb1a9d068867850c26c92109f715c.hbc (3.33 MB)
+[expo-cli] _expo/static/js/android/AppEntry-6bafb1a9d068867850c26c92109f715c.hbc.map (9.55 MB)
+[expo-cli] 
+[expo-cli] › Files (4):
+[expo-cli] assetmap.json (19.4 kB)
+[expo-cli] favicon.ico (14.5 kB)
+[expo-cli] index.html (1.22 kB)
+[expo-cli] metadata.json (5.11 kB)
+[expo-cli] 
+[expo-cli] Exported: dist
+✔ Exported bundle(s)
+- Uploading...
+- Uploading assetmap.json (0 / 19.0 KB)
+✔ Uploaded assetmap.json 1s
+√ Uploaded 2 app bundles
+√ Uploading assets skipped - no new assets found
+i 39 iOS assets, 39 Android assets (maximum: 2000 total per update). Learn more about asset limits: https://expo.fyi/eas-update-asset-limits
+Skipping project fingerprints
+- Publishing...
+✔ Published!
+
+Branch             production
+Runtime version    1.7.1
+Platform           android, ios
+Update group ID    3ddbebd6-d8fe-4255-b57c-a8477f684233
+Android update ID  019f2a5f-055c-73c8-9721-b9db63e2ae50
+iOS update ID      019f2a5f-055c-771b-bb85-2c80b5e24c86
+Message            fix(subscription): stop manual gift popup loop after ASANTE runtime 1.7.1
+Commit             bb668292645eaf8610b9745e25a2a64e1e30a2fb*
+EAS Dashboard      https://expo.dev/accounts/isamu_123/projects/osmani-tv/updates/3ddbebd6-d8fe-4255-b57c-a8477f684233
+
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+
+=== OTA runtime 1.7.2 ===
+No environment variables with visibility "Plain text" and "Sensitive" found for the "production" environment on EAS.
+
+- Exporting...
+[expo-cli] --non-interactive is not supported, use $CI=1 instead
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] Starting Metro Bundler
+[expo-cli] warning: Bundler cache is empty, rebuilding (this may take a minute)
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] | (node:25276) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:17312) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/1)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:24644) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 5/13)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 32.9% (39/68)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% ( 3/13)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 30.3% (12/22)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.5% ( 79/251)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 15.1% ( 9/47)
+[expo-cli] | (node:19604) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:20996) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:20456) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:23432) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:23068) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (15/25)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.5% ( 99/357)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 15.1% ( 17/135)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% ( 20/108)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.5% (153/417)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 15.1% ( 22/210)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% ( 20/108)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.5% (237/549)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 15.1% ( 35/224)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% ( 20/108)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.5% (331/694)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 15.1% ( 35/224)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% ( 29/142)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.5% (342/700)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 16.6% (134/329)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% ( 59/196)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.5% (342/700)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 16.6% (134/329)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (103/328)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.5% (357/704)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 16.6% (134/329)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (105/336)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.5% (411/731)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 17.1% (186/465)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (118/345)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.5% (481/772)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 17.5% (216/516)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (118/345)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.2% (674/975)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 17.5% (217/519)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (178/421)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.4% (702/999)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.9% (331/654)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (273/489)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.4% (702/999)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.9% (331/654)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (335/563)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.8% ( 730/1005)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 29.7% (407/748)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (344/570)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 60.6% ( 790/1015)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 37.8% (511/831)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (344/570)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.3% ( 929/1085)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.8% (536/850)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 39.1% (344/570)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 80.0% ( 997/1115)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.2% (616/878)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 41.7% (410/697)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 80.0% ( 997/1115)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 53.3% (652/893)
+[expo-cli] | [33m» [1mandroid[22m: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor[39m
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 44.7% (492/738)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 80.0% ( 997/1115)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 53.5% (653/893)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 53.4% (569/779)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 81.9% (1010/1116)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 54.7% ( 726/1006)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 53.4% (572/784)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.6% (1102/1171)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 64.1% ( 846/1057)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 54.9% (602/822)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.6% (1102/1171)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 68.6% ( 888/1072)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 64.1% (708/884)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.2% (1116/1176)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.2% ( 894/1076)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 71.8% (783/924)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.2% (1136/1216)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 78.0% ( 992/1123)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 76.7% (827/945)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.2% (1173/1254)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 86.6% (1072/1157)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.6% ( 919/1012)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.2% (1196/1283)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 89.3% (1104/1190)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.2% ( 961/1041)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.2% (1259/1333)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1151/1202)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 87.4% (1027/1112)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.2% (1279/1361)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1171/1224)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 87.4% (1031/1112)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.3% (1326/1373)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1200/1266)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.6% (1106/1185)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.5% (1357/1396)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1206/1279)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.0% (1157/1200)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.5% (1383/1433)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1279/1367)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 96.0% (1178/1202)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.5% (1416/1464)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1306/1394)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1194/1205)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.5% (1440/1484)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.1% (1361/1422)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1238/1255)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 96.9% (1520/1544)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 96.6% (1454/1479)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1320/1322)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1552/1554)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Web Bundled 139719ms node_modules\expo\AppEntry.js (1329 modules)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] iOS Bundled 149269ms node_modules\expo\AppEntry.js (1554 modules)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android Bundled 161827ms node_modules\expo\AppEntry.js (1554 modules)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Creating asset map
+[expo-cli] 
+[expo-cli] › Assets (73):
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.0a328cd9c1afd0afe8e3b1ec5165b1b4.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.png (8 variations | 359 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.c94f6478e7ae0cdd9f15de1fcb9e5e55.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.808e1b1b9b53114ec2838071a7e6daa7.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.286d67d3f74808a60a78d3ebf1a5fb57.png (928 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.png (7 variations | 592 B)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.3f78af31cca60105799838a1a7a59fbd.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.31b5ffea3daddc69dd01a1f3d6cf63c5.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.140c53a7643ea949007aa9a282153849.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ca4b48e04dc1ce10bfbddb262c8b835f.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.b06871f281fee6b241d60582ae9369b9.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.3b89dd103490708d19a95adcae52210e.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.1f77739ca9ff2188b539c36f30ffa2be.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.605ed7926cf39a2ad5ec2d1f9d391d3d.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.56c8d80832e37783f12c05db7c8849e2.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.370dd5af19f8364907b6e2c41f45dbbf.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.adec7d6f310bc577f05e8fe06a5daccf.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.b49ae8ab2dbccb02c4d11caaacf09eab.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.e20945d7c929279ef7a6f1db184a4470.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.b4eb097d35f44ed943676fd56f6bdc51.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.6e435534bd35da5fef04168860a9b8fa.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.4e85bc9ebe07e0340c9c4fc2f6c38908.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.871378c6eab492a3e689a9385dc45a12.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.d2285965fe34b05465047401b8595dd0.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.1681f34aaca71b8dfb70756bca331eb2.ttf (25.8 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.ttf (25.8 kB)
+[expo-cli] 
+[expo-cli] › web bundles (6):
+[expo-cli] _expo/static/js/web/AppEntry-c94a25f5d212bb34c32210a547b4309c.js (2.98 MB)
+[expo-cli] _expo/static/js/web/AppEntry-c94a25f5d212bb34c32210a547b4309c.js.map (8.68 MB)
+[expo-cli] _expo/static/js/web/index-ee187a9bd1be7dd61c66e20ecd012469.js (12.7 kB)
+[expo-cli] _expo/static/js/web/index-ee187a9bd1be7dd61c66e20ecd012469.js.map (58.8 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-67b5e5fd1224bf6ad9f35f5501dcc39f.js (2.48 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-67b5e5fd1224bf6ad9f35f5501dcc39f.js.map (12.5 kB)
+[expo-cli] 
+[expo-cli] › ios bundles (2):
+[expo-cli] _expo/static/js/ios/AppEntry-46de21ea21c6140ee72146ba8c3685a4.hbc (3.31 MB)
+[expo-cli] _expo/static/js/ios/AppEntry-46de21ea21c6140ee72146ba8c3685a4.hbc.map (9.51 MB)
+[expo-cli] 
+[expo-cli] › android bundles (2):
+[expo-cli] _expo/static/js/android/AppEntry-f4a18d3340f639c465e76ae42ad2a6fb.hbc (3.33 MB)
+[expo-cli] _expo/static/js/android/AppEntry-f4a18d3340f639c465e76ae42ad2a6fb.hbc.map (9.55 MB)
+[expo-cli] 
+[expo-cli] › Files (4):
+[expo-cli] assetmap.json (19.4 kB)
+[expo-cli] favicon.ico (14.5 kB)
+[expo-cli] index.html (1.22 kB)
+[expo-cli] metadata.json (5.11 kB)
+[expo-cli] 
+[expo-cli] Exported: dist
+✔ Exported bundle(s)
+- Uploading...
+- Uploading assetmap.json (0 / 19.0 KB)
+✔ Uploaded assetmap.json 
+√ Uploaded 2 app bundles
+√ Uploading assets skipped - no new assets found
+i 39 iOS assets, 39 Android assets (maximum: 2000 total per update). Learn more about asset limits: https://expo.fyi/eas-update-asset-limits
+Skipping project fingerprints
+- Publishing...
+✔ Published!
+
+Branch             production
+Runtime version    1.7.2
+Platform           android, ios
+Update group ID    5cfaf4ed-d238-4a01-b762-18095907ad2d
+Android update ID  019f2a62-87de-7dbc-a44b-4e6bcb395955
+iOS update ID      019f2a62-87de-797d-940f-2b400e32a2e6
+Message            fix(subscription): stop manual gift popup loop after ASANTE runtime 1.7.2
+Commit             bb668292645eaf8610b9745e25a2a64e1e30a2fb*
+EAS Dashboard      https://expo.dev/accounts/isamu_123/projects/osmani-tv/updates/5cfaf4ed-d238-4a01-b762-18095907ad2d
+
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+
+=== OTA runtime 1.8.0 ===
+No environment variables with visibility "Plain text" and "Sensitive" found for the "production" environment on EAS.
+
+- Exporting...
+[expo-cli] --non-interactive is not supported, use $CI=1 instead
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] Starting Metro Bundler
+[expo-cli] warning: Bundler cache is empty, rebuilding (this may take a minute)
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] | (node:7048) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:25144) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:25120) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 6/12)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 13.2% (  8/105)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% (3/5)
+[expo-cli] | (node:19736) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:12796) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:14128) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:10768) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 7/95)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 13.2% ( 38/181)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% (  9/103)
+[expo-cli] | (node:23908) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (12/97)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 13.2% (106/320)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% ( 21/120)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 30/179)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 18.4% (145/338)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.3% (106/314)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 61/250)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 18.4% (145/338)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.3% (106/314)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 92/308)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 21.6% (167/359)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.3% (106/314)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (101/314)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.5% (286/585)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.3% (106/314)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (101/314)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.5% (320/647)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 14.7% (172/482)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (102/333)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.5% (336/656)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.6% (317/627)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (212/489)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.5% (336/656)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.7% (318/627)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (302/543)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.6% (395/672)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.7% (318/627)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.5% (329/560)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.0% (613/876)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.7% (326/650)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.5% (329/560)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.9% (646/888)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 36.7% (502/829)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 35.4% (396/666)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 54.2% (655/890)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.1% (640/887)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 44.8% (490/732)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 54.2% (655/890)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.1% (640/887)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.3% (550/768)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 57.9% (744/990)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.1% (640/887)
+[expo-cli] | [33m» [1mandroid[22m: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor[39m
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.8% (559/777)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 68.0% ( 870/1055)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 57.2% (685/906)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.8% (559/777)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.3% ( 888/1069)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 67.5% ( 858/1044)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 62.9% (671/846)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.3% ( 889/1069)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.0% ( 886/1067)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.6% (768/901)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 77.3% ( 990/1126)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.1% ( 888/1069)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.8% (803/935)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.7% (1074/1160)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.3% (1067/1155)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 82.6% ( 917/1009)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.8% (1142/1199)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 86.9% (1083/1162)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.4% ( 998/1096)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.8% (1164/1206)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.5% (1160/1206)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.4% (1018/1111)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.8% (1205/1279)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.7% (1201/1266)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 88.4% (1109/1185)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.8% (1257/1338)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.7% (1210/1281)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.2% (1171/1200)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.8% (1276/1365)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.7% (1272/1363)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1185/1203)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.8% (1341/1406)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.7% (1294/1394)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1194/1205)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.8% (1367/1428)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.7% (1360/1426)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.2% (1241/1259)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.2% (1489/1510)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.8% (1454/1493)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1552/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.6% (1549/1554)
+[expo-cli] Web Bundled 117131ms node_modules\expo\AppEntry.js (1329 modules)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1552/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.6% (1549/1554)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1552/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.6% (1549/1554)
+[expo-cli] iOS Bundled 125734ms node_modules\expo\AppEntry.js (1554 modules)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1552/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.6% (1549/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.6% (1549/1554)
+[expo-cli] Android Bundled 134058ms node_modules\expo\AppEntry.js (1554 modules)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.6% (1549/1554)
+[expo-cli] Creating asset map
+[expo-cli] 
+[expo-cli] › Assets (73):
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.0a328cd9c1afd0afe8e3b1ec5165b1b4.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.png (8 variations | 359 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.c94f6478e7ae0cdd9f15de1fcb9e5e55.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.808e1b1b9b53114ec2838071a7e6daa7.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.286d67d3f74808a60a78d3ebf1a5fb57.png (928 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.png (7 variations | 592 B)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.3f78af31cca60105799838a1a7a59fbd.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.31b5ffea3daddc69dd01a1f3d6cf63c5.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.140c53a7643ea949007aa9a282153849.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ca4b48e04dc1ce10bfbddb262c8b835f.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.b06871f281fee6b241d60582ae9369b9.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.3b89dd103490708d19a95adcae52210e.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.1f77739ca9ff2188b539c36f30ffa2be.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.605ed7926cf39a2ad5ec2d1f9d391d3d.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.56c8d80832e37783f12c05db7c8849e2.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.370dd5af19f8364907b6e2c41f45dbbf.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.adec7d6f310bc577f05e8fe06a5daccf.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.b49ae8ab2dbccb02c4d11caaacf09eab.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.e20945d7c929279ef7a6f1db184a4470.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.b4eb097d35f44ed943676fd56f6bdc51.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.6e435534bd35da5fef04168860a9b8fa.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.4e85bc9ebe07e0340c9c4fc2f6c38908.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.871378c6eab492a3e689a9385dc45a12.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.d2285965fe34b05465047401b8595dd0.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.1681f34aaca71b8dfb70756bca331eb2.ttf (25.8 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.ttf (25.8 kB)
+[expo-cli] 
+[expo-cli] › web bundles (6):
+[expo-cli] _expo/static/js/web/AppEntry-1a32bc0a0d44fa9fdb1b33e69d83e14a.js (2.97 MB)
+[expo-cli] _expo/static/js/web/AppEntry-1a32bc0a0d44fa9fdb1b33e69d83e14a.js.map (8.69 MB)
+[expo-cli] _expo/static/js/web/index-0ee9fecda3a3c8c62860e37223c8243f.js (12.7 kB)
+[expo-cli] _expo/static/js/web/index-0ee9fecda3a3c8c62860e37223c8243f.js.map (58.8 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-2be1809245ebfb8ec7f80b54d236b1a6.js (2.48 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-2be1809245ebfb8ec7f80b54d236b1a6.js.map (12.5 kB)
+[expo-cli] 
+[expo-cli] › ios bundles (2):
+[expo-cli] _expo/static/js/ios/AppEntry-566d0a8ef550868110b44b7e250fcc4f.hbc (3.31 MB)
+[expo-cli] _expo/static/js/ios/AppEntry-566d0a8ef550868110b44b7e250fcc4f.hbc.map (9.51 MB)
+[expo-cli] 
+[expo-cli] › android bundles (2):
+[expo-cli] _expo/static/js/android/AppEntry-6bafb1a9d068867850c26c92109f715c.hbc (3.33 MB)
+[expo-cli] _expo/static/js/android/AppEntry-6bafb1a9d068867850c26c92109f715c.hbc.map (9.55 MB)
+[expo-cli] 
+[expo-cli] › Files (4):
+[expo-cli] assetmap.json (19.4 kB)
+[expo-cli] favicon.ico (14.5 kB)
+[expo-cli] index.html (1.22 kB)
+[expo-cli] metadata.json (5.11 kB)
+[expo-cli] 
+[expo-cli] Exported: dist
+✔ Exported bundle(s)
+- Uploading...
+- Uploading assetmap.json (0 / 19.0 KB)
+✔ Uploaded assetmap.json 
+√ Uploaded 2 app bundles
+√ Uploading assets skipped - no new assets found
+i 39 iOS assets, 39 Android assets (maximum: 2000 total per update). Learn more about asset limits: https://expo.fyi/eas-update-asset-limits
+Skipping project fingerprints
+- Publishing...
+✔ Published!
+
+Branch             production
+Runtime version    1.8.0
+Platform           android, ios
+Update group ID    cf3c03f3-9a4e-409b-9655-2d53e8e8f666
+Android update ID  019f2a65-a9b8-7fd9-b1c7-b79a39334b0d
+iOS update ID      019f2a65-a9b8-7418-95bf-18e59f7404a4
+Message            fix(subscription): stop manual gift popup loop after ASANTE runtime 1.8.0
+Commit             bb668292645eaf8610b9745e25a2a64e1e30a2fb*
+EAS Dashboard      https://expo.dev/accounts/isamu_123/projects/osmani-tv/updates/cf3c03f3-9a4e-409b-9655-2d53e8e8f666
+
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+
+=== OTA runtime 1.8.1 ===
+No environment variables with visibility "Plain text" and "Sensitive" found for the "production" environment on EAS.
+
+- Exporting...
+[expo-cli] --non-interactive is not supported, use $CI=1 instead
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] Starting Metro Bundler
+[expo-cli] warning: Bundler cache is empty, rebuilding (this may take a minute)
+[expo-cli] | (node:16580) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] | (node:20492) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:20776) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 6/12)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 18.9% ( 10/106)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.0% (3/5)
+[expo-cli] | (node:24128) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:15428) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:4356) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:25348) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 8/95)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 18.9% ( 38/182)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.5% (  8/102)
+[expo-cli] | (node:21612) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (11/96)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 18.9% ( 99/316)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  9.5% ( 20/122)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (11/96)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 20.1% (157/350)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 18.1% (104/313)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% ( 61/250)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 21.9% (167/357)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 18.1% (104/313)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (101/314)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.6% (223/428)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 18.1% (104/313)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (101/314)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 30.0% (309/606)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 18.5% (164/381)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (101/314)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 30.0% (319/629)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 22.6% (276/606)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (163/422)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 30.0% (356/663)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.8% (314/618)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.0% (287/536)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 30.0% (356/663)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.8% (314/618)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.2% (324/556)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 44.0% (514/775)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.8% (314/618)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.2% (324/556)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.6% (616/875)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 38.8% (435/698)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.2% (324/556)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 54.6% (659/892)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.7% (616/874)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 40.7% (449/704)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 56.1% (669/893)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.9% (646/888)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.2% (557/774)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 61.0% (715/924)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.9% (646/888)
+[expo-cli] | [33m» [1mandroid[22m: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor[39m
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.2% (557/774)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 68.8% ( 872/1051)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 55.5% (666/894)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.2% (557/774)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 68.8% ( 876/1057)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 66.6% ( 838/1027)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓░░░░░░ 65.9% (690/850)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.1% ( 883/1062)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.0% ( 878/1057)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 72.8% (776/924)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 80.2% (1012/1130)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.3% ( 886/1064)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.4% (800/934)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.4% (1072/1160)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 83.4% (1053/1153)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 82.5% ( 914/1006)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 90.8% (1109/1164)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.4% (1061/1155)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 87.5% ( 975/1078)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1151/1201)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.5% (1158/1204)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 87.5% (1005/1102)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1205/1279)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.3% (1198/1265)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 87.5% (1106/1185)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1246/1318)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.3% (1205/1279)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.3% (1165/1200)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1276/1365)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.3% (1279/1367)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1185/1203)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1335/1411)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.3% (1279/1367)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1185/1203)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1365/1428)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.3% (1344/1413)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.0% (1217/1240)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.4% (1451/1489)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.5% (1429/1470)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.0% (1301/1321)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1545/1547)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.1% (1530/1545)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1545/1547)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.4% (1549/1554)
+[expo-cli] Web Bundled 111589ms node_modules\expo\AppEntry.js (1329 modules)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1545/1547)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.4% (1549/1554)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1545/1547)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.4% (1549/1554)
+[expo-cli] Android Bundled 122199ms node_modules\expo\AppEntry.js (1554 modules)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1545/1547)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.4% (1549/1554)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1545/1547)
+[expo-cli] iOS Bundled 130618ms node_modules\expo\AppEntry.js (1547 modules)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.7% (1545/1547)
+[expo-cli] Creating asset map
+[expo-cli] 
+[expo-cli] › Assets (73):
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.0a328cd9c1afd0afe8e3b1ec5165b1b4.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.png (8 variations | 359 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.c94f6478e7ae0cdd9f15de1fcb9e5e55.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.808e1b1b9b53114ec2838071a7e6daa7.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.286d67d3f74808a60a78d3ebf1a5fb57.png (928 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.png (7 variations | 592 B)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.3f78af31cca60105799838a1a7a59fbd.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.31b5ffea3daddc69dd01a1f3d6cf63c5.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.140c53a7643ea949007aa9a282153849.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ca4b48e04dc1ce10bfbddb262c8b835f.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.b06871f281fee6b241d60582ae9369b9.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.3b89dd103490708d19a95adcae52210e.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.1f77739ca9ff2188b539c36f30ffa2be.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.605ed7926cf39a2ad5ec2d1f9d391d3d.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.56c8d80832e37783f12c05db7c8849e2.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.370dd5af19f8364907b6e2c41f45dbbf.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.adec7d6f310bc577f05e8fe06a5daccf.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.b49ae8ab2dbccb02c4d11caaacf09eab.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.e20945d7c929279ef7a6f1db184a4470.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.b4eb097d35f44ed943676fd56f6bdc51.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.6e435534bd35da5fef04168860a9b8fa.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.4e85bc9ebe07e0340c9c4fc2f6c38908.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.871378c6eab492a3e689a9385dc45a12.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.d2285965fe34b05465047401b8595dd0.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.1681f34aaca71b8dfb70756bca331eb2.ttf (25.8 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.ttf (25.8 kB)
+[expo-cli] 
+[expo-cli] › web bundles (6):
+[expo-cli] _expo/static/js/web/AppEntry-296546cb76e6e347974101143923f164.js (2.97 MB)
+[expo-cli] _expo/static/js/web/AppEntry-296546cb76e6e347974101143923f164.js.map (8.69 MB)
+[expo-cli] _expo/static/js/web/index-0ee9fecda3a3c8c62860e37223c8243f.js (12.7 kB)
+[expo-cli] _expo/static/js/web/index-0ee9fecda3a3c8c62860e37223c8243f.js.map (58.8 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-2be1809245ebfb8ec7f80b54d236b1a6.js (2.48 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-2be1809245ebfb8ec7f80b54d236b1a6.js.map (12.5 kB)
+[expo-cli] 
+[expo-cli] › android bundles (2):
+[expo-cli] _expo/static/js/android/AppEntry-8a18fd9c1b605e74a24cf9651fa0f9a5.hbc (3.33 MB)
+[expo-cli] _expo/static/js/android/AppEntry-8a18fd9c1b605e74a24cf9651fa0f9a5.hbc.map (9.55 MB)
+[expo-cli] 
+[expo-cli] › ios bundles (2):
+[expo-cli] _expo/static/js/ios/AppEntry-0674134943adc20431e4f56c6b1973b5.hbc (3.31 MB)
+[expo-cli] _expo/static/js/ios/AppEntry-0674134943adc20431e4f56c6b1973b5.hbc.map (9.51 MB)
+[expo-cli] 
+[expo-cli] › Files (4):
+[expo-cli] assetmap.json (19.4 kB)
+[expo-cli] favicon.ico (14.5 kB)
+[expo-cli] index.html (1.22 kB)
+[expo-cli] metadata.json (5.11 kB)
+[expo-cli] 
+[expo-cli] Exported: dist
+✔ Exported bundle(s)
+- Uploading...
+- Uploading assetmap.json (0 / 19.0 KB)
+✔ Uploaded assetmap.json 
+√ Uploaded 2 app bundles
+√ Uploading assets skipped - no new assets found
+i 39 iOS assets, 39 Android assets (maximum: 2000 total per update). Learn more about asset limits: https://expo.fyi/eas-update-asset-limits
+Skipping project fingerprints
+- Publishing...
+✔ Published!
+
+Branch             production
+Runtime version    1.8.1
+Platform           android, ios
+Update group ID    827ec67a-42e1-4af9-9582-5e761002ab18
+Android update ID  019f2a68-9e1d-7c5e-b938-f98d57d8bc3e
+iOS update ID      019f2a68-9e1d-7298-93d2-76b9ff5dfd86
+Message            fix(subscription): stop manual gift popup loop after ASANTE runtime 1.8.1
+Commit             bb668292645eaf8610b9745e25a2a64e1e30a2fb*
+EAS Dashboard      https://expo.dev/accounts/isamu_123/projects/osmani-tv/updates/827ec67a-42e1-4af9-9582-5e761002ab18
+
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+
+=== OTA runtime 1.8.2 ===
+No environment variables with visibility "Plain text" and "Sensitive" found for the "production" environment on EAS.
+
+- Exporting...
+[expo-cli] --non-interactive is not supported, use $CI=1 instead
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] » android: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor
+[expo-cli] Starting Metro Bundler
+[expo-cli] warning: Bundler cache is empty, rebuilding (this may take a minute)
+[expo-cli] | (node:24812) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  1.0% (1/3)
+[expo-cli] iOS node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  0.0% (0/1)
+[expo-cli] | (node:23776) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:22592) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.0% ( 6/12)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.5% ( 6/17)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  5.3% ( 3/13)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 29.0% ( 7/95)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 14.5% ( 35/177)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  5.3% (  7/102)
+[expo-cli] | (node:18476) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:21088) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:3304) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:23292) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] | (node:23664) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[expo-cli] | (Use `node --trace-warnings ...` to show where the warning was created)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 29.0% (11/96)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 14.5% ( 79/300)
+[expo-cli] Android node_modules\expo\AppEntry.js ░░░░░░░░░░░░░░░░  5.3% (  7/102)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 29.0% (11/96)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 14.5% (106/320)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░  6.9% ( 65/248)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 29.0% ( 51/232)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 20.4% (159/352)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.2% (103/312)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 29.0% ( 91/299)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓░░░░░░░░░░░░░ 23.5% (177/365)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.2% (103/312)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 29.0% (101/314)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 27.8% (277/525)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓░░░░░░░░░░░░░░░ 12.2% (103/312)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 29.0% (101/314)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 28.0% (319/629)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓░░░░░░░░░░░░░░ 16.9% (191/513)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 29.0% (106/333)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 28.8% (355/662)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.6% (318/628)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 29.0% (225/502)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 28.8% (356/663)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.8% (319/628)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 31.8% (306/543)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 35.1% (402/679)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.8% (319/628)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.9% (331/560)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 48.2% (607/874)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓░░░░░░░░░░░░ 25.8% (319/628)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 34.9% (331/560)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 50.9% (625/876)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓░░░░░░░░░░ 37.6% (513/837)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓░░░░░░░░░░░ 35.8% (372/645)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.8% (645/888)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.8% (645/888)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓░░░░░░░░░ 45.6% (503/745)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.8% (645/888)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.8% (645/888)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.7% (556/773)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 61.5% ( 780/1018)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 52.8% (645/888)
+[expo-cli] | [33m» [1mandroid[22m: androidStatusBar.backgroundColor: Color conflicts with the splash.backgroundColor[39m
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓░░░░░░░░ 51.7% (556/773)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 68.8% ( 875/1055)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 58.5% ( 762/1001)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓░░░░░░░ 57.9% (621/817)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.2% ( 889/1069)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.4% ( 883/1060)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.2% (758/886)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.3% ( 929/1085)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 69.4% ( 888/1069)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 73.2% (769/902)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.0% (1055/1154)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 79.9% ( 993/1111)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓░░░░ 79.1% (854/960)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 85.1% (1070/1160)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 84.8% (1063/1155)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 83.1% ( 920/1009)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 92.9% (1150/1202)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 86.5% (1107/1192)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 87.3% ( 993/1098)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 93.0% (1163/1206)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1152/1203)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░ 87.3% (1044/1135)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.3% (1201/1277)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1200/1265)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 87.9% (1111/1185)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.3% (1273/1362)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1219/1302)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.9% (1176/1201)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.3% (1291/1375)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1274/1362)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.0% (1185/1203)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.3% (1354/1420)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1285/1373)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.5% (1201/1227)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.3% (1369/1435)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░ 91.7% (1360/1423)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 98.5% (1245/1264)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 97.4% (1491/1511)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.8% (1459/1491)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.2% (1547/1553)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Web Bundled 112364ms node_modules\expo\AppEntry.js (1329 modules)
+[expo-cli] Web node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1329/1329)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.2% (1547/1553)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.2% (1547/1553)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] iOS Bundled 121801ms node_modules\expo\AppEntry.js (1553 modules)
+[expo-cli] iOS node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.2% (1547/1553)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Android Bundled 130446ms node_modules\expo\AppEntry.js (1554 modules)
+[expo-cli] Android node_modules\expo\AppEntry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 99.9% (1554/1554)
+[expo-cli] Creating asset map
+[expo-cli] 
+[expo-cli] › Assets (73):
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.0a328cd9c1afd0afe8e3b1ec5165b1b4.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon-mask.png (653 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.35ba0eaec5a4f5ed12ca16fabeae451d.png (207 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\back-icon.png (8 variations | 359 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.c94f6478e7ae0cdd9f15de1fcb9e5e55.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\clear-icon.png (4 variations | 425 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.808e1b1b9b53114ec2838071a7e6daa7.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\close-icon.png (4 variations | 235 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.286d67d3f74808a60a78d3ebf1a5fb57.png (928 B)
+[expo-cli] node_modules\@react-navigation\elements\lib\module\assets\search-icon.png (7 variations | 592 B)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.3f78af31cca60105799838a1a7a59fbd.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\AntDesign.ttf (130 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.31b5ffea3daddc69dd01a1f3d6cf63c5.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Entypo.ttf (66.2 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.140c53a7643ea949007aa9a282153849.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\EvilIcons.ttf (13.5 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ca4b48e04dc1ce10bfbddb262c8b835f.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Feather.ttf (55.6 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.b06871f281fee6b241d60582ae9369b9.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome.ttf (166 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.3b89dd103490708d19a95adcae52210e.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Brands.ttf (134 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.1f77739ca9ff2188b539c36f30ffa2be.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Regular.ttf (33.7 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.605ed7926cf39a2ad5ec2d1f9d391d3d.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome5_Solid.ttf (203 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.56c8d80832e37783f12c05db7c8849e2.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Brands.ttf (209 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.370dd5af19f8364907b6e2c41f45dbbf.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Regular.ttf (68 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.adec7d6f310bc577f05e8fe06a5daccf.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\FontAwesome6_Solid.ttf (424 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.b49ae8ab2dbccb02c4d11caaacf09eab.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Fontisto.ttf (314 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.e20945d7c929279ef7a6f1db184a4470.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Foundation.ttf (57 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.b4eb097d35f44ed943676fd56f6bdc51.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Ionicons.ttf (390 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.6e435534bd35da5fef04168860a9b8fa.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialCommunityIcons.ttf (1.31 MB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.4e85bc9ebe07e0340c9c4fc2f6c38908.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\MaterialIcons.ttf (357 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.871378c6eab492a3e689a9385dc45a12.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Octicons.ttf (69.4 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.d2285965fe34b05465047401b8595dd0.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\SimpleLineIcons.ttf (54.1 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.1681f34aaca71b8dfb70756bca331eb2.ttf (25.8 kB)
+[expo-cli] node_modules\expo\node_modules\@expo\vector-icons\build\vendor\react-native-vector-icons\Fonts\Zocial.ttf (25.8 kB)
+[expo-cli] 
+[expo-cli] › web bundles (6):
+[expo-cli] _expo/static/js/web/AppEntry-4286a2f301da00f0b739d3821d650272.js (2.97 MB)
+[expo-cli] _expo/static/js/web/AppEntry-4286a2f301da00f0b739d3821d650272.js.map (8.69 MB)
+[expo-cli] _expo/static/js/web/index-0ee9fecda3a3c8c62860e37223c8243f.js (12.7 kB)
+[expo-cli] _expo/static/js/web/index-0ee9fecda3a3c8c62860e37223c8243f.js.map (58.8 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-2be1809245ebfb8ec7f80b54d236b1a6.js (2.48 kB)
+[expo-cli] _expo/static/js/web/ScreenCapture-2be1809245ebfb8ec7f80b54d236b1a6.js.map (12.5 kB)
+[expo-cli] 
+[expo-cli] › ios bundles (2):
+[expo-cli] _expo/static/js/ios/AppEntry-566d0a8ef550868110b44b7e250fcc4f.hbc (3.31 MB)
+[expo-cli] _expo/static/js/ios/AppEntry-566d0a8ef550868110b44b7e250fcc4f.hbc.map (9.51 MB)
+[expo-cli] 
+[expo-cli] › android bundles (2):
+[expo-cli] _expo/static/js/android/AppEntry-6bafb1a9d068867850c26c92109f715c.hbc (3.33 MB)
+[expo-cli] _expo/static/js/android/AppEntry-6bafb1a9d068867850c26c92109f715c.hbc.map (9.55 MB)
+[expo-cli] 
+[expo-cli] › Files (4):
+[expo-cli] assetmap.json (19.4 kB)
+[expo-cli] favicon.ico (14.5 kB)
+[expo-cli] index.html (1.22 kB)
+[expo-cli] metadata.json (5.11 kB)
+[expo-cli] 
+[expo-cli] Exported: dist
+✔ Exported bundle(s)
+- Uploading...
+- Uploading assetmap.json (0 / 19.0 KB)
+✔ Uploaded assetmap.json 1s
+√ Uploaded 2 app bundles
+√ Uploading assets skipped - no new assets found
+i 39 iOS assets, 39 Android assets (maximum: 2000 total per update). Learn more about asset limits: https://expo.fyi/eas-update-asset-limits
+Skipping project fingerprints
+- Publishing...
+✔ Published!
+
+Branch             production
+Runtime version    1.8.2
+Platform           android, ios
+Update group ID    ef96b584-6aea-4074-82f8-e96fb0332262
+Android update ID  019f2a6b-6d6f-7f44-91a0-ef516f35b195
+iOS update ID      019f2a6b-6d6f-7a8c-b5e7-891aa4e4330e
+Message            fix(subscription): stop manual gift popup loop after ASANTE runtime 1.8.2
+Commit             bb668292645eaf8610b9745e25a2a64e1e30a2fb*
+EAS Dashboard      https://expo.dev/accounts/isamu_123/projects/osmani-tv/updates/ef96b584-6aea-4074-82f8-e96fb0332262
+
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+

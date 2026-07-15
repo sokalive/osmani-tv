@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-07-03T23:29:44.449Z",
-  "commit": "936f32c2445e1c014fb11a01893ca72f9aab34d8",
+  "timestamp": "2026-07-06T17:36:51.669Z",
+  "commit": "5c1aa5f59e2c77f279f55b520f96f9ea42095665",
   "results": [
     {
       "script": "scripts/verify-startup-health.mjs",
@@ -73,6 +73,36 @@
       "exitCode": 0
     },
     {
+      "script": "scripts/verify-sonicpesa-activation-visibility.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-kulipia-badge.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-subscription-revocation-visibility.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-v24-realtime-state.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-one-tap-channel-open.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-cold-start-entitlement-race.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
       "script": "scripts/verify-subscription-instant-ux.js",
       "status": "PASS",
       "exitCode": 0
@@ -104,8 +134,8 @@
     },
     {
       "script": "scripts/verify-subscription-cache-hydrate.js",
-      "status": "PASS",
-      "exitCode": 0
+      "status": "FAIL",
+      "exitCode": 1
     },
     {
       "script": "scripts/verify-subscription-cache-repair.js",
@@ -119,6 +149,11 @@
     },
     {
       "script": "scripts/verify-false-transfer-stress.js",
+      "status": "PASS",
+      "exitCode": 0
+    },
+    {
+      "script": "scripts/verify-hamisha-transfer.js",
       "status": "PASS",
       "exitCode": 0
     },
@@ -154,13 +189,13 @@
     },
     {
       "script": "scripts/verify-users-intelligence-production.js",
-      "status": "PASS",
-      "exitCode": 0
+      "status": "FAIL",
+      "exitCode": 1
     },
     {
       "script": "scripts/verify-device-access-production.js",
-      "status": "PASS",
-      "exitCode": 0
+      "status": "FAIL",
+      "exitCode": 1
     },
     {
       "script": "scripts/verify-recent-features.js",
@@ -178,7 +213,7 @@
       "exitCode": 0
     }
   ],
-  "passed": 35,
-  "failed": 0,
+  "passed": 39,
+  "failed": 3,
   "skipped": 0
 }

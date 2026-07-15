@@ -1,0 +1,59 @@
+{
+  "timestamp": "2026-07-04T01:19:46.392Z",
+  "vps": "https://api.osmanitv.com",
+  "catalogPlans": 4,
+  "devices": [
+    {
+      "deviceId": "a05c6bbe…",
+      "active": true,
+      "verifyHttp": 200,
+      "verifyPlanId": null,
+      "verifyPlanName": null,
+      "verifyAmount": null,
+      "verifyDuration": null,
+      "verifyPlansInPayload": 0,
+      "expiresAt": "2026-07-06T17:50:00.000Z",
+      "remainingSeconds": 232211,
+      "paymentLabel": null,
+      "durationDays": null,
+      "catalogResolved": 4,
+      "cardMissing": {
+        "planName": true,
+        "amount": true,
+        "duration": true
+      },
+      "pass": false
+    },
+    {
+      "deviceId": "3C849B55…",
+      "active": false,
+      "verifyHttp": 200,
+      "verifyPlanId": null,
+      "verifyPlanName": null,
+      "verifyAmount": null,
+      "verifyDuration": null,
+      "verifyPlansInPayload": 4,
+      "expiresAt": null,
+      "remainingSeconds": 0,
+      "pass": null,
+      "skipped": "inactive"
+    },
+    {
+      "deviceId": "58b32841…",
+      "active": false,
+      "verifyHttp": 200,
+      "verifyPlanId": null,
+      "verifyPlanName": null,
+      "verifyAmount": null,
+      "verifyDuration": null,
+      "verifyPlansInPayload": 4,
+      "expiresAt": null,
+      "remainingSeconds": 0,
+      "pass": null,
+      "skipped": "inactive"
+    }
+  ],
+  "activeChecked": 1,
+  "activeComplete": 0,
+  "activeIncomplete": 1
+}

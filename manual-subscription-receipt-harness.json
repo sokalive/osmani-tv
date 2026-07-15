@@ -1,0 +1,58 @@
+{
+  "timestamp": "2026-07-04T18:16:21.830Z",
+  "testType": "integration_harness_sse_verify",
+  "vpsCommit": "cea3d5c2f3550ee7260ccad434eebdb7c3d209b5",
+  "deviceMasked": "77e7***2406",
+  "liveGrant": false,
+  "iterations": [
+    {
+      "iter": 1,
+      "deviceMasked": "77e7***2406",
+      "timestamps": {
+        "T0_session_start": 1783188935108,
+        "T4_verify_complete": 1783188981830
+      },
+      "note": "no_live_grant — measuring SSE connect + verify only",
+      "sseConnectMs": 952,
+      "verify": {
+        "ms": 1411,
+        "httpStatus": 200,
+        "active": true,
+        "playbackAllowed": true,
+        "manualGiftAckKey": "77",
+        "manualGiftShowPopup": true,
+        "grantId": 77,
+        "premiumUnlock": true,
+        "paymentModalSuppressed": true,
+        "hongeraEligible": true
+      },
+      "latency": {
+        "sse_connect_ms": 952,
+        "verify_ms": 1411,
+        "T4_minus_T0_ms": 46722
+      }
+    }
+  ],
+  "aggregates": {
+    "T3_minus_T0": {
+      "label": "T3-T0",
+      "n": 0
+    },
+    "T4_minus_T0": {
+      "label": "T4-T0",
+      "n": 1,
+      "min": 46722,
+      "median": 46722,
+      "p95": 46722,
+      "max": 46722
+    },
+    "verify_ms": {
+      "label": "verify",
+      "n": 1,
+      "min": 1411,
+      "median": 1411,
+      "p95": 1411,
+      "max": 1411
+    }
+  }
+}
