@@ -115,8 +115,17 @@ const aggressive = computePollIntervalMs({
   retryable: true,
   paymentConfirmed: true,
 });
-if (aggressive < 600 || aggressive > 1200) fail(`aggressive interval ${aggressive}`);
+if (aggressive < 500 || aggressive > 700) fail(`aggressive interval ${aggressive}`);
 else pass(`aggressive interval ${aggressive}ms`);
+
+const midActivating = computePollIntervalMs({
+  elapsedMs: 90_000,
+  waitingState: APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING,
+  retryable: true,
+  paymentConfirmed: true,
+});
+if (midActivating < 700 || midActivating > 1000) fail(`mid activating interval ${midActivating}`);
+else pass(`mid activating interval ${midActivating}ms`);
 
 function simulateClient(responses) {
   const g = new PaymentReconcileGuard();

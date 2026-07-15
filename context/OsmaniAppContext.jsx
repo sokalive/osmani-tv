@@ -1649,12 +1649,25 @@ export function OsmaniAppProvider({ children }) {
     const offSubscriptionLifecycle = SUBSCRIPTION_WAKE_SSE_EVENTS.map((ev) =>
       subscribeRealtimeEvent(ev, (payload) => {
         console.log('[SUBSCRIPTION_SSE]', ev, payload);
-        void tryInstantApplyFromSse(ev, payload);
-        void reverifySubscription(`sse:${ev}`);
-        scheduleAdminDrivenSoftSync(`sse:${ev}`);
-        if (ev === 'payment_success' || ev === 'payment_completed') {
-          void reportUserCenterEvent('payment_success', { source: 'sse', sse_event: ev });
-        }
+        void (async () => {
+          const details = await tryInstantApplyFromSse(ev, payload);
+          const paymentActivation =
+            ev === 'payment_success' ||
+            ev === 'payment_completed' ||
+            ev === 'subscription_activated';
+          // Defer reconcile after instant payment unlock — replica lag must not re-lock.
+          if (details && paymentActivation) {
+            setTimeout(() => {
+              void reverifySubscription(`sse:${ev}:deferred`);
+            }, 2500);
+          } else {
+            void reverifySubscription(`sse:${ev}`);
+          }
+          scheduleAdminDrivenSoftSync(`sse:${ev}`);
+          if (ev === 'payment_success' || ev === 'payment_completed') {
+            void reportUserCenterEvent('payment_success', { source: 'sse', sse_event: ev });
+          }
+        })();
       }),
     );
     const offUserCenter = USER_CENTER_SSE_EVENTS.map((ev) =>

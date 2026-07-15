@@ -100,9 +100,33 @@ else pass('PaymentSuccessStep');
 if (modal.includes('ENDELEA')) fail('no ENDELEA on payment success');
 else pass('no ENDELEA on payment success');
 
-if (!modal.includes("'poll-activating'") && !modal.includes("'poll-probe'")) {
+if (!modal.includes("'poll-status-light'") && !modal.includes("'poll-probe'")) {
   fail('poll activation source');
 } else pass('poll activation source');
+
+if (!modal.includes('payment-status-entitlement')) {
+  fail('payment-status entitlement unlock before probe');
+} else pass('payment-status entitlement unlock before probe');
+
+if (modal.includes("'poll-activating'")) {
+  fail('must not double-probe via poll-activating after pollOnce probe');
+} else pass('no double-probe poll-activating path');
+
+if (!activation.includes('probeSubscriptionStatusParallel')) {
+  fail('parallel status probe');
+} else pass('parallel status probe');
+
+if (!activation.includes('light: true') && !activation.includes('light === true')) {
+  fail('light probe mode');
+} else pass('light probe mode');
+
+if (!modal.includes('payment_sse') || !modal.includes('sse-payload')) {
+  fail('SSE payload instant unlock during wait');
+} else pass('SSE payload instant unlock during wait');
+
+if (!modal.includes('registerDeviceIntelligence')) {
+  fail('device profile refresh on payment success');
+} else pass('device profile refresh on payment success');
 
 if (!modal.includes("'payment_success'") || !modal.includes("'payment_completed'")) {
   fail('payment_success SSE listener');

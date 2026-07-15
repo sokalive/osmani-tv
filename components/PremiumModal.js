@@ -44,6 +44,8 @@ import {
   runPaymentActivationTick,
   subscriptionHintFromPaymentStatusRaw,
 } from '../lib/paymentActivation';
+import { parseInstantSubscriptionFromSse } from '../lib/subscriptionSseInstant';
+import { registerDeviceIntelligence } from '../api/usersIntelligence';
 import {
   getCachedPaymentPlansSync,
   normalizePaymentPlansList,
@@ -453,6 +455,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       if (Array.isArray(forUnlock?.plans) && forUnlock.plans.length > 0) {
         void seedPaymentPlansCacheFromVerify(forUnlock.plans);
       }
+      // Refresh device profile so User Center / intelligence sees the new package.
+      void registerDeviceIntelligence().catch(() => {});
 
       setSuccessDetails(
         buildPaymentSuccessDetails(forUnlock, {
@@ -528,9 +532,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   /**
    * MFALME-style single activation tick per poll/SSE event (no blocking multi-minute loops).
    * Dedicated probes only — does not join shared context reverify.
+   * After provider confirm, use light (parallel status) probes so waiting UI can exit in seconds.
    */
   const schedulePostPaymentActivationPolls = useCallback(
-    async ({ paymentConfirmed = false, source = 'poll' } = {}) => {
+    async ({ paymentConfirmed = false, source = 'poll', light = false } = {}) => {
       if (doneRef.current) return false;
       if (paymentConfirmed) {
         setPaymentProgressStep(2);
@@ -540,21 +545,42 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       try {
         const identity = await getDeviceIdentity();
         const { deviceId, deviceFingerprint } = identity;
+        const useLight = light || paymentConfirmed;
         const result = await runPaymentActivationTick({
           deviceId,
           deviceFingerprint,
           identity,
+          light: useLight,
         });
 
         if (result.active && result.subscription) {
           await finalizePaymentSuccess(result.subscription, result.fetchExpires);
-          console.log('[PremiumModal]', 'payment_activation_success', { source });
+          console.log('[PremiumModal]', 'payment_activation_success', { source, light: useLight });
           return true;
+        }
+
+        // Light status miss — one full verify/recover before waiting for the next poll.
+        if (useLight && !String(source).startsWith('poll')) {
+          const full = await runPaymentActivationTick({
+            deviceId,
+            deviceFingerprint,
+            identity,
+            light: false,
+          });
+          if (full.active && full.subscription) {
+            await finalizePaymentSuccess(full.subscription, full.fetchExpires);
+            console.log('[PremiumModal]', 'payment_activation_success', {
+              source: `${source}:full`,
+              light: false,
+            });
+            return true;
+          }
         }
 
         console.log('[PAYMENT_SUCCESS_VERIFY]', 'activation_pending', {
           source,
           paymentConfirmed,
+          light: useLight,
           active: result.subscription?.active,
           isActive: result.subscription?.isActive,
         });
@@ -634,30 +660,18 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
         if (reconcileGuardRef.current.isStale(gen)) return;
 
-        const identity = await getDeviceIdentity();
-        const { deviceId, deviceFingerprint } = identity;
-        if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
-
-        const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, identity);
-        if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
-
-        if (probed.verified && isSubscriptionActive(probed.verified)) {
-          await finalizePaymentSuccess(probed.verified, probed.fetchExpires);
-          console.log('[PremiumModal]', 'payment_activation_success', { source: 'poll-probe' });
-          return;
-        }
-
-        // Backend already says entitlement is active — unlock immediately; do not wait
-        // for a delayed /api/subscription/verify propagation race.
+        // Trust payment-status entitlement BEFORE any subscription probe.
+        // Prior order awaited a multi-request probe first, delaying unlock by
+        // tens of seconds even when entitlement_active / ACTIVE was already set.
         if (isPaymentEntitlementConfirmed(result)) {
           const hint = subscriptionHintFromPaymentStatusRaw(result.raw);
           const subscription = {
             ...hint,
             active: true,
             isActive: true,
-            expiresAt: latestExpiryIso(hint.expiresAt, result.expiresAt, probed.fetchExpires),
+            expiresAt: latestExpiryIso(hint.expiresAt, result.expiresAt),
           };
-          await finalizePaymentSuccess(subscription, probed.fetchExpires ?? result.expiresAt);
+          await finalizePaymentSuccess(subscription, result.expiresAt);
           console.log('[PremiumModal]', 'payment_activation_success', {
             source: 'payment-status-entitlement',
             waiting,
@@ -666,14 +680,33 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           return;
         }
 
-        if (
+        const paymentConfirmed =
           waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
-          result.status === 'SUCCESS'
-        ) {
-          await schedulePostPaymentActivationPolls({
+          result.status === 'SUCCESS';
+
+        if (paymentConfirmed) {
+          setPaymentProgressStep(2);
+          applyWaitingState(APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING, {
             paymentConfirmed: true,
-            source: 'poll-activating',
           });
+        }
+
+        const identity = await getDeviceIdentity();
+        const { deviceId, deviceFingerprint } = identity;
+        if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
+
+        // After provider confirm: parallel status GETs only (no second full probe tick).
+        const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, identity, {
+          light: paymentConfirmed,
+        });
+        if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
+
+        if (probed.verified && isSubscriptionActive(probed.verified)) {
+          await finalizePaymentSuccess(probed.verified, probed.fetchExpires);
+          console.log('[PremiumModal]', 'payment_activation_success', {
+            source: paymentConfirmed ? 'poll-status-light' : 'poll-probe',
+          });
+          return;
         }
       } catch (e) {
         if (reconcileGuardRef.current.isStale(gen)) return;
@@ -686,7 +719,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     },
     [
       applyWaitingState,
-      schedulePostPaymentActivationPolls,
       handleFailed,
       handleTerminalConflict,
       finalizePaymentSuccess,
@@ -842,7 +874,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible, step, waitingDeviceId, closeSse, finalizePaymentSuccess]);
 
-  /** Admin / gateway payment_success SSE — activate immediately without waiting for next poll. */
+  /** Admin / gateway payment_success SSE — unlock from payload when possible; else light probe. */
   useEffect(() => {
     if (!visible || step !== 3 || doneRef.current) return undefined;
     const events = [
@@ -854,16 +886,42 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       'subscription_updated',
     ];
     const offs = events.map((ev) =>
-      subscribeRealtimeEvent(ev, () => {
+      subscribeRealtimeEvent(ev, (payload) => {
         if (doneRef.current) return;
         console.log('[PremiumModal]', 'payment_sse', ev);
-        void schedulePostPaymentActivationPolls({ paymentConfirmed: true, source: `sse:${ev}` });
+        void (async () => {
+          try {
+            const hint = parseInstantSubscriptionFromSse(payload, ev);
+            if (hint?.active === true) {
+              await finalizePaymentSuccess(
+                {
+                  ...hint,
+                  active: true,
+                  isActive: true,
+                  expiresAt: hint.expiresAt ?? null,
+                },
+                hint.expiresAt ?? null,
+              );
+              console.log('[PremiumModal]', 'payment_activation_success', {
+                source: `sse-payload:${ev}`,
+              });
+              return;
+            }
+          } catch {
+            // fall through to probe
+          }
+          void schedulePostPaymentActivationPolls({
+            paymentConfirmed: true,
+            source: `sse:${ev}`,
+            light: true,
+          });
+        })();
       }),
     );
     return () => {
       offs.forEach((off) => off());
     };
-  }, [visible, step, schedulePostPaymentActivationPolls]);
+  }, [visible, step, schedulePostPaymentActivationPolls, finalizePaymentSuccess]);
 
   const handleCancel = () => {
     clearTimers();
