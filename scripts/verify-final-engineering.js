@@ -29,6 +29,7 @@ const SCRIPTS = [
   'scripts/verify-payment-waiting-ui.js',
   'scripts/verify-payment-success-ui.js',
   'scripts/verify-payment-completion.js',
+  'scripts/verify-payment-activation-instant.js',
   'scripts/verify-payment-plans-instant.js',
   'scripts/verify-payment-checkout-providers.js',
   'scripts/verify-sonicpesa-activation-visibility.js',
