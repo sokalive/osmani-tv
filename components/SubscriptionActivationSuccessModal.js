@@ -45,7 +45,8 @@ export default function SubscriptionActivationSuccessModal({
             subtitle={copy.subtitle}
             message={copy.message}
             onOpenChannel={onDismiss}
-            channelButtonLabel="ENDELEA"
+            onDismiss={onDismiss}
+            channelButtonLabel="✅ Fungua Channel"
           />
         </Pressable>
       </Pressable>

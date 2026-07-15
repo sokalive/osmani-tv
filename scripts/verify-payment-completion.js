@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Payment completion — MFALME-aligned activation pipeline.
+ * Payment completion — MFALME-aligned activation pipeline + instant entitlement trust.
  * Run: node scripts/verify-payment-completion.js
  */
 
@@ -45,6 +45,16 @@ else pass('runPaymentActivationTick');
 if (!activation.includes('probeSubscriptionActivation')) fail('probeSubscriptionActivation module');
 else pass('probeSubscriptionActivation module');
 
+if (!activation.includes('isPaymentEntitlementConfirmed')) fail('isPaymentEntitlementConfirmed');
+else pass('isPaymentEntitlementConfirmed');
+
+if (!activation.includes('recoverSubscription')) fail('activation probe includes recover');
+else pass('activation probe includes recover');
+
+if (activation.includes('refreshSubscription()')) {
+  fail('activation tick must not join shared refreshSubscription');
+} else pass('activation tick avoids shared reverify');
+
 if (!modal.includes('schedulePostPaymentActivationPolls')) {
   fail('schedulePostPaymentActivationPolls');
 } else pass('schedulePostPaymentActivationPolls');
@@ -58,8 +68,21 @@ else pass('no activation in-flight guard');
 if (!modal.includes('finalizePaymentSuccess')) fail('finalizePaymentSuccess');
 else pass('finalizePaymentSuccess');
 
+if (!modal.includes('isPaymentEntitlementConfirmed')) {
+  fail('poll must trust payment entitlement_active / ACTIVE');
+} else pass('poll trusts payment entitlement confirmation');
+
+if (!modal.includes('subscription_stream_active')) fail('subscription stream unlock');
+else pass('subscription stream unlock');
+
+const streamTrustsPayload =
+  modal.includes('subscription_stream_active') &&
+  !modal.match(/subscription_stream_active[\s\S]{0,400}verifySubscription/);
+if (!streamTrustsPayload) fail('stream must unlock without waiting on verify');
+else pass('stream unlocks without verify lag');
+
 const schedBlock = modal.match(
-  /const schedulePostPaymentActivationPolls[\s\S]*?},\s*\n\s*\[refreshSubscription, finalizePaymentSuccess/,
+  /const schedulePostPaymentActivationPolls[\s\S]*?},\s*\n\s*\[finalizePaymentSuccess, applyWaitingState\]/,
 );
 if (!schedBlock || schedBlock[0].includes('clearTimers();')) {
   fail('schedulePostPaymentActivationPolls must not clear timers before success');
@@ -77,17 +100,17 @@ else pass('PaymentSuccessStep');
 if (modal.includes('ENDELEA')) fail('no ENDELEA on payment success');
 else pass('no ENDELEA on payment success');
 
-if (!modal.includes("'poll-success'") && !modal.includes("'poll-activating'")) {
-  fail('poll success activation source');
-} else pass('poll success activation source');
+if (!modal.includes("'poll-activating'") && !modal.includes("'poll-probe'")) {
+  fail('poll activation source');
+} else pass('poll activation source');
 
 if (!modal.includes("'payment_success'") || !modal.includes("'payment_completed'")) {
   fail('payment_success SSE listener');
 } else pass('payment_success SSE listener');
 
-if (!modal.includes('verifySubscription(deviceId, deviceFingerprint)')) {
-  fail('poll peek uses verifySubscription (MFALME order)');
-} else pass('poll peek uses verifySubscription');
+if (!modal.includes('probeSubscriptionActivation')) {
+  fail('poll uses dedicated probeSubscriptionActivation');
+} else pass('poll uses dedicated probeSubscriptionActivation');
 
 if (!modal.includes('create_order_timeout_recovery')) fail('create-order timeout recovery path');
 else pass('create-order timeout recovery path');
@@ -97,6 +120,9 @@ else pass('create-order timeout detector');
 
 if (!payment.includes('COMPLETED')) fail('broaden payment success status');
 else pass('broaden payment success status');
+
+if (!payment.includes('expiresAt: parsed.expiresAt')) fail('payment status forwards expiresAt');
+else pass('payment status forwards expiresAt');
 
 if (!modal.includes('subscription_activated')) fail('subscription_activated SSE during wait');
 else pass('subscription_activated SSE during wait');

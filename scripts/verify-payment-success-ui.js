@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Payment success dialog — backend-only package display.
+ * Payment success dialog — Hongera copy + expiry + Fungua Channel.
  * Run: node scripts/verify-payment-success-ui.js
  */
 
@@ -37,6 +37,13 @@ else pass('buildPaymentSuccessDetails in modal');
 if (!modal.includes('handleOpenChannel')) fail('handleOpenChannel');
 else pass('handleOpenChannel');
 
+if (!modal.includes('handleDismissSuccess')) fail('handleDismissSuccess / Funga');
+else pass('handleDismissSuccess / Funga');
+
+if (!modal.includes("refreshSubscription('payment-fungua-channel')")) {
+  fail('FUNGUA CHANNEL must refresh entitlement once');
+} else pass('FUNGUA CHANNEL refreshes entitlement');
+
 if (modal.includes('ENDELEA')) fail('must not show ENDELEA on success');
 else pass('no ENDELEA on success');
 
@@ -50,45 +57,31 @@ if (modal.includes('payment_complete_auto_close')) {
 if (!successStep.includes('🎉 Hongera!')) fail('Hongera title');
 else pass('Hongera title');
 
-if (!successStep.includes('Umefanikiwa kununua kifurushi')) fail('success subtitle');
-else pass('success subtitle');
+if (!successStep.includes('Malipo yako yamefanikiwa na kifurushi chako kimewashwa kikamilifu')) {
+  fail('success body opening');
+} else pass('success body opening');
 
-if (!successStep.includes('FUNGUA CHANNEL')) fail('FUNGUA CHANNEL button');
-else pass('FUNGUA CHANNEL button');
+if (!successStep.includes('Fungua Channel')) fail('Fungua Channel button');
+else pass('Fungua Channel button');
 
-if (!successStep.includes('Sasa unaweza kutazama channel zote za Premium Live')) {
-  fail('premium live message');
-} else pass('premium live message');
+if (!successStep.includes('Funga')) fail('optional Funga button');
+else pass('optional Funga button');
+
+if (!successStep.includes('Kifurushi chako kitaisha tarehe')) fail('expiry label');
+else pass('expiry label');
+
+if (!successStep.includes('Asante kwa kuchagua Osmani TV')) fail('thanks line');
+else pass('thanks line');
+
+if (!successStep.includes('formatExpiryDateDMY')) fail('DD/MM/YYYY formatter wiring');
+else pass('DD/MM/YYYY formatter wiring');
+
+if (!display.includes('formatExpiryDateDMY')) fail('formatExpiryDateDMY helper');
+else pass('formatExpiryDateDMY helper');
 
 if (successStep.includes('computeSubscriptionProgress')) {
   fail('success UI must not compute subscription progress');
 } else pass('no local subscription math in success UI');
-
-if (display.includes('computeSubscriptionProgress') || display.includes('Date.now')) {
-  fail('paymentSuccessDisplay must not compute expiry');
-} else pass('backend-only display helpers');
-
-const sample = {
-  planName: 'Wiki 1',
-  amount: 5000,
-  currency: 'TZS',
-  planDurationDays: 7,
-  startedAt: '2026-07-02T10:00:00.000Z',
-  expiresAt: '2026-07-09T10:00:00.000Z',
-  remainingDays: 7,
-};
-
-if (sample.planName !== 'Wiki 1') fail('planName fixture');
-else pass('planName fixture');
-
-if (sample.remainingDays !== 7) fail('remainingDays fixture');
-else pass('remainingDays fixture');
-
-if (`${sample.planDurationDays} siku` !== '7 siku') fail('duration display pattern');
-else pass('duration display pattern');
-
-if (`${sample.remainingDays} siku` !== '7 siku') fail('remaining display pattern');
-else pass('remaining display pattern');
 
 if (process.exitCode) process.exit(1);
 console.log('\n[verify-payment-success-ui] ok');

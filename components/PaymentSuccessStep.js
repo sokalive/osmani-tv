@@ -2,43 +2,24 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  formatBackendDateTime,
-  formatBackendDurationDays,
-  formatBackendRemainingDays,
-  formatPaymentAmount,
-} from '../lib/paymentSuccessDisplay';
+import { formatExpiryDateDMY } from '../lib/paymentSuccessDisplay';
 
 const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
 const TEXT_MUTED = '#9CA3AF';
 
-function DetailRow({ label, value }) {
-  return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue} numberOfLines={2}>
-        {value || '—'}
-      </Text>
-    </View>
-  );
-}
-
 /**
- * Premium payment success dialog (step 4) — backend values only.
+ * Premium payment success dialog (step 4).
  */
 export default function PaymentSuccessStep({
   details,
   onOpenChannel,
-  subtitle = 'Umefanikiwa kununua kifurushi.',
-  message = 'Sasa unaweza kutazama channel zote za Premium Live kuanzia muda huu.',
-  channelButtonLabel = 'FUNGUA CHANNEL',
+  onDismiss,
+  subtitle = 'Malipo yako yamefanikiwa na kifurushi chako kimewashwa kikamilifu.',
+  message = 'Sasa unaweza kufungua na kutazama channel zote za moja kwa moja (Live TV) pamoja na vipindi vyote vinavyopatikana ndani ya Osmani TV.',
+  channelButtonLabel = '✅ Fungua Channel',
+  showDismiss = true,
 }) {
-  const planName = details?.planName ?? '—';
-  const pricePaid = formatPaymentAmount(details?.amount, details?.currency ?? 'TZS');
-  const duration = formatBackendDurationDays(details?.planDurationDays);
-  const activatedAt = formatBackendDateTime(details?.startedAt);
-  const expiresAt = formatBackendDateTime(details?.expiresAt);
-  const remainingDays = formatBackendRemainingDays(details?.remainingDays);
+  const expiresDisplay = formatExpiryDateDMY(details?.expiresAt);
 
   return (
     <View style={styles.wrap}>
@@ -51,16 +32,13 @@ export default function PaymentSuccessStep({
         </View>
       </View>
 
-      <View style={styles.detailsCard}>
-        <DetailRow label="Kifurushi" value={planName} />
-        <DetailRow label="Bei" value={pricePaid} />
-        <DetailRow label="Muda" value={duration} />
-        <DetailRow label="Imeanzishwa" value={activatedAt} />
-        <DetailRow label="Inaisha" value={expiresAt} />
-        <DetailRow label="Siku zilizobaki" value={remainingDays} />
+      <View style={styles.expiryCard}>
+        <Text style={styles.expiryLabel}>Kifurushi chako kitaisha tarehe:</Text>
+        <Text style={styles.expiryValue}>{expiresDisplay}</Text>
       </View>
 
       <Text style={styles.message}>{message}</Text>
+      <Text style={styles.thanks}>Asante kwa kuchagua Osmani TV.</Text>
 
       <Pressable style={styles.ctaWrap} onPress={onOpenChannel} accessibilityRole="button">
         <LinearGradient
@@ -72,6 +50,12 @@ export default function PaymentSuccessStep({
           <Text style={styles.ctaText}>{channelButtonLabel}</Text>
         </LinearGradient>
       </Pressable>
+
+      {showDismiss && onDismiss ? (
+        <Pressable style={styles.dismissBtn} onPress={onDismiss} accessibilityRole="button">
+          <Text style={styles.dismissText}>Funga</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -87,14 +71,16 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   subtitle: {
     color: '#F3F4F6',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     textAlign: 'center',
+    lineHeight: 20,
     marginBottom: 12,
+    paddingHorizontal: 4,
   },
   iconHalo: {
     width: 72,
@@ -118,44 +104,44 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(74,222,128,0.45)',
   },
-  detailsCard: {
+  expiryCard: {
     width: '100%',
     backgroundColor: '#1A1F28',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(250,204,21,0.28)',
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     marginBottom: 12,
-    gap: 8,
+    alignItems: 'center',
+    gap: 4,
   },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  detailLabel: {
+  expiryLabel: {
     color: TEXT_MUTED,
     fontSize: 12,
     fontWeight: '600',
-    flexShrink: 0,
-    minWidth: 92,
+    textAlign: 'center',
   },
-  detailValue: {
-    color: '#F9FAFB',
-    fontSize: 13,
-    fontWeight: '700',
-    flex: 1,
-    textAlign: 'right',
+  expiryValue: {
+    color: '#FACC15',
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 0.6,
   },
   message: {
-    color: TEXT_MUTED,
+    color: '#D1D5DB',
     fontSize: 13,
     lineHeight: 19,
     textAlign: 'center',
-    marginBottom: 14,
+    marginBottom: 8,
     paddingHorizontal: 4,
+  },
+  thanks: {
+    color: TEXT_MUTED,
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 14,
   },
   ctaWrap: {
     width: '100%',
@@ -171,6 +157,16 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontSize: 15,
     fontWeight: '800',
-    letterSpacing: 0.6,
+    letterSpacing: 0.4,
+  },
+  dismissBtn: {
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  dismissText: {
+    color: TEXT_MUTED,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

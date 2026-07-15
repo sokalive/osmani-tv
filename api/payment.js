@@ -372,6 +372,7 @@ function enrichPaymentStatusResponse(body, httpStatus) {
     retryable: parsed.retryable,
     userActionRequired: parsed.userActionRequired,
     transactionStatus: parsed.transactionStatus,
+    expiresAt: parsed.expiresAt,
     httpStatus,
     raw: body,
   };

@@ -35,12 +35,14 @@ import {
 } from '../lib/paymentCheckoutErrors';
 import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
-import { verifySubscription } from '../api/subscription';
 import { formatUserFacingApiError } from '../lib/catalogConnectivity';
 import {
+  isPaymentEntitlementConfirmed,
   isSubscriptionActive,
   latestExpiryIso,
+  probeSubscriptionActivation,
   runPaymentActivationTick,
+  subscriptionHintFromPaymentStatusRaw,
 } from '../lib/paymentActivation';
 import {
   getCachedPaymentPlansSync,
@@ -401,6 +403,31 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible]);
 
+  useEffect(() => {
+    checkoutProviderRef.current = checkoutProvider;
+  }, [checkoutProvider]);
+
+  const applyWaitingState = useCallback((incoming, { paymentConfirmed = false } = {}) => {
+    const guard = reconcileGuardRef.current;
+    if (!guard.tryAdvance(incoming)) {
+      console.log('[PremiumModal]', 'waiting_state_rejected_stale', {
+        incoming,
+        best: guard.bestState,
+      });
+      return false;
+    }
+    setAppWaitingState(incoming);
+    setPaymentProgressStep(mapWaitingStateToProgressStep(incoming));
+    if (
+      paymentConfirmed ||
+      incoming === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
+      incoming === APP_WAITING_STATE.ACTIVE
+    ) {
+      setPaymentProgressStep((prev) => Math.max(prev, 2));
+    }
+    return true;
+  }, []);
+
   /** Payment verified active — unlock, show success dialog (no navigation until FUNGUA CHANNEL). */
   const finalizePaymentSuccess = useCallback(
     async (verified, fetchExpires = null) => {
@@ -409,6 +436,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       setPaymentProgressStep(3);
       clearTimers();
       closeSse();
+      applyWaitingState(APP_WAITING_STATE.ACTIVE);
 
       const mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
       const forUnlock = mergeCheckoutPlanIntoSubscription(
@@ -444,44 +472,20 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         expiresAt: forUnlock?.expiresAt ?? null,
       });
       setStep(4);
-
-      void refreshSubscription().catch(() => {});
+      // Context unlock already applied. Avoid an immediate shared reverify race that can
+      // briefly return inactive and re-lock channels before backend read-replicas catch up.
+      // FUNGUA CHANNEL refreshes entitlement once before navigating.
     },
     [
       clearTimers,
       closeSse,
       unlockChannels,
-      refreshSubscription,
       orderId,
       selectedPlan,
       checkoutProvider,
+      applyWaitingState,
     ],
   );
-
-  useEffect(() => {
-    checkoutProviderRef.current = checkoutProvider;
-  }, [checkoutProvider]);
-
-  const applyWaitingState = useCallback((incoming, { paymentConfirmed = false } = {}) => {
-    const guard = reconcileGuardRef.current;
-    if (!guard.tryAdvance(incoming)) {
-      console.log('[PremiumModal]', 'waiting_state_rejected_stale', {
-        incoming,
-        best: guard.bestState,
-      });
-      return false;
-    }
-    setAppWaitingState(incoming);
-    setPaymentProgressStep(mapWaitingStateToProgressStep(incoming));
-    if (
-      paymentConfirmed ||
-      incoming === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
-      incoming === APP_WAITING_STATE.ACTIVE
-    ) {
-      setPaymentProgressStep((prev) => Math.max(prev, 2));
-    }
-    return true;
-  }, []);
 
   const handleTerminalConflict = useCallback(
     (waitingState, reason) => {
@@ -501,18 +505,29 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     [clearTimers, closeSse, applyWaitingState, orderId, checkoutProvider],
   );
 
-  const handleOpenChannel = useCallback(() => {
-    try {
-      onUnlockSuccess?.();
-    } catch (e) {
-      console.log('[PremiumModal]', 'onUnlockSuccess_error', e?.message ?? e);
-    }
+  const handleDismissSuccess = useCallback(() => {
     onClose?.();
-  }, [onUnlockSuccess, onClose]);
+  }, [onClose]);
+
+  const handleOpenChannel = useCallback(() => {
+    void (async () => {
+      try {
+        await refreshSubscription('payment-fungua-channel');
+      } catch (e) {
+        console.log('[PremiumModal]', 'fungua_refresh_error', e?.message ?? e);
+      }
+      try {
+        onUnlockSuccess?.();
+      } catch (e) {
+        console.log('[PremiumModal]', 'onUnlockSuccess_error', e?.message ?? e);
+      }
+      onClose?.();
+    })();
+  }, [onUnlockSuccess, onClose, refreshSubscription]);
 
   /**
    * MFALME-style single activation tick per poll/SSE event (no blocking multi-minute loops).
-   * Keeps polling/SSE alive until finalizePaymentSuccess.
+   * Dedicated probes only — does not join shared context reverify.
    */
   const schedulePostPaymentActivationPolls = useCallback(
     async ({ paymentConfirmed = false, source = 'poll' } = {}) => {
@@ -529,13 +544,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           deviceId,
           deviceFingerprint,
           identity,
-          refreshSubscription,
         });
 
         if (result.active && result.subscription) {
-          applyWaitingState(APP_WAITING_STATE.ACTIVE);
           await finalizePaymentSuccess(result.subscription, result.fetchExpires);
-          void refreshSubscription().catch(() => {});
           console.log('[PremiumModal]', 'payment_activation_success', { source });
           return true;
         }
@@ -552,7 +564,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         return false;
       }
     },
-    [refreshSubscription, finalizePaymentSuccess, applyWaitingState],
+    [finalizePaymentSuccess, applyWaitingState],
   );
 
   const handleFailed = useCallback(
@@ -598,7 +610,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           paymentConfirmed:
             waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
             waiting === APP_WAITING_STATE.ACTIVE ||
-            result.status === 'SUCCESS',
+            result.status === 'SUCCESS' ||
+            result.entitlementActive === true,
         });
 
         if (waiting === APP_WAITING_STATE.PHONE_CONFLICT) {
@@ -621,33 +634,45 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
         if (reconcileGuardRef.current.isStale(gen)) return;
 
-        let peek = null;
-        try {
-          const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-          peek = await verifySubscription(deviceId, deviceFingerprint);
-        } catch {
-          peek = null;
-        }
+        const identity = await getDeviceIdentity();
+        const { deviceId, deviceFingerprint } = identity;
         if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
 
-        if (peek && isSubscriptionActive(peek)) {
-          applyWaitingState(APP_WAITING_STATE.ACTIVE);
-          await schedulePostPaymentActivationPolls({ paymentConfirmed: true, source: 'poll-verify' });
+        const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, identity);
+        if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
+
+        if (probed.verified && isSubscriptionActive(probed.verified)) {
+          await finalizePaymentSuccess(probed.verified, probed.fetchExpires);
+          console.log('[PremiumModal]', 'payment_activation_success', { source: 'poll-probe' });
+          return;
+        }
+
+        // Backend already says entitlement is active — unlock immediately; do not wait
+        // for a delayed /api/subscription/verify propagation race.
+        if (isPaymentEntitlementConfirmed(result)) {
+          const hint = subscriptionHintFromPaymentStatusRaw(result.raw);
+          const subscription = {
+            ...hint,
+            active: true,
+            isActive: true,
+            expiresAt: latestExpiryIso(hint.expiresAt, result.expiresAt, probed.fetchExpires),
+          };
+          await finalizePaymentSuccess(subscription, probed.fetchExpires ?? result.expiresAt);
+          console.log('[PremiumModal]', 'payment_activation_success', {
+            source: 'payment-status-entitlement',
+            waiting,
+            entitlementActive: result.entitlementActive === true,
+          });
           return;
         }
 
         if (
-          waiting === APP_WAITING_STATE.ACTIVE ||
           waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
-          result.status === 'SUCCESS' ||
-          result.entitlementActive === true
+          result.status === 'SUCCESS'
         ) {
           await schedulePostPaymentActivationPolls({
             paymentConfirmed: true,
-            source:
-              waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING
-                ? 'poll-activating'
-                : 'poll-success',
+            source: 'poll-activating',
           });
         }
       } catch (e) {
@@ -664,6 +689,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       schedulePostPaymentActivationPolls,
       handleFailed,
       handleTerminalConflict,
+      finalizePaymentSuccess,
     ],
   );
 
@@ -780,18 +806,23 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           const payload = JSON.parse(event?.data ?? '{}');
           const payloadActive = payload?.isActive === true || payload?.active === true;
           if (!payloadActive) return;
-          const { deviceId, deviceFingerprint } = await getDeviceIdentity();
-          const verified = await verifySubscription(deviceId, deviceFingerprint);
-          if (doneRef.current) return;
-          if (verified && isSubscriptionActive(verified)) {
-            console.log('[PremiumModal]', 'subscription_stream_active');
-            await schedulePostPaymentActivationPolls({
-              paymentConfirmed: true,
-              source: 'subscription-stream',
-            });
-          }
+          // Trust device subscription stream — verify lag must not keep channels locked.
+          await finalizePaymentSuccess(
+            {
+              active: true,
+              isActive: true,
+              expiresAt: payload.expiresAt ?? payload.expires_at ?? null,
+              planName: payload.planName ?? payload.plan_name ?? null,
+              planId: payload.planId ?? payload.plan_id ?? null,
+              amount: payload.amount ?? null,
+              startedAt: payload.startedAt ?? payload.started_at ?? null,
+              remainingDays: payload.remainingDays ?? payload.remaining_days ?? null,
+            },
+            payload.expiresAt ?? payload.expires_at ?? null,
+          );
+          console.log('[PremiumModal]', 'subscription_stream_active');
         } catch {
-          // ignore malformed stream payloads / transient verify errors
+          // ignore malformed stream payloads
         }
       })();
     };
@@ -809,7 +840,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       }
       closeSse();
     };
-  }, [visible, step, waitingDeviceId, closeSse, schedulePostPaymentActivationPolls]);
+  }, [visible, step, waitingDeviceId, closeSse, finalizePaymentSuccess]);
 
   /** Admin / gateway payment_success SSE — activate immediately without waiting for next poll. */
   useEffect(() => {
@@ -1252,6 +1283,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       <PaymentSuccessStep
                         details={successDetails}
                         onOpenChannel={handleOpenChannel}
+                        onDismiss={handleDismissSuccess}
                       />
                     )}
 

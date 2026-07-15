@@ -286,6 +286,9 @@ export function OsmaniAppProvider({ children }) {
   const applyInstantSubscriptionState = useCallback(async (hint, reason = 'instant') => {
     if (!hint || hint.active !== true) return null;
     const expiresAt = hint.expiresAt ?? null;
+    // Invalidate any in-flight reverify so a stale inactive result cannot re-lock
+    // channels right after payment / SSE / unlock-channels apply.
+    lastVerifyKeyRef.current += 1;
     isSubscribedRef.current = true;
     authoritativeInactiveRef.current = false;
     cacheTrustedActiveRef.current = false;
