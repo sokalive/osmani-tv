@@ -2293,15 +2293,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     );
   }
 
-  if (playbackSuppressed) {
-    return (
-      <View style={[styles.root, styles.gateScreen]}>
-        <ActivityIndicator color="#FBBF24" size="large" />
-        <Text style={styles.gateText}>Kifurushi kimekwisha…</Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.root}>
       <SecurityPlayerBanner />
