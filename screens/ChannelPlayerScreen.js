@@ -516,9 +516,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   );
   const emergencyInterruptOnceRef = useRef(false);
   const deviceIntelInterruptOnceRef = useRef(false);
-  /** True after hard expiry: no Video/WebView surfaces (buffers cleared by unmount). */
-  const [playbackSuppressed, setPlaybackSuppressed] = useState(false);
+  /** True after hard expiry or trial end: no Video/WebView surfaces (buffers cleared by unmount). */
   const hardWallClockExpiryDoneRef = useRef(false);
+  const trialPlaybackEndedRef = useRef(false);
   /** @type {React.MutableRefObject<ReturnType<typeof setInterval> | null>} */
   const premiumExpiryTickRef = useRef(null);
   const [expiryOverlay, setExpiryOverlay] = useState({
@@ -563,13 +563,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setPickerKind(null);
     playbackHideArmedRef.current = false;
     hardWallClockExpiryDoneRef.current = false;
+    trialPlaybackEndedRef.current = false;
     teardownDoneRef.current = false;
     exitInFlightRef.current = false;
     allowNavigationRemoveRef.current = false;
     playerLifecycleRef.current.tearingDown = false;
     setPlaybackSurfacesMounted(true);
     setPlayerShellHidden(false);
-    setPlaybackSuppressed(false);
     setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
     premiumGateSessionRef.current = { channelKey: '', granted: false };
     nativeStallRef.current = {
@@ -1523,7 +1523,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     logPlayerTeardown('expiry_wallclock_start');
     clearHideTimer();
     setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
-    setPlaybackSuppressed(true);
     setPickerKind(null);
     pickerKindRef.current = null;
     setIsBuffering(false);
@@ -1557,24 +1556,33 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, [clearHideTimer, navigation, reverifySubscription, runPlaybackTeardown]);
 
   const stopTrialPlayback = useCallback(async () => {
+    trialPlaybackEndedRef.current = true;
     clearHideTimer();
     setPickerKind(null);
     pickerKindRef.current = null;
-    setPlaybackSuppressed(true);
     setIsPlaying(false);
     setIsBuffering(false);
     await runPlaybackTeardown('trial_expired', { resetChrome: true });
   }, [clearHideTimer, runPlaybackTeardown]);
 
   const trialWatch = useTrialWatchSession({
-    enabled: viaTrialPlayback && accessAllowed && !playbackSuppressed,
+    enabled:
+      viaTrialPlayback &&
+      accessAllowed &&
+      !hardWallClockExpiryDoneRef.current &&
+      !trialPlaybackEndedRef.current,
     playbackKey: channelPlaybackKey,
     isSubscribed,
     freeMode,
     trialWatchSettings,
     initialBootstrap: trialBootstrapForSession,
     isPlaybackActive:
-      isPlaying && accessAllowed && Boolean(uri) && !playbackError && !playbackSuppressed,
+      isPlaying &&
+      accessAllowed &&
+      Boolean(uri) &&
+      !playbackError &&
+      !hardWallClockExpiryDoneRef.current &&
+      !trialPlaybackEndedRef.current,
     stopPlayback: stopTrialPlayback,
     onExpired: () => {
       /* User-intent only: no automatic payment popup on trial expiry. */
@@ -1584,7 +1592,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   });
 
   useEffect(() => {
-    if (!channelIsPremium || freeMode || !accessAllowed || playbackSuppressed) {
+    if (!channelIsPremium || freeMode || !accessAllowed || !isSubscribed) {
       if (premiumExpiryTickRef.current) {
         clearInterval(premiumExpiryTickRef.current);
         premiumExpiryTickRef.current = null;
@@ -1595,7 +1603,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return undefined;
     }
     const tick = () => {
-      if (hardWallClockExpiryDoneRef.current || playbackSuppressed) return;
+      if (hardWallClockExpiryDoneRef.current || trialPlaybackEndedRef.current) return;
       const expiresAt =
         subscriptionDetails?.expiresAt != null && String(subscriptionDetails.expiresAt).trim() !== ''
           ? subscriptionDetails.expiresAt
@@ -1638,7 +1646,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     channelIsPremium,
     freeMode,
     accessAllowed,
-    playbackSuppressed,
+    isSubscribed,
     subscriptionDetails,
     subscriptionExpiresAt,
     subscriptionVersion,
@@ -1646,7 +1654,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   ]);
 
   useEffect(() => {
-    if (!channelIsPremium || freeMode || !accessAllowed || playbackSuppressed) return undefined;
+    if (!channelIsPremium || freeMode || !accessAllowed || !isSubscribed) return undefined;
     const id = setInterval(() => {
       if (hardWallClockExpiryDoneRef.current) return;
       void (async () => {
@@ -1662,7 +1670,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       })();
     }, 120 * 1000);
     return () => clearInterval(id);
-  }, [channelIsPremium, freeMode, accessAllowed, playbackSuppressed, reverifySubscription]);
+  }, [channelIsPremium, freeMode, accessAllowed, isSubscribed, reverifySubscription]);
 
   useEffect(() => {
     if (!accessAllowed || !uri) return undefined;
