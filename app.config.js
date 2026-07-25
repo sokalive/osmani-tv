@@ -188,7 +188,8 @@ module.exports = {
         backgroundColor: '#000000',
       },
       /** Play Store VPS HTTPS release (v24). Legacy Render APKs keep prior native embeds. */
-      versionCode: 24,
+      /** v25: bake popup-free JS + ON_LOAD OTA; v24 CDN APK cannot self-migrate. */
+      versionCode: 25,
       /** Cold-start window color before React (pairs with native splash theme). */
       backgroundColor: '#FFFFFF',
       edgeToEdgeEnabled: true,
