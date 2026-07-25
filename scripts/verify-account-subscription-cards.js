@@ -35,8 +35,8 @@ const context = read('context/OsmaniAppContext.jsx');
 if (!account.includes('formatAccountPackageLabel')) fail('Account uses formatAccountPackageLabel');
 else pass('Account uses formatAccountPackageLabel');
 
-if (!account.includes('getBackendAnchoredRemainingMs')) fail('Account uses backend remaining anchor');
-else pass('Account uses backend remaining anchor');
+if (!account.includes('resolveAccountRemainingDays')) fail('Account uses bounded real remaining days');
+else pass('Account uses bounded real remaining days');
 
 if (!account.includes('lastDurationDaysRef')) fail('duration sticky ref required');
 else pass('duration sticky ref');
@@ -71,13 +71,12 @@ else pass('PremiumModal unlockChannels');
 const finalizeStart = premium.indexOf('const finalizePaymentSuccess');
 const finalizeEnd = premium.indexOf('const handleOpenChannel', finalizeStart);
 const finalizeBody = finalizeStart >= 0 ? premium.slice(finalizeStart, finalizeEnd) : '';
-const unlockBeforeRefresh =
+const instantUnlock =
   finalizeBody.includes('unlockChannels(forUnlock)') &&
-  finalizeBody.includes('void refreshSubscription()') &&
-  finalizeBody.indexOf('unlockChannels(forUnlock)') <
-    finalizeBody.indexOf('void refreshSubscription()');
-if (!unlockBeforeRefresh) fail('finalizePaymentSuccess must unlock before background refresh');
-else pass('payment unlock before background verify');
+  finalizeBody.includes('setStep(4)') &&
+  finalizeBody.indexOf('unlockChannels(forUnlock)') < finalizeBody.indexOf('setStep(4)');
+if (!instantUnlock) fail('finalizePaymentSuccess must unlock before success UI');
+else pass('payment unlock before success UI');
 
 if (!process.exitCode) {
   console.log('\n[verify-account-subscription-cards] ok');

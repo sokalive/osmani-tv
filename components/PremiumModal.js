@@ -44,7 +44,11 @@ import {
   runPaymentActivationTick,
   subscriptionHintFromPaymentStatusRaw,
 } from '../lib/paymentActivation';
-import { parseInstantSubscriptionFromSse } from '../lib/subscriptionSseInstant';
+import {
+  parseInstantSubscriptionFromSse,
+  pickSubscriptionSseDeviceId,
+  sseGrantTargetsThisDevice,
+} from '../lib/subscriptionSseInstant';
 import { registerDeviceIntelligence } from '../api/usersIntelligence';
 import {
   getCachedPaymentPlansSync,
@@ -70,6 +74,13 @@ import {
   mapWaitingStateToProgressStep,
   PaymentReconcileGuard,
 } from '../lib/paymentWaitingState';
+import {
+  ACTIVE_SUBSCRIPTION_PAYMENT_BLOCK_MESSAGE,
+  ACTIVE_SUBSCRIPTION_PAYMENT_BLOCK_TITLE,
+  classifyPaymentEntrySubscription,
+  PAYMENT_ENTRY_VERIFY_ERROR_MESSAGE,
+  PAYMENT_ENTRY_VERIFY_ERROR_TITLE,
+} from '../lib/paymentEntryGuard';
 
 const ACCENT = '#FACC15';
 const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
@@ -127,12 +138,36 @@ function formatPlanDuration(raw) {
   return `(${value.replace(/^\(|\)$/g, '')})`;
 }
 
+function pickPaymentSseOrderId(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  const nested =
+    payload.payload && typeof payload.payload === 'object'
+      ? payload.payload
+      : payload.data && typeof payload.data === 'object'
+        ? payload.data
+        : null;
+  const candidates = [payload, nested].filter(Boolean);
+  for (const inner of candidates) {
+    const raw =
+      inner.order_id ??
+      inner.orderId ??
+      inner.payment?.order_id ??
+      inner.payment?.orderId ??
+      inner.transaction?.order_id ??
+      inner.transaction?.orderId ??
+      null;
+    if (raw != null && String(raw).trim() !== '') return String(raw).trim();
+  }
+  return '';
+}
+
 /**
  * @param {{ visible: boolean; onClose: () => void; onUnlockSuccess?: () => void }} props
  */
 export default function PremiumModal({ visible, onClose, onUnlockSuccess, channelName = 'Chaneli Uliyofungua' }) {
   const insets = useSafeAreaInsets();
-  const { refreshSubscription, unlockChannels, availablePlans } = useOsmaniApp();
+  const { refreshSubscription, unlockChannels, availablePlans, isSubscribed } = useOsmaniApp();
+  const [paymentEntryGate, setPaymentEntryGate] = useState('checking');
   const [step, setStep] = useState(1);
   const [plans, setPlans] = useState(() => getCachedPaymentPlansSync() ?? []);
   const [plansLoading, setPlansLoading] = useState(() => !getCachedPaymentPlansSync()?.length);
@@ -152,6 +187,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [phoneGuardVisible, setPhoneGuardVisible] = useState(false);
   const [phoneGuardTitle, setPhoneGuardTitle] = useState('Taarifa');
   const [phoneGuardMessage, setPhoneGuardMessage] = useState('');
+  const [closeAfterGuardDialog, setCloseAfterGuardDialog] = useState(false);
   const [checkoutLogoUrl, setCheckoutLogoUrl] = useState(null);
   const [paymentProgressStep, setPaymentProgressStep] = useState(1);
   const [appWaitingState, setAppWaitingState] = useState(APP_WAITING_STATE.PAYMENT_PENDING);
@@ -214,6 +250,23 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     }
   }, []);
 
+  const showPaymentEntryDialog = useCallback((kind) => {
+    const active = kind === 'active';
+    setPaymentEntryGate(active ? 'blocked' : 'unavailable');
+    setPhoneGuardTitle(
+      active
+        ? ACTIVE_SUBSCRIPTION_PAYMENT_BLOCK_TITLE
+        : PAYMENT_ENTRY_VERIFY_ERROR_TITLE,
+    );
+    setPhoneGuardMessage(
+      active
+        ? ACTIVE_SUBSCRIPTION_PAYMENT_BLOCK_MESSAGE
+        : PAYMENT_ENTRY_VERIFY_ERROR_MESSAGE,
+    );
+    setCloseAfterGuardDialog(true);
+    setPhoneGuardVisible(true);
+  }, []);
+
   useLayoutEffect(() => {
     if (!visible) return;
     clearTimers();
@@ -231,6 +284,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setPhoneGuardVisible(false);
     setPhoneGuardTitle('Taarifa');
     setPhoneGuardMessage('');
+    setCloseAfterGuardDialog(false);
+    setPaymentEntryGate('checking');
     setPaymentProgressStep(1);
     setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
     reconcileGuardRef.current.reset();
@@ -246,10 +301,53 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   }, [visible, clearTimers, fadeAnim, slideAnim]);
 
   useEffect(() => {
+    if (!visible) return undefined;
+    let cancelled = false;
+    setPaymentEntryGate('checking');
+    // Hard block from live context — never open plans while subscribed, even if
+    // a slow/false-inactive verify would otherwise fail-open the gate.
+    if (isSubscribed === true) {
+      console.log('[PremiumModal]', 'payment_entry_gate', {
+        classification: 'active',
+        resolveSource: 'context:isSubscribed',
+      });
+      showPaymentEntryDialog('active');
+      return undefined;
+    }
+    void refreshSubscription('payment-entry-gate')
+      .then((result) => {
+        if (cancelled) return;
+        if (isSubscribed === true) {
+          showPaymentEntryDialog('active');
+          return;
+        }
+        const classification = classifyPaymentEntrySubscription(result);
+        console.log('[PremiumModal]', 'payment_entry_gate', {
+          classification,
+          resolveSource: result?.resolveSource ?? null,
+        });
+        if (classification === 'inactive') {
+          setPaymentEntryGate('allowed');
+          return;
+        }
+        showPaymentEntryDialog(classification);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.log('[PremiumModal]', 'payment_entry_gate_error', error?.message ?? error);
+        showPaymentEntryDialog('unknown');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, refreshSubscription, showPaymentEntryDialog, isSubscribed]);
+
+  useEffect(() => {
     if (!visible) {
       clearTimers();
       closeSse();
       doneRef.current = false;
+      setPaymentEntryGate('checking');
     }
   }, [visible, clearTimers, closeSse]);
 
@@ -276,7 +374,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   }, [step, ringRotate]);
 
   useEffect(() => {
-    if (!visible) return undefined;
+    if (!visible || paymentEntryGate !== 'allowed') return undefined;
     let cancelled = false;
     let spinnerCapTimer = null;
 
@@ -326,7 +424,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       cancelled = true;
       if (spinnerCapTimer) clearTimeout(spinnerCapTimer);
     };
-  }, [visible, availablePlans]);
+  }, [visible, availablePlans, paymentEntryGate]);
 
   /** Sync active checkout gateway (zenopay | sonicpesa | auraxpay) from admin API. */
   const reloadCheckoutConfig = useCallback(async () => {
@@ -911,19 +1009,44 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         console.log('[PremiumModal]', 'payment_sse', ev);
         void (async () => {
           try {
+            const payloadOrderId = pickPaymentSseOrderId(payload);
+            if (payloadOrderId && orderId && payloadOrderId !== orderId) {
+              console.log('[PremiumModal]', 'payment_sse_skipped_other_order', {
+                event: ev,
+                payloadOrderId,
+              });
+              return;
+            }
+            if (!(await sseGrantTargetsThisDevice(payload))) {
+              console.log('[PremiumModal]', 'payment_sse_skipped_other_device', { event: ev });
+              return;
+            }
+            const inner =
+              payload?.payload && typeof payload.payload === 'object'
+                ? payload.payload
+                : payload?.data && typeof payload.data === 'object'
+                  ? payload.data
+                  : payload;
+            const payloadDeviceId = pickSubscriptionSseDeviceId(inner);
+            const hasTrustedTarget =
+              Boolean(payloadDeviceId) || Boolean(payloadOrderId && orderId && payloadOrderId === orderId);
             const hint = parseInstantSubscriptionFromSse(payload, ev);
-            if (hint?.active === true) {
+            const orderMatched =
+              Boolean(payloadOrderId && orderId && payloadOrderId === orderId);
+            // Matching order_id on activation SSE is enough — do not wait for a
+            // slow/failed verify probe (previously added multi-second delay).
+            if (orderMatched || (hasTrustedTarget && hint?.active === true)) {
               await finalizePaymentSuccess(
                 {
-                  ...hint,
+                  ...(hint && typeof hint === 'object' ? hint : {}),
                   active: true,
                   isActive: true,
-                  expiresAt: hint.expiresAt ?? null,
+                  expiresAt: hint?.expiresAt ?? null,
                 },
-                hint.expiresAt ?? null,
+                hint?.expiresAt ?? null,
               );
               console.log('[PremiumModal]', 'payment_activation_success', {
-                source: `sse-payload:${ev}`,
+                source: orderMatched ? `sse-order:${ev}` : `sse-payload:${ev}`,
               });
               return;
             }
@@ -941,7 +1064,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     return () => {
       offs.forEach((off) => off());
     };
-  }, [visible, step, schedulePostPaymentActivationPolls, finalizePaymentSuccess]);
+  }, [visible, step, orderId, schedulePostPaymentActivationPolls, finalizePaymentSuccess]);
 
   const handleCancel = () => {
     clearTimers();
@@ -962,8 +1085,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   });
 
   const handleStep2Pay = async () => {
-    console.log('PAYMENT TRIGGERED');
     if (submitting || payInFlightRef.current) return;
+    if (paymentEntryGate !== 'allowed') {
+      showPaymentEntryDialog('unknown');
+      return;
+    }
     if (!isPhoneValid) {
       Alert.alert('', 'Weka namba sahihi ya simu');
       return;
@@ -972,8 +1098,32 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       Alert.alert('', 'Chagua mpango');
       return;
     }
-    payInFlightRef.current = true;
     setSubmitting(true);
+    let paymentGateResult;
+    try {
+      paymentGateResult = await refreshSubscription('payment-submit-gate');
+    } catch (error) {
+      console.log('[PremiumModal]', 'payment_submit_gate_error', error?.message ?? error);
+    }
+    const paymentGateClassification = classifyPaymentEntrySubscription(paymentGateResult);
+    // Open-gate already proved inactive this session. Definitive ACTIVE must still
+    // block. Transport/timeout "unknown" must NOT abort create-order — that left
+    // Lipia stuck on the phone step with no order (verify timeout on slow nets).
+    if (paymentGateClassification === 'active') {
+      setSubmitting(false);
+      showPaymentEntryDialog('active');
+      return;
+    }
+    if (paymentGateClassification !== 'inactive') {
+      console.log('[PremiumModal]', 'payment_submit_gate_soft_allow', {
+        classification: paymentGateClassification,
+        resolveSource: paymentGateResult?.resolveSource ?? null,
+        error: paymentGateResult?.error ?? null,
+      });
+    }
+
+    console.log('PAYMENT TRIGGERED');
+    payInFlightRef.current = true;
     const activeProvider = checkoutProvider;
     const normalizedPhone = phoneNumber.replace(/\s/g, '');
     let identity = identityPrefetchRef.current;
@@ -1025,6 +1175,15 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         amount: selectedPlan.price,
         device_id: deviceId,
         device_fingerprint: deviceFingerprint,
+        install_instance_id: identity.installInstanceId ?? null,
+        package_name: identity.packageName ?? null,
+        package_android_id: identity.packageAndroidId ?? null,
+        legacy_package_android_id: identity.legacyPackageAndroidId ?? null,
+        stable_hardware_id: identity.stableHardwareId ?? null,
+        displayed_account_id: identity.displayedAccountId ?? null,
+        subscription_device_id: identity.subscriptionDeviceId ?? deviceId,
+        legacy_device_fingerprint: identity.legacyDeviceFingerprint ?? null,
+        identity_candidates: identity.identityCandidates ?? [],
       };
       void cacheSecurityPhone(payPayload.phone);
       const startPayment = resolveCheckoutStartPayment(activeProvider);
@@ -1220,7 +1379,21 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       step === 2 && styles.step2AnimatedFill,
                     ]}
                   >
-                    {step === 1 && (
+                    {paymentEntryGate !== 'allowed' ? (
+                      <View style={styles.resultWrap}>
+                        {paymentEntryGate === 'checking' ? (
+                          <>
+                            <ActivityIndicator size="large" color={ACCENT} />
+                            <Text style={styles.titleCentered}>Inathibitisha kifurushi…</Text>
+                            <Text style={styles.mutedCenter}>
+                              Subiri kidogo kabla ya kuendelea.
+                            </Text>
+                          </>
+                        ) : null}
+                      </View>
+                    ) : null}
+
+                    {paymentEntryGate === 'allowed' && step === 1 && (
                       <View>
                         <View style={styles.crownHaloWrap}>
                           <View style={styles.crownGlow} />
@@ -1287,7 +1460,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       </View>
                     )}
 
-                    {step === 2 && (
+                    {paymentEntryGate === 'allowed' && step === 2 && (
                       <View style={styles.step2OuterPadding}>
                         <View style={styles.step2TopSection}>
                           <View style={styles.titleRow}>
@@ -1405,7 +1578,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       </View>
                     )}
 
-                    {step === 3 && (
+                    {paymentEntryGate === 'allowed' && step === 3 && (
                       <PaymentWaitingStep
                         selectedAmountDisplay={selectedAmountDisplay}
                         orderId={orderId}
@@ -1418,7 +1591,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       />
                     )}
 
-                    {step === 4 && (
+                    {paymentEntryGate === 'allowed' && step === 4 && (
                       <PaymentSuccessStep
                         details={successDetails}
                         onOpenChannel={handleOpenChannel}
@@ -1426,7 +1599,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       />
                     )}
 
-                    {step === 5 && (
+                    {paymentEntryGate === 'allowed' && step === 5 && (
                       <View style={styles.resultWrap}>
                         <View style={styles.failIconHalo}>
                           <View style={styles.failIconCircle}>
@@ -1456,7 +1629,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                   style={styles.ctaDock}
                   pointerEvents={step === 1 || step === 3 ? 'box-none' : 'none'}
                 >
-                  {step === 1 ? (
+                  {paymentEntryGate === 'allowed' && step === 1 ? (
                     <Pressable
                       style={[styles.ctaWrap, styles.ctaDockBtn, (!selectedPlan || plansLoading) && styles.ctaDisabled]}
                       disabled={!selectedPlan || plansLoading}
@@ -1472,7 +1645,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       </LinearGradient>
                     </Pressable>
                   ) : null}
-                  {step === 3 ? (
+                  {paymentEntryGate === 'allowed' && step === 3 ? (
                     <Pressable style={[styles.cancelBtn, styles.ctaDockBtn]} onPress={handleCancel}>
                       <Text style={styles.cancelBtnText}>GHAIRI</Text>
                     </Pressable>
@@ -1490,7 +1663,13 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       message={phoneGuardMessage}
       iconName="warning"
       primaryLabel="Sawa"
-      onSawa={() => setPhoneGuardVisible(false)}
+      onSawa={() => {
+        setPhoneGuardVisible(false);
+        if (closeAfterGuardDialog) {
+          setCloseAfterGuardDialog(false);
+          onClose?.();
+        }
+      }}
     />
     </>
   );

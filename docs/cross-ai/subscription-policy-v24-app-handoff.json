@@ -1,0 +1,117 @@
+{
+  "title": "Osmani TV v24 subscription policy — App/Admin production handoff",
+  "created_at": "2026-07-25",
+  "runtime": "1.8.2",
+  "version_code": 24,
+  "deployment_order": [
+    "Admin AI deploys and verifies backend/database/payment/VPS",
+    "App AI performs final production E2E",
+    "App AI pushes GitHub",
+    "App AI publishes OTA"
+  ],
+  "safety": {
+    "delete_existing_subscriptions": false,
+    "rewrite_existing_expiry": false,
+    "stack_existing_entitlements": false,
+    "migration": "additive and transparent"
+  },
+  "payment_entry_contract": {
+    "verify_endpoint": "POST /api/subscription/verify",
+    "app_behavior": "Fail closed. Package prices and payment methods remain hidden until the current device identity receives an authoritative active=false response.",
+    "active_response": {
+      "active": true,
+      "required_behavior": "Block checkout and show the supplied Swahili active-package dialog."
+    },
+    "create_order_server_guard": {
+      "required": true,
+      "semantics": "Atomically reject create-order if the resolved device/install identity already has any active subscription. This closes the verify-to-create race.",
+      "must_not_key_on": ["phone"],
+      "recommended_http_status": 409,
+      "recommended_code": "DEVICE_ALREADY_HAS_ACTIVE_SUBSCRIPTION"
+    }
+  },
+  "same_phone_identity_contract": {
+    "rule": "A payment phone is transaction contact data, never subscription ownership.",
+    "remove_or_disable": [
+      "PHONE_ALREADY_HAS_ACTIVE_SUBSCRIPTION",
+      "phone_subscription_conflict"
+    ],
+    "identity_priority_is_backend_authoritative": true,
+    "app_create_order_fields": [
+      "device_id",
+      "device_fingerprint",
+      "subscription_device_id",
+      "displayed_account_id",
+      "package_android_id",
+      "legacy_package_android_id",
+      "stable_hardware_id",
+      "install_instance_id",
+      "package_name",
+      "legacy_device_fingerprint",
+      "identity_candidates"
+    ],
+    "compatibility": "Do not rebind or delete existing subscriptions during identity strengthening."
+  },
+  "account_display_contract": {
+    "verify_fields": [
+      "active",
+      "plan_id",
+      "plan_name",
+      "plan_duration_days",
+      "expires_at",
+      "remaining_days",
+      "remaining_seconds",
+      "server_time"
+    ],
+    "rule": "Return metadata for the one currently assigned subscription, not accumulated historical plan durations.",
+    "app_display": "Remaining and duration values are capped to the matched assigned plan. This is display-only and never mutates subscription data."
+  },
+  "new_expiry_contract": {
+    "applies_to": "subscriptions created after Admin migration only",
+    "timezone": "Africa/Dar_es_Salaam",
+    "local_expiry_time": "00:00:00",
+    "example": {
+      "purchase_local_date": "2026-07-25",
+      "plan_duration_days": 7,
+      "expires_local": "2026-08-01T00:00:00+03:00",
+      "expires_utc": "2026-07-31T21:00:00.000Z"
+    },
+    "existing_expiry_dates_unchanged": true
+  },
+  "activation_contract": {
+    "target_after_provider_confirmation_ms": 2000,
+    "payment_status_required_fields": [
+      "order_id",
+      "status",
+      "app_waiting_state",
+      "activation_state",
+      "entitlement_active",
+      "device_id",
+      "expires_at",
+      "plan_id",
+      "plan_name",
+      "plan_duration_days"
+    ],
+    "terminal_success": {
+      "app_waiting_state": "ACTIVE",
+      "entitlement_active": true
+    },
+    "sse_required": {
+      "events": [
+        "payment_success",
+        "payment_completed",
+        "subscription_activated"
+      ],
+      "targeting": "Every event must include order_id and/or a strong device identity. Untargeted global success events are not trusted for instant unlock."
+    }
+  },
+  "admin_confirmation_required_before_ota": [
+    "production_deployed",
+    "database_migrated_without_rewriting_existing_expiry",
+    "subscription_engine_verified",
+    "payment_engine_verified",
+    "TSh 1000 / 3 Days plan visible",
+    "same phone can create independent device-bound subscriptions",
+    "active-device create-order atomically rejected"
+  ]
+}

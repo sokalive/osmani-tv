@@ -249,6 +249,41 @@ function buildCreateOrderPayload(payload, provider) {
     ...(payload.device_fingerprint != null
       ? { device_fingerprint: payload.device_fingerprint, deviceFingerprint: payload.device_fingerprint }
       : {}),
+    install_instance_id: payload.install_instance_id ?? payload.installInstanceId ?? null,
+    installInstanceId: payload.install_instance_id ?? payload.installInstanceId ?? null,
+    package_name: payload.package_name ?? payload.packageName ?? null,
+    packageName: payload.package_name ?? payload.packageName ?? null,
+    package_android_id: payload.package_android_id ?? payload.packageAndroidId ?? null,
+    packageAndroidId: payload.package_android_id ?? payload.packageAndroidId ?? null,
+    legacy_package_android_id:
+      payload.legacy_package_android_id ?? payload.legacyPackageAndroidId ?? null,
+    legacyPackageAndroidId:
+      payload.legacy_package_android_id ?? payload.legacyPackageAndroidId ?? null,
+    stable_hardware_id: payload.stable_hardware_id ?? payload.stableHardwareId ?? null,
+    stableHardwareId: payload.stable_hardware_id ?? payload.stableHardwareId ?? null,
+    displayed_account_id:
+      payload.displayed_account_id ?? payload.displayedAccountId ?? null,
+    displayedAccountId:
+      payload.displayed_account_id ?? payload.displayedAccountId ?? null,
+    subscription_device_id:
+      payload.subscription_device_id ?? payload.subscriptionDeviceId ?? null,
+    subscriptionDeviceId:
+      payload.subscription_device_id ?? payload.subscriptionDeviceId ?? null,
+    legacy_device_fingerprint:
+      payload.legacy_device_fingerprint ?? payload.legacyDeviceFingerprint ?? null,
+    legacyDeviceFingerprint:
+      payload.legacy_device_fingerprint ?? payload.legacyDeviceFingerprint ?? null,
+    identity_candidates: (
+      Array.isArray(payload.identity_candidates)
+        ? payload.identity_candidates
+        : Array.isArray(payload.identityCandidates)
+          ? payload.identityCandidates
+          : []
+    ).map((candidate) => ({
+      role: candidate?.role ?? null,
+      device_id: candidate?.device_id ?? candidate?.deviceId ?? null,
+      deviceId: candidate?.device_id ?? candidate?.deviceId ?? null,
+    })),
   };
 }
 

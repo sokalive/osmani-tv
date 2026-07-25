@@ -61,9 +61,9 @@ const progress = computeSubscriptionProgress({
 });
 if (!progress.ok) fail('stacked progress should be ok');
 else pass('stacked progress bar ok');
-if (progress.remainingDays < 20 || progress.remainingDays > 22) {
-  fail(`stacked remainingDays expected ~21, got ${progress.remainingDays}`);
-} else pass('stacked remaining days align with expiry');
+if (progress.remainingDays !== 7) {
+  fail(`stacked visual remainingDays must cap to assigned plan 7, got ${progress.remainingDays}`);
+} else pass('stacked entitlement is display-capped to assigned plan');
 
 const remMs = getServerAnchoredRemainingMs({
   expiresAt,

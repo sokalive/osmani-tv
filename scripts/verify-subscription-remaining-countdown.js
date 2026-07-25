@@ -70,9 +70,9 @@ if (!screen.includes('Muda Uliobaki wa Kifurushi')) {
 if (screen.includes('Channel Zilizofunguka')) {
   fail('old channel count label must be removed');
 } else pass('channel count label removed');
-if (!screen.includes('formatSubscriptionRemainingCountdown')) {
-  fail('account screen must use countdown formatter');
-} else pass('account screen uses formatter');
+if (!screen.includes('formatAccountRemainingDays')) {
+  fail('account screen must use bounded calendar-day formatter');
+} else pass('account screen uses bounded calendar-day formatter');
 
 if (!process.exitCode) {
   console.log('\n[verify-subscription-remaining-countdown] ok');

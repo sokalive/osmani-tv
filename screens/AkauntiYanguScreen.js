@@ -34,7 +34,7 @@ import {
   writeOfferCodeCooldownEndMs,
 } from '../lib/offerCodeCooldown';
 import { getDeviceLabel } from '../lib/deviceLabel';
-import { computeSubscriptionProgress, getBackendAnchoredRemainingMs } from '../lib/subscriptionMath';
+import { computeSubscriptionProgress } from '../lib/subscriptionMath';
 import {
   resolveCanonicalExpiresAt,
   resolveDisplayDurationDays,
@@ -43,7 +43,10 @@ import {
   buildAccountDisplayDetails,
   enrichSubscriptionDetailsForDisplay,
   formatAccountPackageLabel,
+  resolveAccountRemainingDays,
+  resolveAssignedPlanDurationDays,
 } from '../lib/accountSubscriptionDisplay';
+import { formatAccountRemainingDays } from '../lib/accountRemainingDisplay';
 import { readHydratableSubscriptionCache } from '../lib/subscriptionCacheHydrate';
 import { subscriptionDetailsFromPlanSnapshot } from '../lib/subscriptionDetailsMerge';
 import {
@@ -51,7 +54,6 @@ import {
   hydratePaymentPlansCacheFromStorage,
   refreshPaymentPlansCache,
 } from '../lib/paymentPlansCache';
-import { formatSubscriptionRemainingCountdown } from '../lib/formatSubscriptionRemaining';
 import { traceAccountDisplay } from '../lib/accountDisplayTrace';
 import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
 
@@ -91,7 +93,7 @@ function StatCard({ icon, value, label }) {
 
 /** Package length in days from verify payload (null when absent). */
 function resolvePlanDurationDays(displayDetails) {
-  return resolveDisplayDurationDays(displayDetails);
+  return displayDetails?.assignedPlanDurationDays ?? resolveDisplayDurationDays(displayDetails);
 }
 
 function formatOfferCooldownMmSs(totalSeconds) {
@@ -225,23 +227,31 @@ export default function AkauntiYanguScreen() {
     deviceIdFull.length >= 8 ? deviceIdFull.slice(0, 8).toUpperCase() : deviceIdFull || '—';
 
   // ---- Card-level derived values (data binding only) -----------------
-  const progress = useMemo(
-    () =>
-      computeSubscriptionProgress({
-        startedAt: displayDetails?.startedAt ?? null,
-        periodStartAt: displayDetails?.periodStartAt ?? null,
-        expiresAt: canonicalExpiresAt,
-        planDurationDays: displayDetails?.planDurationDays ?? null,
-        displayDurationDays: displayDetails?.displayDurationDays ?? null,
-        remainingSeconds:
-          displayDetails?.remainingSeconds ?? displayDetails?.remaining_seconds ?? null,
-        remainingDays: displayDetails?.remainingDays ?? displayDetails?.remaining_days ?? null,
-        serverTime: displayDetails?.serverTime ?? null,
-        serverTimeFetchedAt: displayDetails?.serverTimeFetchedAt ?? null,
-        nowMsOverride: tickNowMs,
-      }),
-    [displayDetails, canonicalExpiresAt, tickNowMs],
-  );
+  const progress = useMemo(() => {
+    const base = computeSubscriptionProgress({
+      startedAt: displayDetails?.startedAt ?? null,
+      periodStartAt: displayDetails?.periodStartAt ?? null,
+      expiresAt: canonicalExpiresAt,
+      planDurationDays: resolveAssignedPlanDurationDays(displayDetails, catalogPlans),
+      displayDurationDays: null,
+      remainingSeconds:
+        displayDetails?.remainingSeconds ?? displayDetails?.remaining_seconds ?? null,
+      remainingDays: displayDetails?.remainingDays ?? displayDetails?.remaining_days ?? null,
+      serverTime: displayDetails?.serverTime ?? null,
+      serverTimeFetchedAt: displayDetails?.serverTimeFetchedAt ?? null,
+      nowMsOverride: tickNowMs,
+    });
+    const accountDays = resolveAccountRemainingDays(
+      displayDetails,
+      canonicalExpiresAt,
+      catalogPlans,
+      tickNowMs,
+    );
+    if (accountDays != null && accountDays > 0) {
+      return { ...base, remainingDays: accountDays };
+    }
+    return base;
+  }, [displayDetails, canonicalExpiresAt, catalogPlans, tickNowMs]);
 
   // Card 1: Malipo / Kifurushi — package name + amount; sticky when refresh omits fields.
   const paymentValue = useMemo(() => {
@@ -254,32 +264,30 @@ export default function AkauntiYanguScreen() {
     return lastPackageLabelRef.current ?? '—';
   }, [isSubscribed, displayDetails, catalogPlans]);
 
-  // Card 2: Muda Uliobaki wa Kifurushi — backend-anchored countdown (remaining_seconds first).
+  // Card 2: real calendar days remaining, capped to the currently assigned plan.
+  // This is display-only and never changes the stored subscription or expiry.
   const remainingCountdownValue = useMemo(() => {
     if (!isSubscribed) return '—';
     if (!canonicalExpiresAt) return '—';
-    const remainingMs = getBackendAnchoredRemainingMs({
-      expiresAt: canonicalExpiresAt,
-      remainingSeconds:
-        displayDetails?.remainingSeconds ?? displayDetails?.remaining_seconds ?? null,
-      serverTime: displayDetails?.serverTime ?? null,
-      serverTimeFetchedAt: displayDetails?.serverTimeFetchedAt ?? null,
-      nowMsOverride: tickNowMs,
-    });
-    if (remainingMs == null) return '—';
-    return formatSubscriptionRemainingCountdown(remainingMs);
-  }, [isSubscribed, displayDetails, canonicalExpiresAt, tickNowMs]);
+    const days = resolveAccountRemainingDays(
+      displayDetails,
+      canonicalExpiresAt,
+      catalogPlans,
+      tickNowMs,
+    );
+    return days == null ? '—' : formatAccountRemainingDays(days);
+  }, [isSubscribed, displayDetails, canonicalExpiresAt, catalogPlans, tickNowMs]);
 
   // Card 3: Muda wa Kifurushi — backend-aligned period length with catalog fill.
   const durationValue = useMemo(() => {
     if (!isSubscribed) return '—';
-    const days = resolvePlanDurationDays(displayDetails);
+    const days = resolveAssignedPlanDurationDays(displayDetails, catalogPlans);
     if (days != null) {
       lastDurationDaysRef.current = days;
       return String(days);
     }
     return lastDurationDaysRef.current != null ? String(lastDurationDaysRef.current) : '—';
-  }, [isSubscribed, displayDetails]);
+  }, [isSubscribed, displayDetails, catalogPlans]);
 
   // Card 5 (status)
   const statusLabel =
