@@ -4,9 +4,15 @@
 /**
  * Publish final Home expired-package popup removal — VPS v24 runtime 1.8.2.
  *
- * VPS v24 APK (versionCode 24) uses channel `vps-preview`.
- * Store / production AAB uses channel `production`.
- * Both must receive this OTA or the TransferredAwayModal stays on devices.
+ * CRITICAL: The production CDN APK (osmani-v24-1.8.2.apk) is baked with
+ * expo-channel-name **preview** (not vps-preview). Publishing only to
+ * vps-preview/production leaves every CDN VPS device on the embedded July 6
+ * bundle forever — checkForUpdate never sees the fix.
+ *
+ * Channels:
+ * - preview      — CDN / sideload VPS APK (versionCode 24)  ← PRIMARY
+ * - vps-preview  — EAS profile vps-preview builds
+ * - production   — Play Store / production AAB
  *
  * Usage: node scripts/publish-v24-kifurushi-kimekwisha-ota.js
  */
@@ -16,7 +22,7 @@ const fs = require('fs');
 const path = require('path');
 
 const RUNTIME = '1.8.2';
-const CHANNELS = ['vps-preview', 'production'];
+const CHANNELS = ['preview', 'vps-preview', 'production'];
 const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const MAX_ATTEMPTS = 4;
 const logPath = path.join(__dirname, '..', 'ota-publish-v24-kifurushi-kimekwisha.log');
