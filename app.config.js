@@ -143,8 +143,12 @@ module.exports = {
     updates: {
       enabled: true,
       url: EXPO_UPDATES_URL,
-      /** Expo rolls back to the embedded bundle after crash loops on a bad OTA. */
-      checkAutomatically: 'ON_ERROR_RECOVERY',
+      /**
+       * ON_LOAD: native layer checks for updates on every cold start so VPS
+       * users receive popup-removal OTAs without reinstall / clear-data.
+       * (Previously ON_ERROR_RECOVERY — updates only checked after crash loops.)
+       */
+      checkAutomatically: 'ON_LOAD',
       /** Wait up to 30s for an update on cold start before using the cached bundle. */
       fallbackToCacheTimeout: 30000,
     },

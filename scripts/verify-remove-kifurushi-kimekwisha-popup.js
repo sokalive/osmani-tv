@@ -101,6 +101,9 @@ if (!marker.includes('KIFURUSHI_KIMEKWISHA_GATE_REMOVED')) {
 if (!marker.includes('KIFURUSHI_KIMEKWISHA_POPUP_REMOVED_V2')) {
   fail('V2 popup-removal marker missing');
 } else pass('OTA V2 popup marker present');
+if (!marker.includes('KIFURUSHI_KIMEKWISHA_POPUP_REMOVED_V3')) {
+  fail('V3 OTA-reload marker missing');
+} else pass('OTA V3 popup marker present');
 
 const policy = read('lib/otaBootGatePolicy.js');
 if (!policy.includes('hasKifurushiKimekwishaGateRemoved')) {
@@ -109,6 +112,27 @@ if (!policy.includes('hasKifurushiKimekwishaGateRemoved')) {
 if (!policy.includes('hasKifurushiKimekwishaPopupRemovedV2')) {
   fail('otaBootGatePolicy must detect missing V2 popup marker');
 } else pass('V2 stale detection wired');
+if (!policy.includes('hasKifurushiKimekwishaPopupRemovedV3')) {
+  fail('otaBootGatePolicy must detect missing V3 OTA-reload marker');
+} else pass('V3 stale detection wired');
+
+const expoClient = read('lib/expoUpdatesClient.js');
+if (!expoClient.includes('reloadIfNew === true && fetch.isNew === true')) {
+  fail('expoUpdatesClient must reload whenever reloadIfNew and isNew (no embedded-only gate)');
+} else pass('OTA reload no longer gated on isEmbeddedLaunch alone');
+if (!expoClient.includes('session-hunt') || !expoClient.includes('client-init')) {
+  fail('expoUpdatesClient must hunt OTA on init and during session');
+} else pass('session OTA hunt wired');
+
+const splash = read('hooks/useStartupSplash.js');
+if (!splash.includes("reloadIfNew: true")) {
+  fail('splash OTA sync must reloadIfNew');
+} else pass('splash reloads when update available');
+
+const gate = read('lib/embeddedLaunchGate.js');
+if (gate.includes('shouldReloadAfterOtaFetch(staleAtStart)')) {
+  fail('embeddedLaunchGate must not skip reload when isEmbeddedLaunch is false');
+} else pass('boot gate always reloads new bundles');
 
 const guard = read('lib/subscriptionSseGuard.js');
 if (!/export function resolveSubscriptionLossModalReason[\s\S]*return null/.test(guard)) {

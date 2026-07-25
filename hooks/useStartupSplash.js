@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import { syncExpoUpdateBundle } from '../lib/expoUpdatesClient';
-import { shouldRunOtaBootGate } from '../lib/otaBootGatePolicy';
 import { logFirstLaunchBootDiagnostics } from '../lib/firstLaunchBootDiagnostics';
 import { STARTUP_SPLASH_MAX_MS, STARTUP_SPLASH_MIN_MS } from '../lib/startupSplashBoot';
 
@@ -35,9 +34,13 @@ export function useStartupSplash() {
 
       logFirstLaunchBootDiagnostics('splash_ready');
 
-      if (!shouldRunOtaBootGate()) {
-        void syncExpoUpdateBundle('splash').catch(() => null);
-      }
+      // Always fetch+reload when an update exists. Previous splash path omitted
+      // reloadIfNew, so VPS devices downloaded OTAs but kept running the
+      // embedded TransferredAwayModal until a lucky cold start.
+      void syncExpoUpdateBundle('splash', {
+        reloadIfNew: true,
+        staleAtSessionStart: true,
+      }).catch(() => null);
 
       await new Promise((resolve) => {
         requestAnimationFrame(() => requestAnimationFrame(resolve));
