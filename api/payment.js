@@ -10,10 +10,14 @@ import { readNativeAndroidVersionCode } from '../lib/playVpsApiHost';
 import { parsePaymentActivationStatus } from '../lib/paymentWaitingState';
 
 /**
- * MFALME parity: create-order must not abort while USSD/PIN is on the device.
- * Uses fetchAdminApiResponse with noTimeout (plain fetch semantics).
+ * Create-order must return an order_id quickly so the UI can leave Lipia
+ * and enter the waiting step. PIN/USSD continues on the handset after that —
+ * do NOT wait forever for the HTTP response (that stuck the Lipia spinner).
+ * On timeout, PremiumModal recovers into the orphan waiting / pending state.
  */
-export const PAYMENT_CREATE_ORDER_NO_TIMEOUT = true;
+export const PAYMENT_CREATE_ORDER_NO_TIMEOUT = false;
+/** Client abort for create-order. Long enough for slow mobile networks; short enough to never leave Lipia spinning. */
+export const PAYMENT_CREATE_ORDER_TIMEOUT_MS = 45_000;
 
 /**
  * Payment + subscription HTTP API (ZenoPay STK push).
@@ -260,6 +264,7 @@ async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
       body: bodyPayload,
       tag: 'payment-create-order',
       noTimeout: PAYMENT_CREATE_ORDER_NO_TIMEOUT,
+      timeoutMs: PAYMENT_CREATE_ORDER_TIMEOUT_MS,
     });
     last = attempt;
     if (isPhoneSubscriptionConflict(attempt.res.status, attempt.parsed)) {

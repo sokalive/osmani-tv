@@ -94,6 +94,8 @@ const POLL_MS = 1500;
 const ACTIVATION_AGGRESSIVE_MS = 120_000;
 /** Waiting window when create-order HTTP timed out but USSD/PIN may still be active. */
 const CREATE_ORDER_ORPHAN_WAIT_SEC = 300;
+/** Hard cap: Lipia spinner must never exceed this even if create-order hangs unexpectedly. */
+const LIPIA_SUBMITTING_WATCHDOG_MS = 50_000;
 
 /**
  * Local fallback used only when GET /api/payment-providers fails or
@@ -163,6 +165,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const sseRef = useRef(null);
   const doneRef = useRef(false);
   const payInFlightRef = useRef(false);
+  const lipiaWatchdogRef = useRef(null);
   const identityPrefetchRef = useRef(null);
   const reconcileGuardRef = useRef(new PaymentReconcileGuard());
   const pollStartedAtRef = useRef(0);
@@ -234,6 +237,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     pollStartedAtRef.current = 0;
     payInFlightRef.current = false;
     identityPrefetchRef.current = null;
+    if (lipiaWatchdogRef.current) {
+      clearTimeout(lipiaWatchdogRef.current);
+      lipiaWatchdogRef.current = null;
+    }
     fadeAnim.setValue(1);
     slideAnim.setValue(0);
   }, [visible, clearTimers, fadeAnim, slideAnim]);
@@ -758,11 +765,24 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     void pollOnce(orderId).finally(() => scheduleNextPoll(orderId));
 
     countdownTimerRef.current = setInterval(() => {
-      setRemainingSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+      setRemainingSeconds((prev) => {
+        if (prev <= 1) {
+          // Countdown exhausted — leave waiting UI; do not spin forever.
+          if (prev === 1 && !doneRef.current) {
+            queueMicrotask(() => {
+              if (!doneRef.current) {
+                handleFailed('Muda wa malipo umeisha. Kama umelipa, subiri kidogo au fungua tena.');
+              }
+            });
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
 
     return () => clearTimers();
-  }, [visible, step, orderId, clearTimers, pollOnce, scheduleNextPoll]);
+  }, [visible, step, orderId, clearTimers, pollOnce, scheduleNextPoll, handleFailed]);
 
   /** Foreground resume — reconcile immediately after PIN/USSD or webhook activation. */
   useEffect(() => {
@@ -957,6 +977,44 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     const activeProvider = checkoutProvider;
     const normalizedPhone = phoneNumber.replace(/\s/g, '');
     let identity = identityPrefetchRef.current;
+    /** Set true if Lipia watchdog already moved UI off the spinner. */
+    let lipiaReleasedByWatchdog = false;
+    if (lipiaWatchdogRef.current) {
+      clearTimeout(lipiaWatchdogRef.current);
+      lipiaWatchdogRef.current = null;
+    }
+    lipiaWatchdogRef.current = setTimeout(() => {
+      if (!payInFlightRef.current) return;
+      lipiaReleasedByWatchdog = true;
+      console.warn('[PremiumModal]', 'lipia_submitting_watchdog_fired', {
+        provider: activeProvider,
+        planId: selectedPlan?.id ?? null,
+      });
+      payInFlightRef.current = false;
+      setSubmitting(false);
+      const deviceId = identityPrefetchRef.current?.deviceId;
+      if (deviceId) {
+        doneRef.current = false;
+        setWaitingDeviceId(deviceId);
+        setOrderId(null);
+        setRemainingSeconds(CREATE_ORDER_ORPHAN_WAIT_SEC);
+        setPaymentProgressStep(1);
+        setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
+        reconcileGuardRef.current.reset();
+        pollStartedAtRef.current = Date.now();
+        setStep(3);
+        void reportPaymentTelemetry('lipia_submitting_watchdog', {
+          plan_id: selectedPlan?.id ?? null,
+          provider: activeProvider,
+        });
+      } else {
+        Alert.alert(
+          'Malipo',
+          'Malipo yanaweza kuwa yameanzishwa. Angalia simu yako kwa USSD/PIN, au jaribu tena.',
+        );
+      }
+    }, LIPIA_SUBMITTING_WATCHDOG_MS);
+
     try {
       identity = identity ?? (await getDeviceIdentity());
       identityPrefetchRef.current = identity;
@@ -972,13 +1030,27 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       const startPayment = resolveCheckoutStartPayment(activeProvider);
       console.log('[PremiumModal]', 'payment_start', { provider: activeProvider, planId: selectedPlan.id });
       const { order_id: oid, expiresInSeconds } = await startPayment(payPayload);
+      if (lipiaReleasedByWatchdog) {
+        // Late create-order success after watchdog — attach order to waiting UI.
+        if (oid) {
+          setOrderId(oid);
+          const wait =
+            typeof expiresInSeconds === 'number' && expiresInSeconds > 0
+              ? Math.floor(expiresInSeconds)
+              : CREATE_ORDER_ORPHAN_WAIT_SEC;
+          setRemainingSeconds(wait);
+          setWaitingDeviceId(deviceId);
+          console.log('[PremiumModal]', 'late_create_order_attached', { orderId: oid });
+        }
+        return;
+      }
       doneRef.current = false;
       setWaitingDeviceId(deviceId);
       setOrderId(oid);
       const wait =
         typeof expiresInSeconds === 'number' && expiresInSeconds > 0
           ? Math.floor(expiresInSeconds)
-          : 0;
+          : 180;
       setRemainingSeconds(wait);
       setPaymentProgressStep(1);
       setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
@@ -992,6 +1064,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         amount: selectedPlan.price,
       });
     } catch (e) {
+      if (lipiaReleasedByWatchdog) {
+        return;
+      }
       if (e instanceof PhoneSubscriptionConflictError || e?.name === 'PhoneSubscriptionConflictError') {
         const userMsg = e.userMessage ?? e.message ?? 'Namba hii tayari ina kifurushi hai.';
         setPhoneGuardTitle(e.title ?? 'Taarifa');
@@ -1063,8 +1138,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       });
       Alert.alert('Malipo', alertMsg);
     } finally {
-      setSubmitting(false);
-      payInFlightRef.current = false;
+      if (lipiaWatchdogRef.current) {
+        clearTimeout(lipiaWatchdogRef.current);
+        lipiaWatchdogRef.current = null;
+      }
+      if (!lipiaReleasedByWatchdog) {
+        setSubmitting(false);
+        payInFlightRef.current = false;
+      }
     }
   };
 
