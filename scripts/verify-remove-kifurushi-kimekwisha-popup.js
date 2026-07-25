@@ -104,6 +104,9 @@ if (!marker.includes('KIFURUSHI_KIMEKWISHA_POPUP_REMOVED_V2')) {
 if (!marker.includes('KIFURUSHI_KIMEKWISHA_POPUP_REMOVED_V3')) {
   fail('V3 OTA-reload marker missing');
 } else pass('OTA V3 popup marker present');
+if (!marker.includes('KIFURUSHI_KIMEKWISHA_POPUP_REMOVED_V4')) {
+  fail('V4 instrumentation marker missing');
+} else pass('OTA V4 popup marker present');
 
 const policy = read('lib/otaBootGatePolicy.js');
 if (!policy.includes('hasKifurushiKimekwishaGateRemoved')) {
@@ -115,6 +118,9 @@ if (!policy.includes('hasKifurushiKimekwishaPopupRemovedV2')) {
 if (!policy.includes('hasKifurushiKimekwishaPopupRemovedV3')) {
   fail('otaBootGatePolicy must detect missing V3 OTA-reload marker');
 } else pass('V3 stale detection wired');
+if (!policy.includes('hasKifurushiKimekwishaPopupRemovedV4')) {
+  fail('otaBootGatePolicy must detect missing V4 instrumentation marker');
+} else pass('V4 stale detection wired');
 
 const expoClient = read('lib/expoUpdatesClient.js');
 if (!expoClient.includes('reloadIfNew === true && fetch.isNew === true')) {
@@ -138,6 +144,10 @@ const guard = read('lib/subscriptionSseGuard.js');
 if (!/export function resolveSubscriptionLossModalReason[\s\S]*return null/.test(guard)) {
   fail('resolveSubscriptionLossModalReason must always return null');
 } else pass('loss modal reason always null');
+
+if (!guard.includes('callerStack') || !modal.includes('KIFURUSHI_POPUP_REQUEST_BLOCKED')) {
+  fail('popup-request stack-trace instrumentation missing');
+} else pass('popup-request stack-trace instrumentation wired');
 
 if (!player.includes('Hauna kifurushi hai')) {
   fail('premium access gate must remain');

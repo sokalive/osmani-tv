@@ -1783,6 +1783,8 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
                 },
               }}
               onReady={() => {
+                globalThis.__OSMANI_CURRENT_ROUTE__ =
+                  navigationRef.getCurrentRoute()?.name ?? null;
                 setNavigationRevision((n) => n + 1);
                 const pending = pendingOsmaniUrlRef.current;
                 if (pending) {
@@ -1790,7 +1792,11 @@ function AppShell({ navigationRevision, setNavigationRevision }) {
                   dispatchOsmaniDeepLink(pending);
                 }
               }}
-              onStateChange={() => setNavigationRevision((n) => n + 1)}
+              onStateChange={() => {
+                globalThis.__OSMANI_CURRENT_ROUTE__ =
+                  navigationRef.getCurrentRoute()?.name ?? null;
+                setNavigationRevision((n) => n + 1);
+              }}
             >
               <PhoneNumberGate>
                 <RootNavigator />
