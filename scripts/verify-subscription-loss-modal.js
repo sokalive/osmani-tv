@@ -99,10 +99,8 @@ function isExplicitSuspendedConfirmation(verifyResult) {
 }
 
 function resolveSubscriptionLossModalReason(verifyResult) {
-  if (!isConfirmedSubscriptionLoss(verifyResult)) return null;
-  if (isExplicitRevokedConfirmation(verifyResult)) return 'revoked';
-  if (isExplicitSuspendedConfirmation(verifyResult)) return 'suspended';
-  return 'expired';
+  void verifyResult;
+  return null;
 }
 
 const guard = read('lib/subscriptionSseGuard.js');
@@ -151,9 +149,9 @@ const expiredUser = {
   resolveSource: 'inactive',
   inactiveReason: 'expired',
 };
-if (resolveSubscriptionLossModalReason(expiredUser) !== 'expired') {
-  fail('sim: expired user must open expired modal');
-} else pass('sim: expired user — expired modal');
+if (resolveSubscriptionLossModalReason(expiredUser) !== null) {
+  fail('sim: expired user must never open loss modal');
+} else pass('sim: expired user — no modal');
 
 const revokedUser = {
   active: false,
@@ -162,9 +160,9 @@ const revokedUser = {
 };
 if (!isExplicitRevokedConfirmation(revokedUser)) fail('sim: revoked inactiveReason');
 else pass('sim: revoked inactiveReason confirmed');
-if (resolveSubscriptionLossModalReason(revokedUser) !== 'revoked') {
-  fail('sim: revoked user must open revoked modal');
-} else pass('sim: revoked user — revoked modal');
+if (resolveSubscriptionLossModalReason(revokedUser) !== null) {
+  fail('sim: revoked user must never open loss modal');
+} else pass('sim: revoked user — no modal');
 
 const revokedByStatus = {
   active: false,
@@ -174,18 +172,18 @@ const revokedByStatus = {
 };
 if (!isExplicitRevokedConfirmation(revokedByStatus)) fail('sim: revoked status');
 else pass('sim: revoked status confirmed');
-if (resolveSubscriptionLossModalReason(revokedByStatus) !== 'revoked') {
-  fail('sim: status=revoked must open revoked modal');
-} else pass('sim: status=revoked — revoked modal');
+if (resolveSubscriptionLossModalReason(revokedByStatus) !== null) {
+  fail('sim: status=revoked must never open loss modal');
+} else pass('sim: status=revoked — no modal');
 
 const suspendedUser = {
   active: false,
   resolveSource: 'inactive',
   inactiveReason: 'suspended',
 };
-if (resolveSubscriptionLossModalReason(suspendedUser) !== 'suspended') {
-  fail('sim: suspended user must open suspended modal');
-} else pass('sim: suspended user — suspended modal');
+if (resolveSubscriptionLossModalReason(suspendedUser) !== null) {
+  fail('sim: suspended user must never open loss modal');
+} else pass('sim: suspended user — no modal');
 
 const http502 = { active: false, error: 'HTTP 502', resolveSource: 'transport:http' };
 if (isConfirmedSubscriptionLoss(http502)) fail('sim: 502 must not be confirmed loss');
@@ -242,9 +240,9 @@ const verifyRetryAmbiguous = {
 if (isExplicitRevokedConfirmation(verifyRetryAmbiguous)) {
   fail('sim: code/reason fields must not confirm revoked');
 } else pass('sim: ambiguous code/reason — not revoked');
-if (resolveSubscriptionLossModalReason(verifyRetryAmbiguous) !== 'expired') {
-  fail('sim: ambiguous inactive must default expired not revoked');
-} else pass('sim: verify retry ambiguous — expired modal only');
+if (resolveSubscriptionLossModalReason(verifyRetryAmbiguous) !== null) {
+  fail('sim: ambiguous inactive must never open loss modal');
+} else pass('sim: verify retry ambiguous — no modal');
 
 const falseAdminStatus = {
   active: false,

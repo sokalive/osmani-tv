@@ -65,14 +65,8 @@ function isExplicitRevokedInactiveReason(reason) {
 }
 
 function resolveSubscriptionLossModalReason(verifyResult) {
-  if (!isConfirmedSubscriptionLoss(verifyResult)) return null;
-  const reason = String(verifyResult.inactiveReason ?? '').toLowerCase();
-  const status = String(verifyResult.raw?.status ?? '').toLowerCase();
-  if (reason === 'revoked' || status === 'revoked') return 'revoked';
-  const suspended =
-    reason === 'suspended' || status === 'suspended';
-  if (suspended) return 'suspended';
-  return 'expired';
+  void verifyResult;
+  return null;
 }
 
 const sub = read('api/subscription.js');
@@ -116,14 +110,14 @@ const trueRevoked = {
 if (!isConfirmedSubscriptionLoss(trueRevoked)) fail('sim: real revoked must be confirmed loss');
 else pass('sim: real revoked is confirmed loss');
 
-if (resolveSubscriptionLossModalReason(trueRevoked) !== 'revoked') {
-  fail('sim: explicit revoked reason must map to revoked modal');
-} else pass('sim: explicit revoked maps to revoked modal');
+if (resolveSubscriptionLossModalReason(trueRevoked) !== null) {
+  fail('sim: explicit revoked must never open loss modal');
+} else pass('sim: explicit revoked — no modal');
 
 const ambiguousInactive = { active: false, resolveSource: 'inactive', inactiveReason: null };
-if (resolveSubscriptionLossModalReason(ambiguousInactive) !== 'expired') {
-  fail('sim: ambiguous inactive must default expired not revoked');
-} else pass('sim: ambiguous inactive defaults expired');
+if (resolveSubscriptionLossModalReason(ambiguousInactive) !== null) {
+  fail('sim: ambiguous inactive must never open loss modal');
+} else pass('sim: ambiguous inactive — no modal');
 
 const falseCodeRevoked = {
   active: false,
@@ -131,9 +125,9 @@ const falseCodeRevoked = {
   inactiveReason: null,
   raw: { code: 'SUBSCRIPTION_REVOKED' },
 };
-if (resolveSubscriptionLossModalReason(falseCodeRevoked) !== 'expired') {
-  fail('sim: code field alone must not open revoked modal');
-} else pass('sim: code-only hint defaults expired');
+if (resolveSubscriptionLossModalReason(falseCodeRevoked) !== null) {
+  fail('sim: code field alone must never open loss modal');
+} else pass('sim: code-only hint — no modal');
 
 const preserved = {
   active: true,

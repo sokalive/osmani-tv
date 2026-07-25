@@ -181,8 +181,6 @@ export function OsmaniAppProvider({ children }) {
   const [catalogRevision, setCatalogRevision] = useState(0);
   /** True after first successful network channel fetch — gates access badges to avoid stale disk flicker. */
   const [catalogAccessReady, setCatalogAccessReady] = useState(false);
-  /** Set when the backend reports the subscription is no longer active on this device. */
-  const [revokedReason, setRevokedReason] = useState(null);
   /** Source device: transfer-out success popup (replaces transferred TransferredAwayModal). */
   const [sourceTransferSuccessVisible, setSourceTransferSuccessVisible] = useState(false);
   /** Active `transfer_requested` payload (source-device approval popup). */
@@ -294,7 +292,6 @@ export function OsmaniAppProvider({ children }) {
     cacheTrustedActiveRef.current = false;
     setIsSubscribed(true);
     setSubscriptionExpiresAt(expiresAt);
-    setRevokedReason(null);
 
     const catalogPlans = [
       ...(Array.isArray(hint.plans) ? hint.plans : []),
@@ -688,7 +685,6 @@ export function OsmaniAppProvider({ children }) {
         }
         setSubscriptionVersion((v) => v + 1);
         if (active) {
-          setRevokedReason(null);
           let planSnapshot = extractPlanSnapshotFromDetails(mergedDetails);
           if (!planSnapshot && effectiveResult.transportPreserved === true) {
             const cachedSnap = await readSubscriptionCache();
@@ -1702,7 +1698,6 @@ export function OsmaniAppProvider({ children }) {
         void tryInstantApplyFromSse('transfer_completed', payload);
         const r = await reverifySubscription('sse:transfer_completed');
         if (r?.active === true) {
-          setRevokedReason(null);
           showActivationSuccess(r, 'transfer');
         }
       })();
@@ -1718,7 +1713,6 @@ export function OsmaniAppProvider({ children }) {
       void tryInstantApplyFromSse('transfer_approved', payload);
       void reverifySubscription('sse:transfer_approved').then((r) => {
         if (r?.active === true) {
-          setRevokedReason(null);
           showActivationSuccess(r, 'transfer');
         }
       });
@@ -1943,10 +1937,6 @@ export function OsmaniAppProvider({ children }) {
     };
   }, [refresh, reverifySubscription]);
 
-  const dismissRevoked = useCallback(() => {
-    setRevokedReason(null);
-  }, []);
-
   /** Drop local active subscription immediately — cache, refs, and UI gates. */
   const clearLocalActiveSubscription = useCallback(async (reason = 'manual') => {
     isSubscribedRef.current = false;
@@ -1954,7 +1944,6 @@ export function OsmaniAppProvider({ children }) {
     setSubscriptionExpiresAt(null);
     setSubscriptionDetails(null);
     setSubscriptionVersion((v) => v + 1);
-    setRevokedReason(null);
     try {
       await clearSubscriptionCache(`clear-local:${reason}`);
     } catch {
@@ -2130,9 +2119,7 @@ export function OsmaniAppProvider({ children }) {
       refreshSubscription: reverifySubscription,
       verifySubscriptionBeforePlay: gateForPlayback,
       unlockChannels,
-      // revoke / transfer
-      revokedReason,
-      dismissRevoked,
+      // transfer
       sourceTransferSuccessVisible,
       applySourceTransferCompleted,
       dismissSourceTransferSuccess,
@@ -2194,8 +2181,6 @@ export function OsmaniAppProvider({ children }) {
       reverifySubscription,
       gateForPlayback,
       unlockChannels,
-      revokedReason,
-      dismissRevoked,
       sourceTransferSuccessVisible,
       applySourceTransferCompleted,
       dismissSourceTransferSuccess,
