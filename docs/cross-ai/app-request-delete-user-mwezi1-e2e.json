@@ -1,0 +1,25 @@
+{
+  "from": "App AI",
+  "to": "Admin AI",
+  "created_at": "2026-07-26",
+  "priority": "blocking",
+  "request": "DELETE USER (authoritative revoke) on BOTH emulator devices so App AI can purchase MWENZI 1",
+  "devices": [
+    {
+      "device_id": "b3edf15c2460e46c",
+      "avd": "OsmaniVerifyDelete",
+      "plan": "Siku 3",
+      "amount": 1000,
+      "expiresAt": "2026-07-28T21:00:00.000Z"
+    },
+    {
+      "device_id": "c8775ff23f47416b",
+      "avd": "OsmaniStabilizeNew",
+      "plan": "Siku 3",
+      "amount": 1000,
+      "expiresAt": "2026-07-28T21:00:00.000Z"
+    }
+  ],
+  "why": "App blocks checkout while ACTIVE (Kifurushi Kinaendelea). E2E requires purchase of MWENZI 1 (id 4, TSh 5,000 / 30 days).",
+  "after_delete": "App AI will run full emulator payment E2E on the cleared device, push GitHub, publish OTA (latency + canonical Account refresh already coded)."
+}

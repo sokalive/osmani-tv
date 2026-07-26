@@ -136,6 +136,7 @@ export default function AkauntiYanguScreen() {
     refreshSubscription,
     showActivationSuccess,
     applyInstantSubscriptionState,
+    isWithinInstantUnlockGrace,
   } = useOsmaniApp();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
 
@@ -205,12 +206,18 @@ export default function AkauntiYanguScreen() {
             ? subscriptionDetailsFromPlanSnapshot(cached.planSnapshot, cached.expiresAt)
             : null;
           if (!snap) return;
-          const label = formatAccountPackagePriceLabel(snap, catalogPlans);
-          if (label) lastPackageLabelRef.current = label;
-          const days = resolvePlanDurationDays(
-            buildAccountDisplayDetails(snap, cached?.expiresAt ?? null, catalogPlans),
-          );
-          if (days != null) lastDurationDaysRef.current = days;
+          // Never overwrite sticky labels from disk when live verify already has values —
+          // stale planSnapshot (old package mapping) would show wrong Price/Duration.
+          if (!lastPackageLabelRef.current) {
+            const label = formatAccountPackagePriceLabel(snap, catalogPlans);
+            if (label) lastPackageLabelRef.current = label;
+          }
+          if (lastDurationDaysRef.current == null) {
+            const days = resolvePlanDurationDays(
+              buildAccountDisplayDetails(snap, cached?.expiresAt ?? null, catalogPlans),
+            );
+            if (days != null) lastDurationDaysRef.current = days;
+          }
         } catch {
           // non-fatal
         }
@@ -345,7 +352,11 @@ export default function AkauntiYanguScreen() {
   useFocusEffect(
     useCallback(() => {
       setAccountUpdateSectionKey((k) => k + 1);
-      void refreshSubscription();
+      // Skip reverify during instant unlock grace — unlock already wrote canonical
+      // boxes; a lagging inactive verify would only add visible wait/flicker.
+      if (!isWithinInstantUnlockGrace?.()) {
+        void refreshSubscription();
+      }
       void syncCooldownFromStorage();
       void (async () => {
         const cached = getCachedPaymentPlansSync();
@@ -364,7 +375,7 @@ export default function AkauntiYanguScreen() {
           setDeviceIdFull('');
         }
       })();
-    }, [refreshSubscription, syncCooldownFromStorage]),
+    }, [refreshSubscription, syncCooldownFromStorage, isWithinInstantUnlockGrace]),
   );
 
   const handleCopyDeviceId = useCallback(async () => {

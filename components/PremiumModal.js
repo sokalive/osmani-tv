@@ -213,18 +213,24 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const pollStartedAtRef = useRef(0);
   const checkoutProviderRef = useRef('zenopay');
 
-  const animateStepChange = useCallback(() => {
+  const animateStepChange = useCallback((nextStep) => {
+    // Hongera must appear instantly — no fade lag after payment confirm.
+    if (nextStep === 4) {
+      fadeAnim.setValue(1);
+      slideAnim.setValue(0);
+      return;
+    }
     fadeAnim.setValue(0);
     slideAnim.setValue(12);
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 240,
+        duration: 160,
         useNativeDriver: true,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 240,
+        duration: 160,
         useNativeDriver: true,
       }),
     ]).start();
@@ -380,7 +386,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   }, [visible, clearTimers, closeSse]);
 
   useEffect(() => {
-    animateStepChange();
+    animateStepChange(step);
   }, [step, animateStepChange]);
 
   useEffect(() => {
@@ -810,17 +816,61 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
         if (reconcileGuardRef.current.isStale(gen)) return;
 
-        // Trust payment-status entitlement BEFORE any subscription probe.
-        // Prior order awaited a multi-request probe first, delaying unlock by
-        // tens of seconds even when entitlement_active / ACTIVE was already set.
+        // Provider SUCCESS / activating: unlock Hongera immediately using checkout plan +
+        // payment-status hint. Do not wait for a subscription probe round-trip.
+        const paymentConfirmed =
+          waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
+          result.status === 'SUCCESS';
+
+        if (paymentConfirmed && !isPaymentEntitlementConfirmed(result)) {
+          const hint = subscriptionHintFromPaymentStatusRaw(result.raw);
+          const subscription = mergeCheckoutPlanIntoSubscription(
+            {
+              ...hint,
+              active: true,
+              isActive: true,
+              expiresAt: latestExpiryIso(hint.expiresAt, result.expiresAt),
+            },
+            selectedPlan,
+          );
+          setPaymentProgressStep(2);
+          applyWaitingState(APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING, {
+            paymentConfirmed: true,
+          });
+          await finalizePaymentSuccess(subscription, result.expiresAt);
+          console.log('[PremiumModal]', 'payment_activation_success', {
+            source: 'payment-status-success-instant',
+            waiting,
+            status: result.status ?? null,
+          });
+          // Background confirm — Hongera already shown.
+          void (async () => {
+            try {
+              const identity = await getDeviceIdentity();
+              await probeSubscriptionActivation(
+                identity.deviceId,
+                identity.deviceFingerprint,
+                identity,
+                { light: true },
+              );
+            } catch {
+              /* ignore */
+            }
+          })();
+          return;
+        }
+
         if (isPaymentEntitlementConfirmed(result)) {
           const hint = subscriptionHintFromPaymentStatusRaw(result.raw);
-          const subscription = {
-            ...hint,
-            active: true,
-            isActive: true,
-            expiresAt: latestExpiryIso(hint.expiresAt, result.expiresAt),
-          };
+          const subscription = mergeCheckoutPlanIntoSubscription(
+            {
+              ...hint,
+              active: true,
+              isActive: true,
+              expiresAt: latestExpiryIso(hint.expiresAt, result.expiresAt),
+            },
+            selectedPlan,
+          );
           await finalizePaymentSuccess(subscription, result.expiresAt);
           console.log('[PremiumModal]', 'payment_activation_success', {
             source: 'payment-status-entitlement',
@@ -830,31 +880,23 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           return;
         }
 
-        const paymentConfirmed =
-          waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
-          result.status === 'SUCCESS';
-
-        if (paymentConfirmed) {
-          setPaymentProgressStep(2);
-          applyWaitingState(APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING, {
-            paymentConfirmed: true,
-          });
-        }
-
         const identity = await getDeviceIdentity();
         const { deviceId, deviceFingerprint } = identity;
         if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
 
-        // After provider confirm: parallel status GETs only (no second full probe tick).
+        // Fallback: parallel status GETs when payment not yet SUCCESS.
         const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, identity, {
-          light: paymentConfirmed,
+          light: false,
         });
         if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
 
         if (probed.verified && isSubscriptionActive(probed.verified)) {
-          await finalizePaymentSuccess(probed.verified, probed.fetchExpires);
+          await finalizePaymentSuccess(
+            mergeCheckoutPlanIntoSubscription(probed.verified, selectedPlan),
+            probed.fetchExpires,
+          );
           console.log('[PremiumModal]', 'payment_activation_success', {
-            source: paymentConfirmed ? 'poll-status-light' : 'poll-probe',
+            source: 'poll-probe',
           });
           return;
         }
@@ -872,6 +914,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       handleFailed,
       handleTerminalConflict,
       finalizePaymentSuccess,
+      selectedPlan,
     ],
   );
 

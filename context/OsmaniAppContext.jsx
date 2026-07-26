@@ -245,6 +245,10 @@ export function OsmaniAppProvider({ children }) {
   const instantUnlockExpiresAtRef = useRef(null);
   const instantUnlockGraceRetryTimerRef = useRef(null);
   const INSTANT_UNLOCK_GRACE_MS = 5000;
+  const isWithinInstantUnlockGrace = useCallback(
+    () => Date.now() < instantUnlockProtectUntilRef.current,
+    [],
+  );
   const trialWatchSettingsRef = useRef(TRIAL_WATCH_FAIL_CLOSED);
   const settingsRef = useRef(defaultSettings);
   const rawChannelsRef = useRef([]);
@@ -2242,6 +2246,7 @@ export function OsmaniAppProvider({ children }) {
       showActivationSuccess,
       dismissActivationSuccess,
       applyInstantSubscriptionState,
+      isWithinInstantUnlockGrace,
       requireUpdateBeforeChannelPlayback: settings.requireUpdateBeforeChannelPlayback,
       phoneNumberGateEnabled: settings.phoneNumberGateEnabled !== false,
       channelUpdateGateVisible,
@@ -2308,6 +2313,7 @@ export function OsmaniAppProvider({ children }) {
       presentChannelUpdateGate,
       bindPresentChannelUpdateGate,
       dismissChannelUpdateGate,
+      isWithinInstantUnlockGrace,
     ],
   );
 

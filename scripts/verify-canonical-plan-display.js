@@ -91,6 +91,28 @@ for (const rel of displayLibs) {
     return;
   }
 
+  const mwezi = (Array.isArray(plans) ? plans : []).find(
+    (p) =>
+      String(p?.name ?? '')
+        .toLowerCase()
+        .replace(/\s+/g, '')
+        .includes('mwezi') || Number(p?.id) === 4,
+  );
+  if (!mwezi) {
+    fail('MWENZI 1 plan missing from live Admin /api/plans');
+  } else {
+    pass(`live MWENZI 1 id=${mwezi.id} price=${mwezi.price} days=${mwezi.durationDays}`);
+  }
+
+  const requiredNames = ['Wiki 1', 'MWENZI 1', 'MIEZI 2', 'MWAKA', 'Siku 3'];
+  for (const name of requiredNames) {
+    const hit = (Array.isArray(plans) ? plans : []).find(
+      (p) => String(p?.name ?? '').toLowerCase() === name.toLowerCase(),
+    );
+    if (!hit) fail(`Admin plan missing: ${name}`);
+    else pass(`Admin plan present: ${hit.name} id=${hit.id} TSh ${hit.price} / ${hit.durationDays}d`);
+  }
+
   const wiki = (Array.isArray(plans) ? plans : []).find(
     (p) => String(p?.name ?? '').toLowerCase() === 'wiki 1' || Number(p?.id) === 3,
   );
