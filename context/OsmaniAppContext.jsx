@@ -753,10 +753,27 @@ export function OsmaniAppProvider({ children }) {
           const backendNewer =
             Number.isFinite(verifyExpiresMs) &&
             (!Number.isFinite(cacheExpiresMs) || verifyExpiresMs > cacheExpiresMs);
-          if (backendNewer && effectiveResult.transportPreserved !== true) {
-            console.log('[SUBSCRIPTION_CACHE]', reason, 'overwrite_newer_expiry', {
+          const cachedPlanId = String(cached?.planSnapshot?.planId ?? '').trim();
+          const verifyPlanId = String(planSnapshot?.planId ?? '').trim();
+          const cachedAmount = Number(cached?.planSnapshot?.amount);
+          const verifyAmount = Number(planSnapshot?.amount);
+          const planMetadataChanged =
+            (verifyPlanId !== '' && cachedPlanId !== '' && verifyPlanId !== cachedPlanId) ||
+            (Number.isFinite(verifyAmount) &&
+              Number.isFinite(cachedAmount) &&
+              verifyAmount !== cachedAmount);
+          if (
+            (backendNewer || planMetadataChanged) &&
+            effectiveResult.transportPreserved !== true &&
+            effectiveResult.instantUnlockPreserved !== true
+          ) {
+            console.log('[SUBSCRIPTION_CACHE]', reason, 'overwrite_canonical_plan', {
               cacheExpiresAt: cached?.expiresAt ?? null,
               verifyExpiresAt: expiresAt,
+              cachedPlanId: cachedPlanId || null,
+              verifyPlanId: verifyPlanId || null,
+              cachedAmount: Number.isFinite(cachedAmount) ? cachedAmount : null,
+              verifyAmount: Number.isFinite(verifyAmount) ? verifyAmount : null,
             });
           }
           await writeSubscriptionCache({

@@ -42,7 +42,7 @@ import {
 import {
   buildAccountDisplayDetails,
   enrichSubscriptionDetailsForDisplay,
-  formatAccountPackagePriceLabel,
+  formatAccountPackageLabel,
   resolveAccountDisplayExpiresAt,
   resolveAccountRemainingDays,
   resolveAssignedPlanDurationDays,
@@ -178,7 +178,7 @@ export default function AkauntiYanguScreen() {
       catalogPlans,
     );
     traceAccountDisplay('AkauntiYanguScreen.render', {
-      paymentLabel: formatAccountPackagePriceLabel(built, catalogPlans),
+      paymentLabel: formatAccountPackageLabel(built, catalogPlans),
       durationDays: resolvePlanDurationDays(built),
       catalogPlansCount: catalogPlans.length,
       subscriptionVersion,
@@ -190,7 +190,7 @@ export default function AkauntiYanguScreen() {
     if (!isSubscribed) {
       return;
     }
-    const label = formatAccountPackagePriceLabel(displayDetails, catalogPlans);
+    const label = formatAccountPackageLabel(displayDetails, catalogPlans);
     if (label) lastPackageLabelRef.current = label;
     const days = resolvePlanDurationDays(displayDetails);
     if (days != null) lastDurationDaysRef.current = days;
@@ -209,7 +209,7 @@ export default function AkauntiYanguScreen() {
           // Never overwrite sticky labels from disk when live verify already has values —
           // stale planSnapshot (old package mapping) would show wrong Price/Duration.
           if (!lastPackageLabelRef.current) {
-            const label = formatAccountPackagePriceLabel(snap, catalogPlans);
+            const label = formatAccountPackageLabel(snap, catalogPlans);
             if (label) lastPackageLabelRef.current = label;
           }
           if (lastDurationDaysRef.current == null) {
@@ -276,10 +276,10 @@ export default function AkauntiYanguScreen() {
     return base;
   }, [displayDetails, canonicalExpiresAt, displayExpiresAt, catalogPlans, tickNowMs]);
 
-  // Card 1: Malipo / Kifurushi — package name + amount; sticky when refresh omits fields.
+  // Card 1: Malipo / Kifurushi — Admin plan name + amount (canonical).
   const paymentValue = useMemo(() => {
     if (!isSubscribed) return 'Hapana';
-    const fresh = formatAccountPackagePriceLabel(displayDetails, catalogPlans);
+    const fresh = formatAccountPackageLabel(displayDetails, catalogPlans);
     if (fresh) {
       lastPackageLabelRef.current = fresh;
       return fresh;
