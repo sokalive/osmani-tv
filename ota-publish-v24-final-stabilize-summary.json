@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-07-26T09:02:00.000Z",
+  "commit": "8634643316421ac27392bbc580f13fa05c591b6e",
+  "task": "final-production-stabilization-instant-ux",
+  "runtime": "1.8.2",
+  "versionCode": 24,
+  "groups": [
+    {
+      "channel": "vps-preview",
+      "groupId": "d956bd1d-919b-49b8-9f22-f7610d45d5c9",
+      "androidUpdateId": "019f9d99-f1fd-786c-8430-0ad026851fb2"
+    },
+    {
+      "channel": "preview",
+      "groupId": "a677846e-104c-41dd-93be-0e460a71528d",
+      "androidUpdateId": "019f9da4-f44f-79c3-af15-33cd189aceaf"
+    },
+    {
+      "channel": "production",
+      "groupId": "2a0d9eba-67b3-4b96-8f4a-8a5a9d180b0e",
+      "androidUpdateId": "019f9da8-f6c9-76d6-8891-8f026968442c"
+    }
+  ],
+  "emulatorEvidence": {
+    "avd": "OsmaniStabilizeNew",
+    "deviceId": "c8775ff23f47416b",
+    "previousDeviceId": "8b94b929d89681a1",
+    "phone": "0678089174",
+    "orderId": "osm_sp_1785055990200_1f67c6db8a",
+    "boxesAfterActivation": {
+      "box1": "TSh 1,000",
+      "box2": "Siku 3 Zimebaki",
+      "box3": "3",
+      "box4": "29/07/2026"
+    },
+    "noInathibitisha": true,
+    "activeBlockPreserved": true,
+    "multiDeviceSamePhone": true
+  }
+}
