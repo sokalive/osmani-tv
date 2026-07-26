@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-07-26T00:17:33.991Z",
+  "commit": "661a1bf70fc962b0e714a2b32cf5285af04cbf90",
+  "groups": [
+    {
+      "channel": "preview",
+      "runtime": "1.8.2",
+      "groupId": "e09f1a76-5b78-43e0-9e87-6e609c1f96d1",
+      "androidUpdateId": "019f9bc0-e213-780f-a477-16906a5ea4c8"
+    },
+    {
+      "channel": "vps-preview",
+      "runtime": "1.8.2",
+      "groupId": "ba47b1be-888e-4d94-a47d-f5faf8cd2eed",
+      "androidUpdateId": "019f9bc3-a31f-7bed-8051-4480d0bb5955"
+    },
+    {
+      "channel": "production",
+      "runtime": "1.8.2",
+      "groupId": "ba1b39e5-edc1-4052-a090-2773725f9b88",
+      "androidUpdateId": "019f9bc8-c34f-7b45-927b-8802175a7d8a"
+    }
+  ]
+}
