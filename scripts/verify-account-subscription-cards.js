@@ -32,8 +32,18 @@ const math = read('lib/subscriptionMath.js');
 const merge = read('lib/subscriptionDetailsMerge.js');
 const context = read('context/OsmaniAppContext.jsx');
 
-if (!account.includes('formatAccountPackageLabel')) fail('Account uses formatAccountPackageLabel');
-else pass('Account uses formatAccountPackageLabel');
+if (!account.includes('formatAccountPackagePriceLabel')) fail('Box 1 uses price-only label helper');
+else pass('Box 1 uses price-only label helper');
+
+// Box 1 must never render name+duration join in the payment card.
+if (!display.includes('export function formatAccountPackagePriceLabel')) {
+  fail('formatAccountPackagePriceLabel exported');
+} else pass('formatAccountPackagePriceLabel exported');
+
+// Box 4 expiry must be date-only dd/mm/yyyy (no time).
+if (!account.includes('formatSubscriptionExpiryDate(canonicalExpiresAt)')) {
+  fail('Box 4 uses date-only expiry formatter');
+} else pass('Box 4 uses date-only expiry formatter');
 
 if (!account.includes('resolveAccountRemainingDays')) fail('Account uses bounded real remaining days');
 else pass('Account uses bounded real remaining days');

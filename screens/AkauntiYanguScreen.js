@@ -26,7 +26,7 @@ import PremiumModal from '../components/PremiumModal';
 import { redeemOfferCode, parseSubscriptionPayload } from '../api/subscription';
 import { useDeviceIntelligence } from '../context/DeviceIntelligenceContext';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
-import { formatSubscriptionExpiry } from '../lib/formatExpiry';
+import { formatSubscriptionExpiry, formatSubscriptionExpiryDate } from '../lib/formatExpiry';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import {
   clearOfferCodeCooldown,
@@ -42,7 +42,7 @@ import {
 import {
   buildAccountDisplayDetails,
   enrichSubscriptionDetailsForDisplay,
-  formatAccountPackageLabel,
+  formatAccountPackagePriceLabel,
   resolveAccountRemainingDays,
   resolveAssignedPlanDurationDays,
 } from '../lib/accountSubscriptionDisplay';
@@ -176,7 +176,7 @@ export default function AkauntiYanguScreen() {
       catalogPlans,
     );
     traceAccountDisplay('AkauntiYanguScreen.render', {
-      paymentLabel: formatAccountPackageLabel(built, catalogPlans),
+      paymentLabel: formatAccountPackagePriceLabel(built, catalogPlans),
       durationDays: resolvePlanDurationDays(built),
       catalogPlansCount: catalogPlans.length,
       subscriptionVersion,
@@ -188,7 +188,7 @@ export default function AkauntiYanguScreen() {
     if (!isSubscribed) {
       return;
     }
-    const label = formatAccountPackageLabel(displayDetails, catalogPlans);
+    const label = formatAccountPackagePriceLabel(displayDetails, catalogPlans);
     if (label) lastPackageLabelRef.current = label;
     const days = resolvePlanDurationDays(displayDetails);
     if (days != null) lastDurationDaysRef.current = days;
@@ -204,7 +204,7 @@ export default function AkauntiYanguScreen() {
             ? subscriptionDetailsFromPlanSnapshot(cached.planSnapshot, cached.expiresAt)
             : null;
           if (!snap) return;
-          const label = formatAccountPackageLabel(snap, catalogPlans);
+          const label = formatAccountPackagePriceLabel(snap, catalogPlans);
           if (label) lastPackageLabelRef.current = label;
           const days = resolvePlanDurationDays(
             buildAccountDisplayDetails(snap, cached?.expiresAt ?? null, catalogPlans),
@@ -256,7 +256,7 @@ export default function AkauntiYanguScreen() {
   // Card 1: Malipo / Kifurushi — package name + amount; sticky when refresh omits fields.
   const paymentValue = useMemo(() => {
     if (!isSubscribed) return 'Hapana';
-    const fresh = formatAccountPackageLabel(displayDetails, catalogPlans);
+    const fresh = formatAccountPackagePriceLabel(displayDetails, catalogPlans);
     if (fresh) {
       lastPackageLabelRef.current = fresh;
       return fresh;
@@ -479,7 +479,7 @@ export default function AkauntiYanguScreen() {
             />
             <StatCard
               icon="calendar-outline"
-              value={formatSubscriptionExpiry(canonicalExpiresAt)}
+              value={formatSubscriptionExpiryDate(canonicalExpiresAt)}
               label="Kuisha Tarehe"
             />
           </View>
