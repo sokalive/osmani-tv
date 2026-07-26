@@ -204,6 +204,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const countdownTimerRef = useRef(null);
   const sseRef = useRef(null);
   const doneRef = useRef(false);
+  /** True from Lipia→waiting through Hongera — blocks active-subscription overlay. */
+  const checkoutFlowRef = useRef(false);
   const payInFlightRef = useRef(false);
   const lipiaWatchdogRef = useRef(null);
   const identityPrefetchRef = useRef(null);
@@ -255,6 +257,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   }, []);
 
   const showPaymentEntryDialog = useCallback((kind) => {
+    // Never overlay "Kifurushi Kinaendelea" on an in-flight checkout or Hongera.
+    if (doneRef.current || checkoutFlowRef.current) {
+      console.log('[PremiumModal]', 'payment_entry_dialog_skipped', {
+        kind,
+        reason: 'checkout_in_flight_or_success',
+      });
+      return;
+    }
     const active = kind === 'active';
     setPaymentEntryGate(active ? 'blocked' : 'unavailable');
     setPhoneGuardTitle(
@@ -289,6 +299,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setPhoneGuardTitle('Taarifa');
     setPhoneGuardMessage('');
     setCloseAfterGuardDialog(false);
+    checkoutFlowRef.current = false;
     // Instant plans for inactive users. Active users hard-block without verify-wait UI.
     setPaymentEntryGate(isSubscribed === true ? 'blocked' : 'allowed');
     setPaymentProgressStep(1);
@@ -309,6 +320,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     if (!visible) return undefined;
     let cancelled = false;
 
+    // Mid-checkout / Hongera: isSubscribed flipping true after unlock must NOT
+    // replace Congratulations with "Kifurushi Kinaendelea".
+    if (doneRef.current || checkoutFlowRef.current || step >= 3) {
+      return undefined;
+    }
+
     // Hard block from live context — never open plans while THIS device is subscribed.
     if (isSubscribed === true) {
       console.log('[PremiumModal]', 'payment_entry_gate', {
@@ -324,7 +341,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setPaymentEntryGate('allowed');
     void refreshSubscription('payment-entry-gate')
       .then((result) => {
-        if (cancelled) return;
+        if (cancelled || doneRef.current || checkoutFlowRef.current || step >= 3) return;
         if (isSubscribed === true) {
           showPaymentEntryDialog('active');
           return;
@@ -349,13 +366,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     return () => {
       cancelled = true;
     };
-  }, [visible, refreshSubscription, showPaymentEntryDialog, isSubscribed]);
+  }, [visible, refreshSubscription, showPaymentEntryDialog, isSubscribed, step]);
 
   useEffect(() => {
     if (!visible) {
       clearTimers();
       closeSse();
       doneRef.current = false;
+      checkoutFlowRef.current = false;
       // Keep 'allowed' so the next open never flashes verify-wait UI for one frame.
       setPaymentEntryGate('allowed');
     }
@@ -602,6 +620,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         planName: forUnlock?.planName ?? selectedPlan?.name ?? null,
         expiresAt: forUnlock?.expiresAt ?? null,
       });
+      // Keep gate open so Hongera is not unmounted when context flips isSubscribed.
+      checkoutFlowRef.current = true;
+      setPaymentEntryGate('allowed');
+      setPhoneGuardVisible(false);
+      setCloseAfterGuardDialog(false);
       setStep(4);
       // Context unlock already applied. Avoid an immediate shared reverify race that can
       // briefly return inactive and re-lock channels before backend read-replicas catch up.
@@ -1133,6 +1156,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
     // Instant next step FIRST — never await identity/network before UI advances.
     doneRef.current = false;
+    checkoutFlowRef.current = true;
     setOrderId(null);
     setRemainingSeconds(CREATE_ORDER_ORPHAN_WAIT_SEC);
     setPaymentProgressStep(1);
@@ -1606,7 +1630,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       </View>
                     )}
 
-                    {paymentEntryGate === 'allowed' && step === 3 && (
+                    {/* Waiting / Hongera / fail must not depend on paymentEntryGate —
+                        unlock sets isSubscribed and must not hide Congratulations. */}
+                    {step === 3 && (
                       <PaymentWaitingStep
                         selectedAmountDisplay={selectedAmountDisplay}
                         orderId={orderId}
@@ -1619,7 +1645,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       />
                     )}
 
-                    {paymentEntryGate === 'allowed' && step === 4 && (
+                    {step === 4 && (
                       <PaymentSuccessStep
                         details={successDetails}
                         onOpenChannel={handleOpenChannel}
@@ -1627,7 +1653,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       />
                     )}
 
-                    {paymentEntryGate === 'allowed' && step === 5 && (
+                    {step === 5 && (
                       <View style={styles.resultWrap}>
                         <View style={styles.failIconHalo}>
                           <View style={styles.failIconCircle}>
@@ -1673,7 +1699,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       </LinearGradient>
                     </Pressable>
                   ) : null}
-                  {paymentEntryGate === 'allowed' && step === 3 ? (
+                  {step === 3 ? (
                     <Pressable style={[styles.cancelBtn, styles.ctaDockBtn]} onPress={handleCancel}>
                       <Text style={styles.cancelBtnText}>GHAIRI</Text>
                     </Pressable>
