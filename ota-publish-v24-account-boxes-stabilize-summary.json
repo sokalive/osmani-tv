@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-07-26T06:50:00.000Z",
+  "commit": "d760b6f822e57e25dde17a14282bab8562b59e4c",
+  "task": "post-release-stabilization-account-boxes",
+  "groups": [
+    {
+      "channel": "vps-preview",
+      "runtime": "1.8.2",
+      "groupId": "cabf0fcc-d2a6-4509-aa9c-819903e410da",
+      "androidUpdateId": "019f9d19-e4e3-779e-a964-b6bee7680a2e"
+    },
+    {
+      "channel": "preview",
+      "runtime": "1.8.2",
+      "groupId": "0866acc9-7345-47b9-9cd7-e59a69b66719",
+      "androidUpdateId": "019f9d27-00e9-7df2-926c-73506906aee4"
+    },
+    {
+      "channel": "production",
+      "runtime": "1.8.2",
+      "groupId": "719fcbc4-2f1e-4abf-811a-ef54cf65f3e3",
+      "androidUpdateId": "019f9d2f-4e01-7af7-9881-ed608ec31714"
+    }
+  ],
+  "emulatorEvidence": {
+    "deviceId": "8b94b929d89681a1",
+    "channel": "vps-preview",
+    "orderId": "osm_sp_1785047709340_c85b16357c",
+    "phone": "0678089174",
+    "package": "TSh 1,000 / 3 Days",
+    "boxesAfterActivation": {
+      "box1": "TSh 1,000",
+      "box2": "Siku 3 Zimebaki",
+      "box3": "3",
+      "box4": "29/07/2026"
+    },
+    "beforeRevokedStatus": "HUNA USAJILI / Hapana",
+    "afterStatus": "ACTIVE"
+  }
+}
