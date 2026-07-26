@@ -193,13 +193,17 @@ for (const rel of displayLibs) {
     );
   }
 
-  if (!accountScreen.includes('formatAccountPackageLabel')) {
-    fail('Account screen must bind Box1 to formatAccountPackageLabel (plan name · price)');
-  } else pass('Account screen uses plan name · price formatter');
+  if (!accountScreen.includes('formatAccountPackagePriceLabel')) {
+    fail('Account screen must bind Box1 to formatAccountPackagePriceLabel (price only)');
+  } else pass('Account screen uses shared price-only formatter');
 
-  if (!accountScreen.includes('formatAccountPackageLabel(displayDetails')) {
-    fail('Box1 paymentValue must call formatAccountPackageLabel');
-  } else pass('Box1 paymentValue uses formatAccountPackageLabel');
+  if (accountScreen.includes('formatAccountPackageLabel(displayDetails')) {
+    fail('Box1 must not use formatAccountPackageLabel (plan name must stay out of price box)');
+  } else pass('Box1 paymentValue does not prepend plan name');
+
+  if (!accountScreen.includes('formatAccountPackagePriceLabel(displayDetails')) {
+    fail('Box1 paymentValue must call formatAccountPackagePriceLabel');
+  } else pass('Box1 paymentValue uses formatAccountPackagePriceLabel');
 
   if (process.exitCode) process.exit(1);
   console.log('\n[verify-canonical-plan-display] ok');
