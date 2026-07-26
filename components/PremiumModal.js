@@ -168,7 +168,7 @@ function pickPaymentSseOrderId(payload) {
 export default function PremiumModal({ visible, onClose, onUnlockSuccess, channelName = 'Chaneli Uliyofungua' }) {
   const insets = useSafeAreaInsets();
   const { refreshSubscription, unlockChannels, availablePlans, isSubscribed } = useOsmaniApp();
-  /** Start allowed when context already knows inactive — never flash "Inathibitisha". */
+  /** Start allowed when context already knows inactive — never flash the verify-wait UI. */
   const [paymentEntryGate, setPaymentEntryGate] = useState(() =>
     isSubscribed === true ? 'checking' : 'allowed',
   );
@@ -289,8 +289,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setPhoneGuardTitle('Taarifa');
     setPhoneGuardMessage('');
     setCloseAfterGuardDialog(false);
-    // Instant plans for inactive users. Active users stay on checking → hard block.
-    setPaymentEntryGate(isSubscribed === true ? 'checking' : 'allowed');
+    // Instant plans for inactive users. Active users hard-block without verify-wait UI.
+    setPaymentEntryGate(isSubscribed === true ? 'blocked' : 'allowed');
     setPaymentProgressStep(1);
     setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
     reconcileGuardRef.current.reset();
@@ -338,7 +338,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         if (classification === 'active') {
           showPaymentEntryDialog('active');
         }
-        // inactive / unknown: keep plans visible — never flash Inathibitisha.
+        // inactive / unknown: keep plans visible — never flash verify-wait UI.
       })
       .catch((error) => {
         if (cancelled) return;
@@ -356,7 +356,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       clearTimers();
       closeSse();
       doneRef.current = false;
-      setPaymentEntryGate('checking');
+      // Keep 'allowed' so the next open never flashes verify-wait UI for one frame.
+      setPaymentEntryGate('allowed');
     }
   }, [visible, clearTimers, closeSse]);
 
@@ -1129,16 +1130,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     payInFlightRef.current = true;
     const activeProvider = checkoutProvider;
     const normalizedPhone = phoneNumber.replace(/\s/g, '');
-    let identity = identityPrefetchRef.current;
-    if (!identity?.deviceId) {
-      identity = await getDeviceIdentity();
-      identityPrefetchRef.current = identity;
-    }
-    const { deviceId, deviceFingerprint } = identity;
 
-    // Instant next step — create-order continues in background (no Lipia spinner wait).
+    // Instant next step FIRST — never await identity/network before UI advances.
     doneRef.current = false;
-    setWaitingDeviceId(deviceId);
     setOrderId(null);
     setRemainingSeconds(CREATE_ORDER_ORPHAN_WAIT_SEC);
     setPaymentProgressStep(1);
@@ -1189,6 +1183,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     }, LIPIA_SUBMITTING_WATCHDOG_MS);
 
     try {
+      let identity = identityPrefetchRef.current;
+      if (!identity?.deviceId) {
+        identity = await getDeviceIdentity();
+        identityPrefetchRef.current = identity;
+      }
+      const { deviceId, deviceFingerprint } = identity;
+      setWaitingDeviceId(deviceId);
+
       const payPayload = {
         phone: normalizedPhone,
         plan_id: selectedPlan.id,
@@ -1253,12 +1255,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         return;
       }
       if (e instanceof PhoneSubscriptionConflictError || e?.name === 'PhoneSubscriptionConflictError') {
+        let identity = identityPrefetchRef.current;
+        const deviceId = String(identity?.deviceId ?? identity?.subscriptionDeviceId ?? '');
         const existingDeviceId = String(e.conflict?.existingDeviceId ?? '').trim();
         const sameDeviceConflict =
           existingDeviceId &&
-          (existingDeviceId === String(deviceId) ||
-            existingDeviceId === String(identity.subscriptionDeviceId ?? '') ||
-            existingDeviceId === String(identity.displayedAccountId ?? ''));
+          (existingDeviceId === deviceId ||
+            existingDeviceId === String(identity?.subscriptionDeviceId ?? '') ||
+            existingDeviceId === String(identity?.displayedAccountId ?? ''));
         console.log(
           '[PremiumModal]',
           'phone_subscription_guard',
@@ -1271,7 +1275,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
             displaySource: e.conflict?.displaySource ?? null,
             existingDeviceId: existingDeviceId ? `${existingDeviceId.slice(0, 8)}…` : null,
             sameDeviceConflict,
-            thisDeviceId: String(deviceId).slice(0, 8),
+            thisDeviceId: deviceId ? `${deviceId.slice(0, 8)}` : null,
           }),
         );
         void reportPaymentTelemetry('phone_subscription_conflict', {
@@ -1285,24 +1289,22 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           showPaymentEntryDialog('active');
           return;
         }
-        // Legacy phone-ownership 409 on another device: never claim THIS device is active.
-        // Return to phone step so the user can retry (backend should allow device-scoped pay).
-        setPhoneGuardTitle(e.title ?? 'Taarifa');
+        // Other device owns a subscription under this phone number — THIS device
+        // remains independent. Never show "Already Active" / phone-ownership block.
+        setPhoneGuardTitle('Jaribu Tena');
         setPhoneGuardMessage(
-          e.userMessage ??
-            e.message ??
-            'Namba hii inatumika kwenye kifaa kingine. Jaribu tena — kifurushi ni cha kifaa hiki pekee.',
+          'Malipo hayakuanzishwa kwa sasa. Jaribu tena — kifurushi ni cha kifaa hiki pekee, si namba ya simu.',
         );
         setCloseAfterGuardDialog(false);
         setPhoneGuardVisible(true);
         setStep(2);
         return;
       }
-      if (isPaymentCreateOrderTimeout(e) && identity?.deviceId) {
+      if (isPaymentCreateOrderTimeout(e)) {
         console.log(
           '[PremiumModal]',
           'create_order_timeout_recovery',
-          JSON.stringify({ provider: activeProvider, deviceId: identity.deviceId }),
+          JSON.stringify({ provider: activeProvider }),
         );
         // Already on step 3 — keep waiting for USSD/PIN / SSE.
         void reportPaymentTelemetry('create_order_timeout_recovery', {
@@ -1417,19 +1419,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       step === 2 && styles.step2AnimatedFill,
                     ]}
                   >
-                    {paymentEntryGate !== 'allowed' ? (
-                      <View style={styles.resultWrap}>
-                        {paymentEntryGate === 'checking' ? (
-                          <>
-                            <ActivityIndicator size="large" color={ACCENT} />
-                            <Text style={styles.titleCentered}>Inathibitisha kifurushi…</Text>
-                            <Text style={styles.mutedCenter}>
-                              Subiri kidogo kabla ya kuendelea.
-                            </Text>
-                          </>
-                        ) : null}
-                      </View>
-                    ) : null}
+                    {/* Never show subscription verify-wait UI — verify is silent; plans open instantly. */}
 
                     {paymentEntryGate === 'allowed' && step === 1 && (
                       <View>

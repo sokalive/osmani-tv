@@ -43,6 +43,7 @@ import {
   buildAccountDisplayDetails,
   enrichSubscriptionDetailsForDisplay,
   formatAccountPackagePriceLabel,
+  resolveAccountDisplayExpiresAt,
   resolveAccountRemainingDays,
   resolveAssignedPlanDurationDays,
 } from '../lib/accountSubscriptionDisplay';
@@ -222,6 +223,18 @@ export default function AkauntiYanguScreen() {
     [subscriptionDetails, subscriptionExpiresAt],
   );
 
+  // Box 4 display expiry — agrees with Admin plan remaining/duration (presentation only).
+  const displayExpiresAt = useMemo(
+    () =>
+      resolveAccountDisplayExpiresAt(
+        displayDetails,
+        subscriptionExpiresAt,
+        catalogPlans,
+        tickNowMs,
+      ),
+    [displayDetails, subscriptionExpiresAt, catalogPlans, tickNowMs],
+  );
+
   const deviceLabel = useMemo(() => getDeviceLabel(), []);
   const deviceShort =
     deviceIdFull.length >= 8 ? deviceIdFull.slice(0, 8).toUpperCase() : deviceIdFull || '—';
@@ -234,7 +247,7 @@ export default function AkauntiYanguScreen() {
     const base = computeSubscriptionProgress({
       startedAt: null,
       periodStartAt: null,
-      expiresAt: canonicalExpiresAt,
+      expiresAt: displayExpiresAt ?? canonicalExpiresAt,
       planDurationDays: planDays,
       displayDurationDays: planDays,
       remainingSeconds:
@@ -254,7 +267,7 @@ export default function AkauntiYanguScreen() {
       return { ...base, remainingDays: accountDays };
     }
     return base;
-  }, [displayDetails, canonicalExpiresAt, catalogPlans, tickNowMs]);
+  }, [displayDetails, canonicalExpiresAt, displayExpiresAt, catalogPlans, tickNowMs]);
 
   // Card 1: Malipo / Kifurushi — package name + amount; sticky when refresh omits fields.
   const paymentValue = useMemo(() => {
@@ -482,7 +495,7 @@ export default function AkauntiYanguScreen() {
             />
             <StatCard
               icon="calendar-outline"
-              value={formatSubscriptionExpiryDate(canonicalExpiresAt)}
+              value={formatSubscriptionExpiryDate(displayExpiresAt ?? canonicalExpiresAt)}
               label="Kuisha Tarehe"
             />
           </View>

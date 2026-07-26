@@ -32,10 +32,7 @@ const account = read('screens/AkauntiYanguScreen.js');
 const context = read('context/OsmaniAppContext.jsx');
 
 if (premium.includes("Inathibitisha kifurushi")) {
-  // Text may remain as unreachable checking UI; gate must allow inactive instantly.
-  if (!premium.includes("setPaymentEntryGate('allowed')")) {
-    fail('inactive users must allow payment entry instantly');
-  } else pass('payment entry can allow instantly');
+  fail('Inathibitisha kifurushi must be removed from PremiumModal UI');
 } else {
   pass('Inathibitisha string removed from PremiumModal');
 }
@@ -48,14 +45,31 @@ if (premium.includes("await refreshSubscription('payment-submit-gate')")) {
 } else pass('Lipia does not await submit-gate verify');
 
 const handleStart = premium.indexOf('const handleStep2Pay');
-const handleBody = premium.slice(handleStart, handleStart + 3500);
+const handleBody = premium.slice(handleStart, handleStart + 4500);
 if (handleBody.indexOf('setStep(3)') < 0) fail('Lipia must advance to waiting step');
 else {
   const step3 = handleBody.indexOf('setStep(3)');
+  const getId = handleBody.indexOf('getDeviceIdentity');
   const startPay = handleBody.indexOf('startPayment');
-  if (startPay >= 0 && step3 > startPay) fail('setStep(3) must happen before startPayment await');
-  else pass('Lipia advances to step 3 before create-order await');
+  if (getId >= 0 && step3 > getId) fail('setStep(3) must happen before await getDeviceIdentity');
+  else if (startPay >= 0 && step3 > startPay) fail('setStep(3) must happen before startPayment await');
+  else pass('Lipia advances to step 3 before any await');
 }
+
+if (premium.includes("Namba Hii Tayari Inatumika") || guard.includes("Namba Hii Tayari Inatumika")) {
+  fail('must not show phone-ownership Already Active copy');
+} else pass('no phone-ownership Already Active copy');
+
+if (!guard.includes('kifaa hiki pekee')) fail('multi-device soft message required');
+else pass('multi-device soft message present');
+
+if (!account.includes('resolveAccountDisplayExpiresAt')) {
+  fail('Account Box 4 must use plan-aligned display expiry');
+} else pass('Account Box 4 uses plan-aligned display expiry');
+
+if (!context.includes('skipped_hydrate_authoritative_inactive')) {
+  fail('cache hydrate must skip after authoritative inactive');
+} else pass('cache hydrate blocked after authoritative inactive');
 
 if (/Inathibitisha kifurushi…/.test(player) && !player.includes("'Inafungua…'")) {
   fail('ChannelPlayer must not show Inathibitisha kifurushi');
@@ -77,10 +91,6 @@ if (!payment.includes('DeviceSubscriptionConflictError')) {
 if (!account.includes('startedAt: null')) {
   fail('Account progress must ignore stacked startedAt');
 } else pass('Account progress ignores stacked startedAt');
-
-if (!context.includes('skipped_hydrate_authoritative_inactive')) {
-  fail('cache hydrate must skip after authoritative inactive');
-} else pass('cache hydrate blocked after authoritative inactive');
 
 if (!process.exitCode) {
   console.log('\n[verify-instant-payment-ux] ok');
