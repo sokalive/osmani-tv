@@ -1,8 +1,14 @@
 import Constants from 'expo-constants';
 import { nativeApplicationVersion } from 'expo-application';
 import { parseCheckoutProvidersResponse } from '../lib/checkoutPaymentProviders';
-import { formatCheckoutPaymentError, extractPaymentBackendReason, logPaymentCheckoutFailure, CheckoutPaymentError, PhoneSubscriptionConflictError } from '../lib/paymentCheckoutErrors';
-import { isPhoneSubscriptionConflict, parsePhoneSubscriptionConflict } from '../lib/phoneSubscriptionGuard';
+import { formatCheckoutPaymentError, extractPaymentBackendReason, logPaymentCheckoutFailure, CheckoutPaymentError, PhoneSubscriptionConflictError, DeviceSubscriptionConflictError } from '../lib/paymentCheckoutErrors';
+import {
+  isPhoneSubscriptionConflict,
+  isDeviceSubscriptionConflict,
+  isSubscriptionCheckoutConflict,
+  parsePhoneSubscriptionConflict,
+} from '../lib/phoneSubscriptionGuard';
+import { ACTIVE_SUBSCRIPTION_PAYMENT_BLOCK_MESSAGE } from '../lib/paymentEntryGuard';
 import { resolveMediaAssetUrl } from '../lib/mediaDelivery';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import { fetchAdminApiJson, fetchAdminApiResponse } from '../lib/catalogApiFetch';
@@ -302,7 +308,7 @@ async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
       timeoutMs: PAYMENT_CREATE_ORDER_TIMEOUT_MS,
     });
     last = attempt;
-    if (isPhoneSubscriptionConflict(attempt.res.status, attempt.parsed)) {
+    if (isSubscriptionCheckoutConflict(attempt.res.status, attempt.parsed)) {
       break;
     }
     const routeMissing = attempt.res.status === 404;
@@ -312,6 +318,29 @@ async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
 
   const { res, parsed: body, url } = last;
   if (!res.ok) {
+    if (isDeviceSubscriptionConflict(res.status, body)) {
+      const conflict = parsePhoneSubscriptionConflict(body);
+      const backendReason = extractPaymentBackendReason(body, res.status);
+      logPaymentCheckoutFailure({
+        phase: 'device-subscription-guard',
+        provider,
+        path: url,
+        httpStatus: res.status,
+        backendReason,
+        code: conflict.code,
+        existing_device_id: conflict.existingDeviceId,
+        remaining_days: conflict.remainingDays,
+      });
+      throw new DeviceSubscriptionConflictError(ACTIVE_SUBSCRIPTION_PAYMENT_BLOCK_MESSAGE, {
+        code: conflict.code || 'DEVICE_ALREADY_HAS_ACTIVE_SUBSCRIPTION',
+        backendReason,
+        httpStatus: res.status,
+        provider,
+        path: url,
+        title: 'Kifurushi Kinaendelea',
+        conflict,
+      });
+    }
     if (isPhoneSubscriptionConflict(res.status, body)) {
       const conflict = parsePhoneSubscriptionConflict(body);
       const backendReason = extractPaymentBackendReason(body, res.status);

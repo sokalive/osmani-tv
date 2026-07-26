@@ -250,6 +250,10 @@ export function OsmaniAppProvider({ children }) {
    * runs in background and may revoke only on confirmed inactive.
    */
   const hydrateSubscriptionFromCache = useCallback(async (reason = 'cache-hydrate') => {
+    if (authoritativeInactiveRef.current) {
+      console.log('[SUBSCRIPTION_CACHE]', reason, 'skipped_hydrate_authoritative_inactive');
+      return false;
+    }
     if (sourceTransferClearLockUntilRef.current > Date.now()) {
       console.log('[SUBSCRIPTION_CACHE]', reason, 'skipped_hydrate_after_source_transfer');
       return false;

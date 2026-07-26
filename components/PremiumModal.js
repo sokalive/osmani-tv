@@ -32,6 +32,7 @@ import {
   formatCheckoutPaymentError,
   isPaymentCreateOrderTimeout,
   PhoneSubscriptionConflictError,
+  DeviceSubscriptionConflictError,
 } from '../lib/paymentCheckoutErrors';
 import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
@@ -167,7 +168,10 @@ function pickPaymentSseOrderId(payload) {
 export default function PremiumModal({ visible, onClose, onUnlockSuccess, channelName = 'Chaneli Uliyofungua' }) {
   const insets = useSafeAreaInsets();
   const { refreshSubscription, unlockChannels, availablePlans, isSubscribed } = useOsmaniApp();
-  const [paymentEntryGate, setPaymentEntryGate] = useState('checking');
+  /** Start allowed when context already knows inactive — never flash "Inathibitisha". */
+  const [paymentEntryGate, setPaymentEntryGate] = useState(() =>
+    isSubscribed === true ? 'checking' : 'allowed',
+  );
   const [step, setStep] = useState(1);
   const [plans, setPlans] = useState(() => getCachedPaymentPlansSync() ?? []);
   const [plansLoading, setPlansLoading] = useState(() => !getCachedPaymentPlansSync()?.length);
@@ -285,7 +289,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setPhoneGuardTitle('Taarifa');
     setPhoneGuardMessage('');
     setCloseAfterGuardDialog(false);
-    setPaymentEntryGate('checking');
+    // Instant plans for inactive users. Active users stay on checking → hard block.
+    setPaymentEntryGate(isSubscribed === true ? 'checking' : 'allowed');
     setPaymentProgressStep(1);
     setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
     reconcileGuardRef.current.reset();
@@ -303,9 +308,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   useEffect(() => {
     if (!visible) return undefined;
     let cancelled = false;
-    setPaymentEntryGate('checking');
-    // Hard block from live context — never open plans while subscribed, even if
-    // a slow/false-inactive verify would otherwise fail-open the gate.
+
+    // Hard block from live context — never open plans while THIS device is subscribed.
     if (isSubscribed === true) {
       console.log('[PremiumModal]', 'payment_entry_gate', {
         classification: 'active',
@@ -314,6 +318,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       showPaymentEntryDialog('active');
       return undefined;
     }
+
+    // Inactive / unknown context: show package selection immediately.
+    // Verify runs invisibly; only a definitive THIS-device active response blocks.
+    setPaymentEntryGate('allowed');
     void refreshSubscription('payment-entry-gate')
       .then((result) => {
         if (cancelled) return;
@@ -325,17 +333,18 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         console.log('[PremiumModal]', 'payment_entry_gate', {
           classification,
           resolveSource: result?.resolveSource ?? null,
+          silent: true,
         });
-        if (classification === 'inactive') {
-          setPaymentEntryGate('allowed');
-          return;
+        if (classification === 'active') {
+          showPaymentEntryDialog('active');
         }
-        showPaymentEntryDialog(classification);
+        // inactive / unknown: keep plans visible — never flash Inathibitisha.
       })
       .catch((error) => {
         if (cancelled) return;
         console.log('[PremiumModal]', 'payment_entry_gate_error', error?.message ?? error);
-        showPaymentEntryDialog('unknown');
+        // Soft-open: network failure must not delay package selection.
+        setPaymentEntryGate('allowed');
       });
     return () => {
       cancelled = true;
@@ -374,7 +383,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   }, [step, ringRotate]);
 
   useEffect(() => {
-    if (!visible || paymentEntryGate !== 'allowed') return undefined;
+    if (!visible) return undefined;
     let cancelled = false;
     let spinnerCapTimer = null;
 
@@ -424,7 +433,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       cancelled = true;
       if (spinnerCapTimer) clearTimeout(spinnerCapTimer);
     };
-  }, [visible, availablePlans, paymentEntryGate]);
+  }, [visible, availablePlans]);
 
   /** Sync active checkout gateway (zenopay | sonicpesa | auraxpay) from admin API. */
   const reloadCheckoutConfig = useCallback(async () => {
@@ -468,7 +477,19 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible, reloadCheckoutConfig]);
 
-  /** Prefetch device identity on step 2 so Lipia begins checkout without extra await. */
+  /** Prefetch device identity as soon as modal opens so Lipia never waits on identity. */
+  useEffect(() => {
+    if (!visible) return undefined;
+    let cancelled = false;
+    void getDeviceIdentity().then((identity) => {
+      if (!cancelled) identityPrefetchRef.current = identity;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
+  /** Keep identity warm on phone step (re-entry / retry). */
   useEffect(() => {
     if (!visible || step !== 2) return undefined;
     let cancelled = false;
@@ -1098,28 +1119,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       Alert.alert('', 'Chagua mpango');
       return;
     }
-    setSubmitting(true);
-    let paymentGateResult;
-    try {
-      paymentGateResult = await refreshSubscription('payment-submit-gate');
-    } catch (error) {
-      console.log('[PremiumModal]', 'payment_submit_gate_error', error?.message ?? error);
-    }
-    const paymentGateClassification = classifyPaymentEntrySubscription(paymentGateResult);
-    // Open-gate already proved inactive this session. Definitive ACTIVE must still
-    // block. Transport/timeout "unknown" must NOT abort create-order — that left
-    // Lipia stuck on the phone step with no order (verify timeout on slow nets).
-    if (paymentGateClassification === 'active') {
-      setSubmitting(false);
+    // Instant hard block for THIS device only — never wait on network before UI.
+    if (isSubscribed === true) {
       showPaymentEntryDialog('active');
       return;
-    }
-    if (paymentGateClassification !== 'inactive') {
-      console.log('[PremiumModal]', 'payment_submit_gate_soft_allow', {
-        classification: paymentGateClassification,
-        resolveSource: paymentGateResult?.resolveSource ?? null,
-        error: paymentGateResult?.error ?? null,
-      });
     }
 
     console.log('PAYMENT TRIGGERED');
@@ -1127,48 +1130,65 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     const activeProvider = checkoutProvider;
     const normalizedPhone = phoneNumber.replace(/\s/g, '');
     let identity = identityPrefetchRef.current;
-    /** Set true if Lipia watchdog already moved UI off the spinner. */
-    let lipiaReleasedByWatchdog = false;
+    if (!identity?.deviceId) {
+      identity = await getDeviceIdentity();
+      identityPrefetchRef.current = identity;
+    }
+    const { deviceId, deviceFingerprint } = identity;
+
+    // Instant next step — create-order continues in background (no Lipia spinner wait).
+    doneRef.current = false;
+    setWaitingDeviceId(deviceId);
+    setOrderId(null);
+    setRemainingSeconds(CREATE_ORDER_ORPHAN_WAIT_SEC);
+    setPaymentProgressStep(1);
+    setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
+    reconcileGuardRef.current.reset();
+    pollStartedAtRef.current = Date.now();
+    setSubmitting(false);
+    setStep(3);
+
+    // Soft background verify — block only if THIS device is definitively active.
+    void refreshSubscription('payment-submit-gate')
+      .then((paymentGateResult) => {
+        if (doneRef.current) return;
+        const paymentGateClassification = classifyPaymentEntrySubscription(paymentGateResult);
+        if (paymentGateClassification === 'active' || isSubscribed === true) {
+          console.log('[PremiumModal]', 'payment_submit_gate_active_after_ui', {
+            resolveSource: paymentGateResult?.resolveSource ?? null,
+          });
+          payInFlightRef.current = false;
+          showPaymentEntryDialog('active');
+        } else if (paymentGateClassification !== 'inactive') {
+          console.log('[PremiumModal]', 'payment_submit_gate_soft_allow', {
+            classification: paymentGateClassification,
+            resolveSource: paymentGateResult?.resolveSource ?? null,
+            error: paymentGateResult?.error ?? null,
+          });
+        }
+      })
+      .catch((error) => {
+        console.log('[PremiumModal]', 'payment_submit_gate_error', error?.message ?? error);
+      });
+
     if (lipiaWatchdogRef.current) {
       clearTimeout(lipiaWatchdogRef.current);
       lipiaWatchdogRef.current = null;
     }
     lipiaWatchdogRef.current = setTimeout(() => {
       if (!payInFlightRef.current) return;
-      lipiaReleasedByWatchdog = true;
-      console.warn('[PremiumModal]', 'lipia_submitting_watchdog_fired', {
+      console.warn('[PremiumModal]', 'lipia_create_order_watchdog_fired', {
         provider: activeProvider,
         planId: selectedPlan?.id ?? null,
       });
       payInFlightRef.current = false;
-      setSubmitting(false);
-      const deviceId = identityPrefetchRef.current?.deviceId;
-      if (deviceId) {
-        doneRef.current = false;
-        setWaitingDeviceId(deviceId);
-        setOrderId(null);
-        setRemainingSeconds(CREATE_ORDER_ORPHAN_WAIT_SEC);
-        setPaymentProgressStep(1);
-        setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
-        reconcileGuardRef.current.reset();
-        pollStartedAtRef.current = Date.now();
-        setStep(3);
-        void reportPaymentTelemetry('lipia_submitting_watchdog', {
-          plan_id: selectedPlan?.id ?? null,
-          provider: activeProvider,
-        });
-      } else {
-        Alert.alert(
-          'Malipo',
-          'Malipo yanaweza kuwa yameanzishwa. Angalia simu yako kwa USSD/PIN, au jaribu tena.',
-        );
-      }
+      void reportPaymentTelemetry('lipia_submitting_watchdog', {
+        plan_id: selectedPlan?.id ?? null,
+        provider: activeProvider,
+      });
     }, LIPIA_SUBMITTING_WATCHDOG_MS);
 
     try {
-      identity = identity ?? (await getDeviceIdentity());
-      identityPrefetchRef.current = identity;
-      const { deviceId, deviceFingerprint } = identity;
       const payPayload = {
         phone: normalizedPhone,
         plan_id: selectedPlan.id,
@@ -1187,35 +1207,20 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       };
       void cacheSecurityPhone(payPayload.phone);
       const startPayment = resolveCheckoutStartPayment(activeProvider);
-      console.log('[PremiumModal]', 'payment_start', { provider: activeProvider, planId: selectedPlan.id });
+      console.log('[PremiumModal]', 'payment_start', {
+        provider: activeProvider,
+        planId: selectedPlan.id,
+        deviceId: String(deviceId).slice(0, 8),
+      });
       const { order_id: oid, expiresInSeconds } = await startPayment(payPayload);
-      if (lipiaReleasedByWatchdog) {
-        // Late create-order success after watchdog — attach order to waiting UI.
-        if (oid) {
-          setOrderId(oid);
-          const wait =
-            typeof expiresInSeconds === 'number' && expiresInSeconds > 0
-              ? Math.floor(expiresInSeconds)
-              : CREATE_ORDER_ORPHAN_WAIT_SEC;
-          setRemainingSeconds(wait);
-          setWaitingDeviceId(deviceId);
-          console.log('[PremiumModal]', 'late_create_order_attached', { orderId: oid });
-        }
-        return;
-      }
-      doneRef.current = false;
-      setWaitingDeviceId(deviceId);
+      if (doneRef.current) return;
       setOrderId(oid);
       const wait =
         typeof expiresInSeconds === 'number' && expiresInSeconds > 0
           ? Math.floor(expiresInSeconds)
           : 180;
       setRemainingSeconds(wait);
-      setPaymentProgressStep(1);
-      setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
-      reconcileGuardRef.current.reset();
-      pollStartedAtRef.current = Date.now();
-      setStep(3);
+      setWaitingDeviceId(deviceId);
       void reportPaymentTelemetry('started', {
         order_id: oid,
         plan_id: selectedPlan.id,
@@ -1223,14 +1228,37 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         amount: selectedPlan.price,
       });
     } catch (e) {
-      if (lipiaReleasedByWatchdog) {
+      if (doneRef.current) return;
+      if (
+        e instanceof DeviceSubscriptionConflictError ||
+        e?.name === 'DeviceSubscriptionConflictError'
+      ) {
+        console.log(
+          '[PremiumModal]',
+          'device_subscription_guard',
+          JSON.stringify({
+            code: e.code,
+            provider: e.provider ?? activeProvider,
+            httpStatus: e.httpStatus,
+            path: e.path,
+          }),
+        );
+        void reportPaymentTelemetry('device_subscription_conflict', {
+          plan_id: selectedPlan?.id ?? null,
+          provider: e.provider ?? activeProvider,
+          code: e.code ?? null,
+          reason: e.backendReason ?? null,
+        });
+        showPaymentEntryDialog('active');
         return;
       }
       if (e instanceof PhoneSubscriptionConflictError || e?.name === 'PhoneSubscriptionConflictError') {
-        const userMsg = e.userMessage ?? e.message ?? 'Namba hii tayari ina kifurushi hai.';
-        setPhoneGuardTitle(e.title ?? 'Taarifa');
-        setPhoneGuardMessage(userMsg);
-        setPhoneGuardVisible(true);
+        const existingDeviceId = String(e.conflict?.existingDeviceId ?? '').trim();
+        const sameDeviceConflict =
+          existingDeviceId &&
+          (existingDeviceId === String(deviceId) ||
+            existingDeviceId === String(identity.subscriptionDeviceId ?? '') ||
+            existingDeviceId === String(identity.displayedAccountId ?? ''));
         console.log(
           '[PremiumModal]',
           'phone_subscription_guard',
@@ -1241,6 +1269,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
             path: e.path,
             title: e.title ?? null,
             displaySource: e.conflict?.displaySource ?? null,
+            existingDeviceId: existingDeviceId ? `${existingDeviceId.slice(0, 8)}…` : null,
+            sameDeviceConflict,
+            thisDeviceId: String(deviceId).slice(0, 8),
           }),
         );
         void reportPaymentTelemetry('phone_subscription_conflict', {
@@ -1248,7 +1279,23 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           provider: e.provider ?? activeProvider,
           code: e.code ?? null,
           reason: e.backendReason ?? null,
+          same_device: sameDeviceConflict === true,
         });
+        if (sameDeviceConflict) {
+          showPaymentEntryDialog('active');
+          return;
+        }
+        // Legacy phone-ownership 409 on another device: never claim THIS device is active.
+        // Return to phone step so the user can retry (backend should allow device-scoped pay).
+        setPhoneGuardTitle(e.title ?? 'Taarifa');
+        setPhoneGuardMessage(
+          e.userMessage ??
+            e.message ??
+            'Namba hii inatumika kwenye kifaa kingine. Jaribu tena — kifurushi ni cha kifaa hiki pekee.',
+        );
+        setCloseAfterGuardDialog(false);
+        setPhoneGuardVisible(true);
+        setStep(2);
         return;
       }
       if (isPaymentCreateOrderTimeout(e) && identity?.deviceId) {
@@ -1257,15 +1304,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           'create_order_timeout_recovery',
           JSON.stringify({ provider: activeProvider, deviceId: identity.deviceId }),
         );
-        doneRef.current = false;
-        setWaitingDeviceId(identity.deviceId);
-        setOrderId(null);
-        setRemainingSeconds(CREATE_ORDER_ORPHAN_WAIT_SEC);
-        setPaymentProgressStep(1);
-        setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
-        reconcileGuardRef.current.reset();
-        pollStartedAtRef.current = Date.now();
-        setStep(3);
+        // Already on step 3 — keep waiting for USSD/PIN / SSE.
         void reportPaymentTelemetry('create_order_timeout_recovery', {
           plan_id: selectedPlan?.id ?? null,
           provider: activeProvider,
@@ -1295,16 +1334,15 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         provider: activeProvider,
         reason: e?.backendReason ?? userMsg,
       });
-      Alert.alert('Malipo', alertMsg);
+      setFailureReason(alertMsg);
+      setStep(5);
     } finally {
       if (lipiaWatchdogRef.current) {
         clearTimeout(lipiaWatchdogRef.current);
         lipiaWatchdogRef.current = null;
       }
-      if (!lipiaReleasedByWatchdog) {
-        setSubmitting(false);
-        payInFlightRef.current = false;
-      }
+      setSubmitting(false);
+      payInFlightRef.current = false;
     }
   };
 

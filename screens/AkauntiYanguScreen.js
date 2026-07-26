@@ -26,7 +26,7 @@ import PremiumModal from '../components/PremiumModal';
 import { redeemOfferCode, parseSubscriptionPayload } from '../api/subscription';
 import { useDeviceIntelligence } from '../context/DeviceIntelligenceContext';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
-import { formatSubscriptionExpiry, formatSubscriptionExpiryDate } from '../lib/formatExpiry';
+import { formatSubscriptionExpiryDate } from '../lib/formatExpiry';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
 import {
   clearOfferCodeCooldown,
@@ -228,12 +228,15 @@ export default function AkauntiYanguScreen() {
 
   // ---- Card-level derived values (data binding only) -----------------
   const progress = useMemo(() => {
+    // Presentation only: ignore stacked startedAt/periodStart so progress /
+    // countdown agree with the assigned Admin plan duration, not historical span.
+    const planDays = resolveAssignedPlanDurationDays(displayDetails, catalogPlans);
     const base = computeSubscriptionProgress({
-      startedAt: displayDetails?.startedAt ?? null,
-      periodStartAt: displayDetails?.periodStartAt ?? null,
+      startedAt: null,
+      periodStartAt: null,
       expiresAt: canonicalExpiresAt,
-      planDurationDays: resolveAssignedPlanDurationDays(displayDetails, catalogPlans),
-      displayDurationDays: null,
+      planDurationDays: planDays,
+      displayDurationDays: planDays,
       remainingSeconds:
         displayDetails?.remainingSeconds ?? displayDetails?.remaining_seconds ?? null,
       remainingDays: displayDetails?.remainingDays ?? displayDetails?.remaining_days ?? null,
@@ -452,7 +455,7 @@ export default function AkauntiYanguScreen() {
             <Text style={styles.usageMetaText} numberOfLines={1}>
               {progress.remainingDays} siku zimebaki
               {progress.startMs && progress.expiresMs
-                ? `  •  ${formatSubscriptionExpiry(new Date(progress.startMs).toISOString())} → ${formatSubscriptionExpiry(new Date(progress.expiresMs).toISOString())}`
+                ? `  •  ${formatSubscriptionExpiryDate(new Date(progress.startMs).toISOString())} → ${formatSubscriptionExpiryDate(new Date(progress.expiresMs).toISOString())}`
                 : ''}
             </Text>
           </View>

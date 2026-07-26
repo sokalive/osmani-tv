@@ -705,7 +705,6 @@ export default function ChannelPlayerScreen({ route, navigation }) {
    * re-trigger this gate (that was causing "Inathibitisha kifurushi…" flashes).
    */
   useEffect(() => {
-    let cancelled = false;
     if (!channel) return undefined;
     const channelKey = String(channel?.id ?? channel?.channel_id ?? '').trim();
 
@@ -730,37 +729,20 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return undefined;
     }
 
-    if (
-      premiumGateSessionRef.current.granted &&
-      premiumGateSessionRef.current.channelKey === channelKey
-    ) {
-      return undefined;
-    }
-
-    setAccessChecked(false);
+    // Known inactive — never flash "Inathibitisha kifurushi…". Exit immediately;
+    // payment modal is opened by the channel-tap path without waiting on verify.
+    setAccessChecked(true);
     setAccessAllowed(false);
-    (async () => {
-      const ok = await gateForPlayback('player-mount');
-      if (cancelled) return;
-      setAccessChecked(true);
-      setAccessAllowed(ok);
-      if (ok) {
-        premiumGateSessionRef.current = { channelKey, granted: true };
-      } else {
-        premiumGateSessionRef.current = { channelKey, granted: false };
-        console.log('[player][gate]', 'denied', { channel: channel?.name });
-        if (exitPlayerRef.current) {
-          void exitPlayerRef.current('gate_denied');
-        } else {
-          try {
-            navigation.goBack();
-          } catch {}
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    premiumGateSessionRef.current = { channelKey, granted: false };
+    console.log('[player][gate]', 'denied_inactive_instant', { channel: channel?.name });
+    if (exitPlayerRef.current) {
+      void exitPlayerRef.current('gate_denied');
+    } else {
+      try {
+        navigation.goBack();
+      } catch {}
+    }
+    return undefined;
   }, [
     channel?.id,
     channel?.channel_id,
@@ -2295,7 +2277,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       <View style={[styles.root, styles.gateScreen]}>
         <ActivityIndicator color="#FBBF24" size="large" />
         <Text style={styles.gateText}>
-          {accessChecked ? 'Hauna kifurushi hai' : 'Inathibitisha kifurushi…'}
+          {accessChecked ? 'Hauna kifurushi hai' : 'Inafungua…'}
         </Text>
       </View>
     );
