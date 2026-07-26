@@ -20,7 +20,7 @@ import {
   resolveActiveSubscription,
   writeSubscriptionCache,
 } from '../api/subscription';
-import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS, SUBSCRIPTION_WAKE_SSE_EVENTS, USER_CENTER_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
+import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS, SUBSCRIPTION_WAKE_SSE_EVENTS, USER_CENTER_SSE_EVENTS, DELETE_USER_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import {
   dropLegacyBannersCache,
   readBannersCache,
@@ -1643,9 +1643,40 @@ export function OsmaniAppProvider({ children }) {
           hadActiveBefore,
           sseReason,
         });
+        authoritativeInactiveRef.current = true;
+        cacheTrustedActiveRef.current = false;
         await clearLocalActiveSubscription('sse:subscription_revoked');
       })();
     });
+    // Admin DELETE USER — wipe Premium immediately; never wait for restart/cache.
+    const offDeleteUser = DELETE_USER_SSE_EVENTS.map((ev) =>
+      subscribeRealtimeEvent(ev, (payload) => {
+        void (async () => {
+          const role = await subscriptionTransferSseRole(payload, ev);
+          if (role === 'other') return;
+          console.log('[DELETE_USER_SSE]', ev, payload, { role });
+          authoritativeInactiveRef.current = true;
+          cacheTrustedActiveRef.current = false;
+          try {
+            await clearSubscriptionCache(`sse:${ev}:pre-clear`);
+          } catch {
+            /* ignore */
+          }
+          isSubscribedRef.current = false;
+          setIsSubscribed(false);
+          setSubscriptionExpiresAt(null);
+          setSubscriptionDetails(null);
+          setSubscriptionVersion((v) => v + 1);
+          await clearLocalActiveSubscription(`sse:${ev}`);
+          const r = await reverifySubscription(`sse:${ev}`);
+          if (r?.active !== true) {
+            authoritativeInactiveRef.current = true;
+            cacheTrustedActiveRef.current = false;
+          }
+          scheduleAdminDrivenSoftSync(`sse:${ev}`);
+        })();
+      }),
+    );
     const offSubscriptionLifecycle = SUBSCRIPTION_WAKE_SSE_EVENTS.map((ev) =>
       subscribeRealtimeEvent(ev, (payload) => {
         console.log('[SUBSCRIPTION_SSE]', ev, payload);
@@ -1863,6 +1894,7 @@ export function OsmaniAppProvider({ children }) {
       offDeviceStream();
       offSnapshot();
       offRevoked();
+      offDeleteUser.forEach((off) => off());
       offSubscriptionLifecycle.forEach((off) => off());
       offUserCenter.forEach((off) => off());
       offCompleted();
