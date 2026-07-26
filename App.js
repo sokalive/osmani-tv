@@ -635,7 +635,7 @@ function ChannelCatalogScreen({
       manualGiftFocusTimerRef.current = setTimeout(() => {
         manualGiftFocusTimerRef.current = null;
         void tryShowManualGiftRef.current('focus');
-      }, 500);
+      }, 0);
       return () => {
         if (manualGiftFocusTimerRef.current != null) {
           clearTimeout(manualGiftFocusTimerRef.current);

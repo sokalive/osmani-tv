@@ -128,9 +128,13 @@ else pass('thanks copy');
 if (!modal.includes('registerDeviceIntelligence')) fail('device profile refresh');
 else pass('device profile refresh');
 
-if (!ctx.includes('deferred')) {
-  fail('payment SSE deferred reverify');
-} else pass('payment SSE deferred reverify');
+if (!ctx.includes('instantUnlockProtectUntilRef') || !ctx.includes('instant_unlock_grace_preserved')) {
+  fail('payment SSE instant-unlock grace (replaces 2.5s deferred reverify)');
+} else pass('payment SSE instant-unlock grace');
+
+if (ctx.includes('2500') && ctx.includes('deferred')) {
+  fail('legacy 2500ms deferred payment reverify must stay removed');
+} else pass('no 2500ms deferred payment reverify');
 
 if (!waiting.includes('PROVIDER_CONFIRMED_ACTIVATING')) fail('waiting state contract');
 else pass('waiting state contract');

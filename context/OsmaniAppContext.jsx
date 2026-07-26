@@ -236,6 +236,15 @@ export function OsmaniAppProvider({ children }) {
   const lastBootResolveRef = useRef(null);
   /** Prevents duplicate Hongera popups for the same grant within a session. */
   const lastActivationSuccessKeyRef = useRef('');
+  /**
+   * After optimistic SSE/payment unlock, ignore non-authoritative inactive verify
+   * briefly so replica lag cannot re-lock — and so we can reverify immediately
+   * (Account boxes) instead of waiting 2.5s before reconcile.
+   */
+  const instantUnlockProtectUntilRef = useRef(0);
+  const instantUnlockExpiresAtRef = useRef(null);
+  const instantUnlockGraceRetryTimerRef = useRef(null);
+  const INSTANT_UNLOCK_GRACE_MS = 5000;
   const trialWatchSettingsRef = useRef(TRIAL_WATCH_FAIL_CLOSED);
   const settingsRef = useRef(defaultSettings);
   const rawChannelsRef = useRef([]);
@@ -291,6 +300,8 @@ export function OsmaniAppProvider({ children }) {
     // Invalidate any in-flight reverify so a stale inactive result cannot re-lock
     // channels right after payment / SSE / unlock-channels apply.
     lastVerifyKeyRef.current += 1;
+    instantUnlockProtectUntilRef.current = Date.now() + INSTANT_UNLOCK_GRACE_MS;
+    instantUnlockExpiresAtRef.current = expiresAt;
     isSubscribedRef.current = true;
     authoritativeInactiveRef.current = false;
     cacheTrustedActiveRef.current = false;
@@ -557,6 +568,44 @@ export function OsmaniAppProvider({ children }) {
               resolveSource: r.resolveSource ?? null,
             });
           }
+        } else if (
+          !authoritativeInactive &&
+          !authoritativeReconcile &&
+          !transferLockActive &&
+          !active &&
+          isSubscribedRef.current &&
+          Date.now() < instantUnlockProtectUntilRef.current
+        ) {
+          const { cached, sameDevice } = await cacheSameDevice();
+          active = true;
+          expiresAt =
+            instantUnlockExpiresAtRef.current ??
+            (sameDevice && cached?.active ? cached.expiresAt ?? null : null) ??
+            null;
+          effectiveResult = {
+            ...r,
+            active: true,
+            expiresAt,
+            instantUnlockPreserved: true,
+            amount: cached?.planSnapshot?.amount ?? r.amount ?? null,
+            planName: cached?.planSnapshot?.planName ?? r.planName ?? null,
+            planId: cached?.planSnapshot?.planId ?? r.planId ?? null,
+            planDurationDays:
+              cached?.planSnapshot?.planDurationDays ?? r.planDurationDays ?? null,
+          };
+          console.log('[SUBSCRIPTION_VERIFY]', reason, 'instant_unlock_grace_preserved', {
+            resolveSource: r.resolveSource ?? null,
+            protectMsLeft: Math.max(0, instantUnlockProtectUntilRef.current - Date.now()),
+          });
+          if (instantUnlockGraceRetryTimerRef.current == null) {
+            const delayMs = Math.max(80, instantUnlockProtectUntilRef.current - Date.now() + 40);
+            instantUnlockGraceRetryTimerRef.current = setTimeout(() => {
+              instantUnlockGraceRetryTimerRef.current = null;
+              void reverifySubscription(`${reason}:grace-retry`);
+            }, delayMs);
+          }
+          // Keep optimistic unlock + Account/Hongera details; do not apply sparse inactive body.
+          return effectiveResult;
         }
 
         if (
@@ -690,7 +739,7 @@ export function OsmaniAppProvider({ children }) {
         setSubscriptionVersion((v) => v + 1);
         if (active) {
           let planSnapshot = extractPlanSnapshotFromDetails(mergedDetails);
-          if (!planSnapshot && effectiveResult.transportPreserved === true) {
+          if (!planSnapshot && (effectiveResult.transportPreserved === true || effectiveResult.instantUnlockPreserved === true)) {
             const cachedSnap = await readSubscriptionCache();
             planSnapshot = cachedSnap.planSnapshot ?? null;
           }
@@ -732,6 +781,19 @@ export function OsmaniAppProvider({ children }) {
           serverTime: detailSource.serverTime ?? null,
           transportPreserved: effectiveResult.transportPreserved === true,
         });
+        // Sparse SSE may unlock without plan fields — Hongera after verify fills them.
+        if (active && detailsPayload) {
+          const reasonText = String(reason);
+          if (
+            /sse:(manual_subscription_granted|manual_gift|package_granted|admin_subscription_granted|subscription_manual_grant|device_subscription_granted|manual_subscription(?:_changed|_granted)?)\b/.test(
+              reasonText,
+            )
+          ) {
+            showActivationSuccess(detailsPayload, 'admin_grant');
+          } else if (reasonText.includes('subscription_request_updated')) {
+            showActivationSuccess(detailsPayload, 'custom_grant');
+          }
+        }
         return effectiveResult;
       } catch (e) {
         console.log('[SUBSCRIPTION_VERIFY]', reason, 'error', e?.message ?? e);
@@ -1680,20 +1742,11 @@ export function OsmaniAppProvider({ children }) {
     const offSubscriptionLifecycle = SUBSCRIPTION_WAKE_SSE_EVENTS.map((ev) =>
       subscribeRealtimeEvent(ev, (payload) => {
         console.log('[SUBSCRIPTION_SSE]', ev, payload);
-        void (async () => {
-          const details = await tryInstantApplyFromSse(ev, payload);
-          const paymentActivation =
-            ev === 'payment_success' ||
-            ev === 'payment_completed' ||
-            ev === 'subscription_activated';
-          // Defer reconcile after instant payment unlock — replica lag must not re-lock.
-          if (details && paymentActivation) {
-            setTimeout(() => {
-              void reverifySubscription(`sse:${ev}:deferred`);
-            }, 2500);
-          } else {
-            void reverifySubscription(`sse:${ev}`);
-          }
+          void (async () => {
+          await tryInstantApplyFromSse(ev, payload);
+          // Reverify immediately so Account boxes / gift flags refresh without a
+          // multi-second wait. Replica-lag re-lock is blocked by instant-unlock grace.
+          void reverifySubscription(`sse:${ev}`);
           scheduleAdminDrivenSoftSync(`sse:${ev}`);
           if (ev === 'payment_success' || ev === 'payment_completed') {
             void reportUserCenterEvent('payment_success', { source: 'sse', sse_event: ev });
