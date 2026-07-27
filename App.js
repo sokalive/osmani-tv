@@ -181,6 +181,30 @@ const COLORS = {
 
 const filters = ['Zote', 'Trending', 'Sports', 'Tamthilia'];
 
+/** Soft premium gradients + icons for Home category pills (layout unchanged). */
+const FILTER_VISUAL = Object.freeze({
+  Zote: {
+    icon: 'apps-outline',
+    colors: ['#1E3A5F', '#243B55'],
+    selected: ['#2563EB', '#1D4ED8'],
+  },
+  Trending: {
+    icon: 'flame-outline',
+    colors: ['#4A1C1C', '#5C2424'],
+    selected: ['#DC2626', '#B91C1C'],
+  },
+  Sports: {
+    icon: 'football-outline',
+    colors: ['#14532D', '#166534'],
+    selected: ['#16A34A', '#15803D'],
+  },
+  Tamthilia: {
+    icon: 'film-outline',
+    colors: ['#5C3D0A', '#6B440C'],
+    selected: ['#F59E0B', '#D97706'],
+  },
+});
+
 /** Full image URL for API `thumbnail` (absolute or `/uploads/...`). */
 function resolveChannelThumbnailUri(raw) {
   const rel =
@@ -1254,16 +1278,33 @@ function ChannelCatalogScreen({
         >
           {filters.map((filter) => {
             const isSelected = selectedFilter === filter;
+            const visual = FILTER_VISUAL[filter] ?? FILTER_VISUAL.Zote;
             return (
               <Pressable
                 key={filter}
                 onPress={() => setSelectedFilter(filter)}
-                style={[
-                  styles.filterPill,
-                  { backgroundColor: isSelected ? COLORS.filterSelected : COLORS.filterPill },
-                ]}
+                accessibilityRole="button"
+                accessibilityLabel={filter}
+                accessibilityState={{ selected: isSelected }}
               >
-                <Text style={styles.filterText}>{filter}</Text>
+                <LinearGradient
+                  colors={isSelected ? visual.selected : visual.colors}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={[
+                    styles.filterPill,
+                    isSelected ? styles.filterPillSelected : styles.filterPillIdle,
+                  ]}
+                >
+                  <Ionicons
+                    name={visual.icon}
+                    size={14}
+                    color={isSelected ? COLORS.white : 'rgba(255,255,255,0.88)'}
+                  />
+                  <Text style={[styles.filterText, isSelected && styles.filterTextSelected]}>
+                    {filter}
+                  </Text>
+                </LinearGradient>
               </Pressable>
             );
           })}
@@ -1957,13 +1998,27 @@ const styles = StyleSheet.create({
   },
   filterPill: {
     borderRadius: 50,
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  filterPillIdle: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  filterPillSelected: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
   },
   filterText: {
     color: COLORS.white,
     fontWeight: '500',
     fontSize: 14,
+  },
+  filterTextSelected: {
+    fontWeight: '700',
   },
   sectionHeader: {
     marginTop: 12,

@@ -23,6 +23,7 @@ import OmbaKifurushiSection from '../components/OmbaKifurushiSection';
 import AccountUpdateSectionBoundary from '../components/AccountUpdateSectionBoundary';
 import HamishaKifurushiModal from '../components/HamishaKifurushiModal';
 import PremiumModal from '../components/PremiumModal';
+import ProfileAvatar from '../components/ProfileAvatar';
 import { redeemOfferCode, parseSubscriptionPayload } from '../api/subscription';
 import { useDeviceIntelligence } from '../context/DeviceIntelligenceContext';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
@@ -446,9 +447,7 @@ export default function AkauntiYanguScreen() {
           </Pressable>
           <View style={styles.headerMain}>
             <View style={styles.avatarWrap}>
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarInitial}>B</Text>
-              </View>
+              <ProfileAvatar seed={deviceIdFull || deviceLabel} size={52} />
               <View style={styles.onlineDot} />
             </View>
             <View style={styles.headerTextCol}>
@@ -658,19 +657,6 @@ const styles = StyleSheet.create({
   },
   avatarWrap: {
     marginRight: 12,
-  },
-  avatarCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#2A2E37',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarInitial: {
-    color: COLORS.white,
-    fontSize: 22,
-    fontWeight: '700',
   },
   onlineDot: {
     position: 'absolute',
