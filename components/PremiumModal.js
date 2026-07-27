@@ -598,39 +598,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       closeSse();
       applyWaitingState(APP_WAITING_STATE.ACTIVE);
 
-      let mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
-      let canonicalVerified = verified;
-      if (!mergedExpires) {
-        try {
-          const identity = await getDeviceIdentity();
-          const { deviceId, deviceFingerprint } = identity;
-          const probed = await runPaymentActivationTick({
-            deviceId,
-            deviceFingerprint,
-            identity,
-            light: false,
-          });
-          mergedExpires = latestExpiryIso(
-            mergedExpires,
-            probed?.subscription?.expiresAt ?? probed?.fetchExpires ?? null,
-          );
-          if (probed?.subscription && mergedExpires) {
-            canonicalVerified = {
-              ...verified,
-              ...probed.subscription,
-              expiresAt: mergedExpires,
-            };
-          }
-        } catch (e) {
-          console.log('[PremiumModal]', 'success_expiry_probe_error', e?.message ?? e);
-        }
-      }
+      // Instant unlock + Hongera — never await probes/verify here (regression from cfeb1b4).
+      const mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
       const forUnlock = mergeCheckoutPlanIntoSubscription(
         {
-          ...canonicalVerified,
+          ...verified,
           active: true,
           isActive: true,
-          expiresAt: mergedExpires ?? canonicalVerified?.expiresAt ?? null,
+          expiresAt: mergedExpires ?? verified?.expiresAt ?? null,
         },
         selectedPlan,
       );
@@ -665,9 +640,44 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       setPhoneGuardVisible(false);
       setCloseAfterGuardDialog(false);
       setStep(4);
-      // Context unlock already applied. Avoid an immediate shared reverify race that can
-      // briefly return inactive and re-lock channels before backend read-replicas catch up.
-      // FUNGUA CHANNEL refreshes entitlement once before navigating.
+
+      // Non-blocking: backfill Hongera expiry from backend if SSE/status omitted it.
+      // Must NOT delay unlock or popup appearance.
+      if (!mergedExpires && !verified?.expiresAt) {
+        void (async () => {
+          try {
+            const identity = await getDeviceIdentity();
+            const probed = await runPaymentActivationTick({
+              deviceId: identity.deviceId,
+              deviceFingerprint: identity.deviceFingerprint,
+              identity,
+              light: true,
+            });
+            const expires =
+              latestExpiryIso(
+                probed?.subscription?.expiresAt ?? null,
+                probed?.fetchExpires ?? null,
+              ) ?? null;
+            if (!expires) return;
+            setSuccessDetails((prev) =>
+              buildPaymentSuccessDetails(
+                {
+                  ...(prev ?? {}),
+                  ...(probed?.subscription ?? {}),
+                  expiresAt: expires,
+                  expires_at: expires,
+                },
+                {
+                  name: selectedPlan?.name ?? null,
+                  price: selectedPlan?.price ?? null,
+                },
+              ),
+            );
+          } catch (e) {
+            console.log('[PremiumModal]', 'success_expiry_backfill_error', e?.message ?? e);
+          }
+        })();
+      }
     },
     [
       clearTimers,
