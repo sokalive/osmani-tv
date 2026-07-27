@@ -641,38 +641,47 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       setCloseAfterGuardDialog(false);
       setStep(4);
 
-      // Non-blocking: backfill Hongera expiry from backend if SSE/status omitted it.
-      // Must NOT delay unlock or popup appearance.
+      // Non-blocking: backfill Hongera expiry from backend if SSE omitted it.
+      // Must NOT delay unlock or popup appearance (regression was awaiting this).
       if (!mergedExpires && !verified?.expiresAt) {
         void (async () => {
           try {
             const identity = await getDeviceIdentity();
-            const probed = await runPaymentActivationTick({
-              deviceId: identity.deviceId,
-              deviceFingerprint: identity.deviceFingerprint,
-              identity,
-              light: true,
-            });
-            const expires =
-              latestExpiryIso(
-                probed?.subscription?.expiresAt ?? null,
-                probed?.fetchExpires ?? null,
-              ) ?? null;
-            if (!expires) return;
-            setSuccessDetails((prev) =>
-              buildPaymentSuccessDetails(
-                {
-                  ...(prev ?? {}),
-                  ...(probed?.subscription ?? {}),
+            for (let attempt = 0; attempt < 25; attempt++) {
+              const probed = await runPaymentActivationTick({
+                deviceId: identity.deviceId,
+                deviceFingerprint: identity.deviceFingerprint,
+                identity,
+                // Keep early attempts light; one fuller verify mid-loop if still missing.
+                light: attempt < 8 || attempt % 3 !== 0,
+              });
+              const expires =
+                probed?.subscription?.expiresAt != null
+                  ? String(probed.subscription.expiresAt)
+                  : null;
+              if (expires && probed?.subscription && isSubscriptionActive(probed.subscription)) {
+                setSuccessDetails((prev) =>
+                  buildPaymentSuccessDetails(
+                    {
+                      ...(prev ?? {}),
+                      ...probed.subscription,
+                      expiresAt: expires,
+                      expires_at: expires,
+                    },
+                    {
+                      name: selectedPlan?.name ?? null,
+                      price: selectedPlan?.price ?? null,
+                    },
+                  ),
+                );
+                console.log('[PremiumModal]', 'success_expiry_backfill', {
+                  attempt,
                   expiresAt: expires,
-                  expires_at: expires,
-                },
-                {
-                  name: selectedPlan?.name ?? null,
-                  price: selectedPlan?.price ?? null,
-                },
-              ),
-            );
+                });
+                return;
+              }
+              await new Promise((r) => setTimeout(r, 800));
+            }
           } catch (e) {
             console.log('[PremiumModal]', 'success_expiry_backfill_error', e?.message ?? e);
           }
