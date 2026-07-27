@@ -1,0 +1,32 @@
+{
+  "timestamp": "2026-07-27T13:38:29.902Z",
+  "commit": "7b52a7c041a38dc86b895a6e613e5828f6bda36d",
+  "runtime": "1.8.2",
+  "versionCode": 24,
+  "channels": [
+    "preview",
+    "vps-preview",
+    "production"
+  ],
+  "groups": [
+    {
+      "channel": "preview",
+      "runtime": "1.8.2",
+      "groupId": "eb401945-a51c-4dba-a460-6535d4d61616",
+      "androidUpdateId": "019fa3c3-d14c-7736-8a8e-625e9e43469e"
+    },
+    {
+      "channel": "vps-preview",
+      "runtime": "1.8.2",
+      "groupId": "7f0900a7-de50-4d42-ad3b-8a2d87125a75",
+      "androidUpdateId": "019fa3c6-379a-7ccc-b7d6-a7bdb79edc28"
+    },
+    {
+      "channel": "production",
+      "runtime": "1.8.2",
+      "groupId": "d8c56c97-0809-4adc-ace6-372bfba60858",
+      "androidUpdateId": "019fa3cc-6122-7e40-a3f9-d21ce1b1aa83"
+    }
+  ],
+  "rootCause": "Identical versionCode 24 / runtime 1.8.2 APKs are baked with different expo-channel-name values (preview | vps-preview | production). OTA published to only one channel never reaches the others."
+}
