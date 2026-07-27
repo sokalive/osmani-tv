@@ -1,0 +1,266 @@
+{
+  "timestamp": "2026-07-27T14:14:41.250Z",
+  "window": {
+    "since": "2026-07-25",
+    "until": "2026-07-28"
+  },
+  "runtime": "1.8.2",
+  "requiredChannels": [
+    "preview",
+    "vps-preview",
+    "production"
+  ],
+  "publishedAppHead": "7b52a7c041a38dc86b895a6e613e5828f6bda36d",
+  "repoHead": "ad9625fe19f4cc6e34640e100130916d29267f4d",
+  "publishedIsAncestorOfHead": true,
+  "parity": {
+    "ok": true,
+    "runtime": "1.8.2",
+    "parityKey": "fix(ota): v24 channel recovery — sync all 1.8.2 installs <channel>\"",
+    "latest": {
+      "preview": {
+        "groupId": "eb401945-a51c-4dba-a460-6535d4d61616",
+        "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs preview\" (44 minutes ago by isamu_123)",
+        "runtimeVersion": "1.8.2",
+        "platforms": "android, ios"
+      },
+      "vps-preview": {
+        "groupId": "7f0900a7-de50-4d42-ad3b-8a2d87125a75",
+        "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs vps-preview\" (42 minutes ago by isamu_123)",
+        "runtimeVersion": "1.8.2",
+        "platforms": "android, ios"
+      },
+      "production": {
+        "groupId": "d8c56c97-0809-4adc-ace6-372bfba60858",
+        "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs production\" (36 minutes ago by isamu_123)",
+        "runtimeVersion": "1.8.2",
+        "platforms": "android, ios"
+      }
+    }
+  },
+  "latestNormalized": "fix(ota): v24 channel recovery — sync all 1.8.2 installs <channel>",
+  "latestIsRecoveryWave": true,
+  "appCommitsSinceJul25": [
+    {
+      "hash": "7b52a7c041a38dc86b895a6e613e5828f6bda36d",
+      "subject": "﻿fix(ui): cartoon profile avatars and Home category icon gradients"
+    },
+    {
+      "hash": "a0ce5b0580c46598432f6d573c6589ef51b9f0c4",
+      "subject": "﻿fix(transfer): instant Hamisha redeem, Home navigation, remove poll loops"
+    },
+    {
+      "hash": "c2b0879de46dedad9ce46ef3e4347ccc5dc4b6b9",
+      "subject": "fix(payment): non-blocking Hongera expiry backfill retries"
+    },
+    {
+      "hash": "c9d8c90d2a7baf5a771c32a518f711f8b0b22f6c",
+      "subject": "fix(payment): restore instant Hongera unlock; keep non-blocking expiry backfill"
+    },
+    {
+      "hash": "cfeb1b4f9a7a6ebacfd72e8a8e371f7ef847f086",
+      "subject": "fix(payment): use canonical Hongera expiry and open channels instantly"
+    },
+    {
+      "hash": "8d8c7cd9b74e8a982bbc3fc3a9832d7b692c6f59",
+      "subject": "﻿fix(ui): Account Box1 shows price only — no plan name"
+    },
+    {
+      "hash": "2de49982d42d38f1997d80122736cb630bd421d4",
+      "subject": "﻿fix(prod): Account Box1 shows plan name · price; overwrite stale plan cache"
+    },
+    {
+      "hash": "a1945adcdf578087de75237a2c5ba75b82226600",
+      "subject": "﻿fix(prod): instant Hongera on payment SUCCESS; sticky Account refresh safety"
+    },
+    {
+      "hash": "0a25ff96be29c882d3ef3447c5b7e10117ce1d52",
+      "subject": "﻿fix(prod): keep Hongera after unlock; Account Box 4 uses backend expires_at"
+    },
+    {
+      "hash": "e616d6855982238598778118d61480dd6944b60d",
+      "subject": "﻿fix(prod): instant activation — remove 2.5s payment reverify deferral"
+    },
+    {
+      "hash": "97ff1496ff542c3e8ab455d9fa811ff5b3a7cc1d",
+      "subject": "fix(prod): instant DELETE USER premium wipe via SSE aliases"
+    },
+    {
+      "hash": "8634643316421ac27392bbc580f13fa05c591b6e",
+      "subject": "fix(prod): instant premium/Lipia UX + Admin-plan Account boxes + multi-device phone soft"
+    },
+    {
+      "hash": "6610fbb427d36dbcf0a3ea3a845a95610f7e57f3",
+      "subject": "fix(ux): instant premium entry + Lipia step; device-scoped identity"
+    },
+    {
+      "hash": "d760b6f822e57e25dde17a14282bab8562b59e4c",
+      "subject": "fix(account): Box1 price-only + Box4 dd/mm/yyyy expiry (backend-truth)"
+    },
+    {
+      "hash": "661a1bf70fc962b0e714a2b32cf5285af04cbf90",
+      "subject": "fix(subscription): active-payment block, EAT midnight expiry, package-accurate remaining days, instant activation"
+    },
+    {
+      "hash": "194a46cfde61d398429f3accf7d14305adb200fe",
+      "subject": "fix(payment): never leave Lipia button stuck on loading after create-order"
+    },
+    {
+      "hash": "902e8931af420abd2d1231b8b4b5446478ae4444",
+      "subject": "fix(ota): publish popup-removal OTA to preview channel used by CDN v24 APK"
+    }
+  ],
+  "appCommitsMissingFromPublishedHead": [],
+  "featureMarkers": [
+    {
+      "id": "payment-hongera",
+      "presentInChannelHistory": true
+    },
+    {
+      "id": "account-boxes",
+      "presentInChannelHistory": true
+    },
+    {
+      "id": "subscription",
+      "presentInChannelHistory": true
+    },
+    {
+      "id": "hamisha-transfer",
+      "presentInChannelHistory": true
+    },
+    {
+      "id": "ui-avatars-categories",
+      "presentInChannelHistory": true
+    },
+    {
+      "id": "channel-recovery",
+      "presentInChannelHistory": true
+    }
+  ],
+  "channelLatest": {
+    "preview": {
+      "groupId": "eb401945-a51c-4dba-a460-6535d4d61616",
+      "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs preview\" (44 minutes ago by isamu_123)",
+      "runtimeVersion": "1.8.2",
+      "platforms": "android, ios"
+    },
+    "vps-preview": {
+      "groupId": "7f0900a7-de50-4d42-ad3b-8a2d87125a75",
+      "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs vps-preview\" (42 minutes ago by isamu_123)",
+      "runtimeVersion": "1.8.2",
+      "platforms": "android, ios"
+    },
+    "production": {
+      "groupId": "d8c56c97-0809-4adc-ace6-372bfba60858",
+      "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs production\" (36 minutes ago by isamu_123)",
+      "runtimeVersion": "1.8.2",
+      "platforms": "android, ios"
+    }
+  },
+  "channelHistorySample": {
+    "preview": [
+      {
+        "groupId": "eb401945-a51c-4dba-a460-6535d4d61616",
+        "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs preview\" (44 minutes ago by isamu_123)"
+      },
+      {
+        "groupId": "4ec7f993-bdc8-470a-855f-ad2fb02679ce",
+        "message": "\"fix(ui): Account Box1 price only — no plan name (1.8.2)\" (14 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "3fc68b6b-4d60-47ac-aec4-075f58048f32",
+        "message": "\"fix(prod): Account Box1 plan name · price + stale plan cache overwrite (1.8.2)\" (15 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "f2fbaa38-de40-47cd-a8ea-049574010a20",
+        "message": "\"fix(prod): instant Hongera on payment SUCCESS + Account canonical refresh (1.8.2)\" (17 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "4becc9b3-7836-43a9-9a66-8292a7c40fa8",
+        "message": "\"fix(prod): Hongera after unlock + backend expires_at Account Box4 runtime 1.8.2\" (19 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "7e2ffc16-6093-44c2-8b5d-58f71c3289d0",
+        "message": "\"fix(prod): instant SSE activation + Account boxes (no 2.5s defer) runtime 1.8.2\" (23 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "a677846e-104c-41dd-93be-0e460a71528d",
+        "message": "\"fix(prod): instant UX + Admin-plan boxes + multi-device soft v24 preview 1.8.2\" (1 day ago by isamu_123)"
+      },
+      {
+        "groupId": "0866acc9-7345-47b9-9cd7-e59a69b66719",
+        "message": "\"fix(account): Box1 price-only + Box4 dd/mm/yyyy v24 preview runtime 1.8.2\" (1 day ago by isamu_123)"
+      }
+    ],
+    "vps-preview": [
+      {
+        "groupId": "7f0900a7-de50-4d42-ad3b-8a2d87125a75",
+        "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs vps-preview\" (41 minutes ago by isamu_123)"
+      },
+      {
+        "groupId": "4a7e6f5c-0c0f-4195-acd6-bbe888d148d2",
+        "message": "\"fix(ui): cartoon avatars + Home category icons/gradients runtime 1.8.2\" (1 hour ago by isamu_123)"
+      },
+      {
+        "groupId": "d134ebec-8651-48dd-945c-0580ce62d4b5",
+        "message": "\"fix(payment): instant Hongera + non-blocking expiry backfill runtime 1.8.2\" (5 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "88bce10a-e688-4287-9bda-3bd31e639e25",
+        "message": "\"fix(payment): restore instant Hongera unlock; non-blocking expiry backfill runtime 1.8.2\" (6 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "dfa0d74f-00c4-42dc-ad03-1e2fe98e5f2b",
+        "message": "\"fix(payment): canonical Hongera expiry + instant Fungua navigation runtime 1.8.2\" (6 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "f14296a8-3ed2-4516-aeed-565ca6e90879",
+        "message": "\"fix(ui): Account Box1 price only — no plan name (1.8.2)\" (14 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "fc65873a-2d53-4ebc-aa80-e7708244deee",
+        "message": "\"fix(prod): Account Box1 plan name · price + stale plan cache overwrite (1.8.2)\" (15 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "1544e289-612d-41c2-879a-e60f15be5ab3",
+        "message": "\"fix(prod): instant Hongera on payment SUCCESS + Account canonical refresh (1.8.2)\" (17 hours ago by isamu_123)"
+      }
+    ],
+    "production": [
+      {
+        "groupId": "d8c56c97-0809-4adc-ace6-372bfba60858",
+        "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs production\" (35 minutes ago by isamu_123)"
+      },
+      {
+        "groupId": "4c686533-ea01-48ad-a8a4-ba117ecaba25",
+        "message": "\"fix(ui): cartoon avatars + Home category icons/gradients runtime 1.8.2\" (1 hour ago by isamu_123)"
+      },
+      {
+        "groupId": "75564a0f-4063-4999-bf40-26b690faff4f",
+        "message": "\"fix(transfer): instant Hamisha redeem + source Home navigation runtime 1.8.2\" (3 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "973aa257-13c6-4709-86ef-13ed9a799f4c",
+        "message": "\"fix(payment): instant Hongera + non-blocking expiry backfill runtime 1.8.2\" (5 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "f39de7de-9ddf-489a-9a87-f91b705d3295",
+        "message": "\"fix(payment): canonical Hongera expiry + instant Fungua navigation runtime 1.8.2\" (6 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "254e13c1-f325-4c7a-8916-5a524c79329e",
+        "message": "\"fix(ui): Account Box1 price only — no plan name (1.8.2)\" (14 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "be9b9d1b-4a7c-4e01-ad4e-2eb60330d1d5",
+        "message": "\"fix(prod): Account Box1 plan name · price + stale plan cache overwrite (1.8.2)\" (15 hours ago by isamu_123)"
+      },
+      {
+        "groupId": "956cb8ec-08c6-434b-8975-2a2133512e30",
+        "message": "\"fix(prod): instant Hongera on payment SUCCESS + Account canonical refresh (1.8.2)\" (17 hours ago by isamu_123)"
+      }
+    ]
+  },
+  "ok": true,
+  "confirmation": "ALL VersionCode 24 / Runtime 1.8.2 channels carry the Jul 25–27 production JS HEAD (recovery wave)."
+}

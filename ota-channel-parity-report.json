@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-07-27T14:12:57.909Z",
+  "ok": true,
+  "runtime": "1.8.2",
+  "parityKey": "fix(ota): v24 channel recovery — sync all 1.8.2 installs <channel>\"",
+  "latest": {
+    "preview": {
+      "groupId": "eb401945-a51c-4dba-a460-6535d4d61616",
+      "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs preview\" (43 minutes ago by isamu_123)",
+      "runtimeVersion": "1.8.2",
+      "platforms": "android, ios"
+    },
+    "vps-preview": {
+      "groupId": "7f0900a7-de50-4d42-ad3b-8a2d87125a75",
+      "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs vps-preview\" (40 minutes ago by isamu_123)",
+      "runtimeVersion": "1.8.2",
+      "platforms": "android, ios"
+    },
+    "production": {
+      "groupId": "d8c56c97-0809-4adc-ace6-372bfba60858",
+      "message": "\"fix(ota): v24 channel recovery — sync all 1.8.2 installs production\" (34 minutes ago by isamu_123)",
+      "runtimeVersion": "1.8.2",
+      "platforms": "android, ios"
+    }
+  },
+  "requiredChannels": [
+    "preview",
+    "vps-preview",
+    "production"
+  ]
+}
