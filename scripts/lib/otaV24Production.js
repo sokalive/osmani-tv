@@ -146,6 +146,28 @@ function runEas(args, env = {}) {
   };
 }
 
+/** Windows-safe shell command (keeps --message quoting intact). */
+function runEasCommand(command, env = {}) {
+  const result = spawnSync(command, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    shell: true,
+    env: {
+      ...process.env,
+      CI: '1',
+      EAS_SKIP_AUTO_FINGERPRINT: '1',
+      EXPO_PUBLIC_API_URL: API_URL,
+      ...env,
+    },
+  });
+  return {
+    status: result.status ?? 1,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    out: `${result.stdout || ''}${result.stderr || ''}`,
+  };
+}
+
 function assertPreflight({ runtime = RUNTIME_V24, versionCode = VERSION_CODE_V24 } = {}) {
   const errors = [];
   const appVersion = readAppVersion();
@@ -198,15 +220,15 @@ function assertPreflight({ runtime = RUNTIME_V24, versionCode = VERSION_CODE_V24
 
 function publishChannel({ channel, runtime, message, maxAttempts = 4 }) {
   const quotedMsg = String(message).replace(/"/g, '');
-  const args = ['update', '--channel', channel, '--message', quotedMsg, '--non-interactive'];
-  if (channel === 'production') {
-    args.splice(1, 0, '--environment', 'production');
-  }
+  const envFlag = channel === 'production' ? '--environment production ' : '';
+  const cmd =
+    `${NPX} eas-cli update --channel ${channel} ${envFlag}` +
+    `--message "${quotedMsg}" --non-interactive`;
 
   let last = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     console.log(`\n=== OTA channel=${channel} runtime=${runtime} attempt=${attempt}/${maxAttempts} ===`);
-    last = runEas(args, { OTA_RUNTIME_TARGET: runtime });
+    last = runEasCommand(cmd, { OTA_RUNTIME_TARGET: runtime });
     process.stdout.write(last.out);
     if (last.status === 0) {
       const groupMatch =
