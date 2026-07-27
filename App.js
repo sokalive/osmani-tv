@@ -39,6 +39,7 @@ import ManualSubscriptionGiftModal from './components/ManualSubscriptionGiftModa
 import PopupSettingsModal from './components/PopupSettingsModal';
 import TransferConfirmModal from './components/TransferConfirmModal';
 import TransferSuccessModal from './components/TransferSuccessModal';
+import { registerTransferNavigateHome } from './lib/transferNavigation';
 import SubscriptionActivationSuccessModal from './components/SubscriptionActivationSuccessModal';
 import UpdateOverlay from './components/UpdateOverlay';
 import ChannelUpdateGateHost from './components/ChannelUpdateGateHost';
@@ -1848,6 +1849,18 @@ function SubscriptionLifecycleGates() {
     activationSuccessSource,
     dismissActivationSuccess,
   } = useOsmaniApp();
+
+  useEffect(() => {
+    registerTransferNavigateHome(() => {
+      try {
+        if (!navigationRef?.isReady?.()) return;
+        navigationRef.navigate('MainTabs', { screen: 'Home' });
+      } catch {
+        /* ignore */
+      }
+    });
+    return () => registerTransferNavigateHome(null);
+  }, []);
 
   useRegisterBlockingSheet('lifecycle-transfer', Boolean(pendingTransfer));
   useRegisterBlockingSheet('lifecycle-activation-success', activationSuccessVisible);

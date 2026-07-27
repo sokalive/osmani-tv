@@ -89,6 +89,7 @@ import {
 import { reportUserCenterEvent } from '../api/userCenterSync';
 import { registerDeviceIntelligence } from '../api/usersIntelligence';
 import { isTransferAwaitingSourceApproval } from '../lib/transferAwaitingSourceApproval';
+import { runTransferNavigateHome } from '../lib/transferNavigation';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS;
@@ -367,8 +368,13 @@ export function OsmaniAppProvider({ children }) {
 
   const showActivationSuccess = useCallback((details, source = 'admin_grant') => {
     const built = buildPaymentSuccessDetails(details);
-    if (!built?.expiresAt && !built?.planName) return;
-    const dedupeKey = `${source}:${built.expiresAt ?? ''}:${built.planName ?? ''}`;
+    const hasDisplayable =
+      Boolean(built?.expiresAt) ||
+      Boolean(built?.planName) ||
+      (source === 'transfer' &&
+        (Number.isFinite(built?.amount) || Number.isFinite(built?.remainingDays)));
+    if (!hasDisplayable) return;
+    const dedupeKey = `${source}:${built.expiresAt ?? ''}:${built.planName ?? ''}:${built.amount ?? ''}`;
     if (lastActivationSuccessKeyRef.current === dedupeKey) {
       console.log('[ACTIVATION_SUCCESS]', 'deduped', { dedupeKey });
       return;
@@ -1717,7 +1723,7 @@ export function OsmaniAppProvider({ children }) {
             skip: userInitiated ? 'user_transfer_clear' : 'silent_transfer_clear',
           });
           await handleRemoteTransferAway(payload, 'subscription_revoked', {
-            showSuccessModal: userInitiated,
+            showSuccessModal: false,
           });
           return;
         }
@@ -1798,7 +1804,7 @@ export function OsmaniAppProvider({ children }) {
             Boolean(sourceTransferSessionRef.current?.code) ||
             isUserConfirmedTransferReason(sseReason);
           await handleRemoteTransferAway(payload, 'transfer_completed', {
-            showSuccessModal: userInitiated,
+            showSuccessModal: false,
           });
           return;
         }
@@ -1807,7 +1813,7 @@ export function OsmaniAppProvider({ children }) {
         void tryInstantApplyFromSse('transfer_completed', payload);
         const r = await reverifySubscription('sse:transfer_completed');
         if (r?.active === true) {
-          showActivationSuccess(r, 'transfer');
+          await completeTargetTransferRedemption(r, 'sse:transfer_completed');
         }
       })();
     });
@@ -1820,9 +1826,9 @@ export function OsmaniAppProvider({ children }) {
       sourceTransferSessionRef.current = null;
       setPendingTransfer(null);
       void tryInstantApplyFromSse('transfer_approved', payload);
-      void reverifySubscription('sse:transfer_approved').then((r) => {
+      void reverifySubscription('sse:transfer_approved').then(async (r) => {
         if (r?.active === true) {
-          showActivationSuccess(r, 'transfer');
+          await completeTargetTransferRedemption(r, 'sse:transfer_approved');
         }
       });
     });
@@ -1979,7 +1985,7 @@ export function OsmaniAppProvider({ children }) {
       offRuntimeModes.forEach((off) => off());
       offCatalogAliases.forEach((off) => off());
     };
-  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway, tryInstantApplyFromSse, showActivationSuccess, applyChannelCatalogRealtime]);
+  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway, tryInstantApplyFromSse, showActivationSuccess, completeTargetTransferRedemption, applyChannelCatalogRealtime]);
 
   // Foreground sync: refresh catalog + reverify periodically while app is active.
   useEffect(() => {
@@ -2076,17 +2082,32 @@ export function OsmaniAppProvider({ children }) {
   }, []);
 
   /**
-   * Source Phone A: instant loss of premium access; success popup only when user initiated transfer.
+   * Target device: instant unlock + Hongera after transfer redeem/SSE.
+   */
+  const completeTargetTransferRedemption = useCallback(
+    async (verified, reason = 'transfer-redeem') => {
+      if (!verified || verified.active !== true) return null;
+      unlockChannels(verified);
+      showActivationSuccess(verified, 'transfer');
+      console.log('[TRANSFER_TARGET]', 'redemption_complete', { reason });
+      return verified;
+    },
+    [unlockChannels, showActivationSuccess],
+  );
+
+  /**
+   * Source Phone A: instant loss of premium access; navigate Home (no blocking modal).
    */
   const applySourceTransferCompleted = useCallback(
     async (reason = 'transfer_completed', opts = {}) => {
-      const showSuccessModal = opts.showSuccessModal !== false;
+      const showSuccessModal = opts.showSuccessModal === true;
       sourceTransferClearLockUntilRef.current = Date.now() + SOURCE_TRANSFER_CLEAR_LOCK_MS;
       const hadActive = isSubscribedRef.current;
       sourceTransferSessionRef.current = null;
       setPendingTransfer(null);
       await clearLocalActiveSubscription(reason);
       if (hadActive && showSuccessModal) setSourceTransferSuccessVisible(true);
+      runTransferNavigateHome();
       void reverifySubscription(`bg:${reason}`);
     },
     [clearLocalActiveSubscription, reverifySubscription],
@@ -2112,7 +2133,7 @@ export function OsmaniAppProvider({ children }) {
       const hadActiveBefore = isSubscribedRef.current;
       if (!hadActiveBefore) return;
       await applySourceTransferCompleted(`sse:${eventName}`, {
-        showSuccessModal: showSuccessModal && userInitiated,
+        showSuccessModal: false,
       });
     },
     [applySourceTransferCompleted],
@@ -2233,6 +2254,7 @@ export function OsmaniAppProvider({ children }) {
       sourceTransferSuccessVisible,
       applySourceTransferCompleted,
       dismissSourceTransferSuccess,
+      completeTargetTransferRedemption,
       clearLocalActiveSubscription,
       dismissManualGiftClientState,
       pendingTransfer,
@@ -2295,6 +2317,7 @@ export function OsmaniAppProvider({ children }) {
       sourceTransferSuccessVisible,
       applySourceTransferCompleted,
       dismissSourceTransferSuccess,
+      completeTargetTransferRedemption,
       clearLocalActiveSubscription,
       dismissManualGiftClientState,
       pendingTransfer,
