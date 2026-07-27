@@ -167,7 +167,14 @@ function pickPaymentSseOrderId(payload) {
  */
 export default function PremiumModal({ visible, onClose, onUnlockSuccess, channelName = 'Chaneli Uliyofungua' }) {
   const insets = useSafeAreaInsets();
-  const { refreshSubscription, unlockChannels, availablePlans, isSubscribed } = useOsmaniApp();
+  const {
+    refreshSubscription,
+    unlockChannels,
+    availablePlans,
+    isSubscribed,
+    subscriptionExpiresAt,
+    subscriptionDetails,
+  } = useOsmaniApp();
   /** Start allowed when context already knows inactive — never flash the verify-wait UI. */
   const [paymentEntryGate, setPaymentEntryGate] = useState(() =>
     isSubscribed === true ? 'checking' : 'allowed',
@@ -591,13 +598,39 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       closeSse();
       applyWaitingState(APP_WAITING_STATE.ACTIVE);
 
-      const mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
+      let mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
+      let canonicalVerified = verified;
+      if (!mergedExpires) {
+        try {
+          const identity = await getDeviceIdentity();
+          const { deviceId, deviceFingerprint } = identity;
+          const probed = await runPaymentActivationTick({
+            deviceId,
+            deviceFingerprint,
+            identity,
+            light: false,
+          });
+          mergedExpires = latestExpiryIso(
+            mergedExpires,
+            probed?.subscription?.expiresAt ?? probed?.fetchExpires ?? null,
+          );
+          if (probed?.subscription && mergedExpires) {
+            canonicalVerified = {
+              ...verified,
+              ...probed.subscription,
+              expiresAt: mergedExpires,
+            };
+          }
+        } catch (e) {
+          console.log('[PremiumModal]', 'success_expiry_probe_error', e?.message ?? e);
+        }
+      }
       const forUnlock = mergeCheckoutPlanIntoSubscription(
         {
-          ...verified,
+          ...canonicalVerified,
           active: true,
           isActive: true,
-          expiresAt: mergedExpires ?? verified?.expiresAt ?? null,
+          expiresAt: mergedExpires ?? canonicalVerified?.expiresAt ?? null,
         },
         selectedPlan,
       );
@@ -669,20 +702,48 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     onClose?.();
   }, [onClose]);
 
+  useEffect(() => {
+    if (step !== 4) return;
+    const canonicalExpires =
+      subscriptionExpiresAt ??
+      subscriptionDetails?.expiresAt ??
+      subscriptionDetails?.expires_at ??
+      null;
+    if (!canonicalExpires) return;
+    setSuccessDetails((prev) => {
+      if (!prev || prev.expiresAt === canonicalExpires) return prev;
+      return buildPaymentSuccessDetails(
+        {
+          ...prev,
+          expiresAt: canonicalExpires,
+          expires_at: canonicalExpires,
+        },
+        {
+          name: selectedPlan?.name ?? null,
+          price: selectedPlan?.price ?? null,
+        },
+      );
+    });
+  }, [step, subscriptionExpiresAt, subscriptionDetails, selectedPlan]);
+
   const handleOpenChannel = useCallback(() => {
-    void (async () => {
-      try {
-        await refreshSubscription('payment-fungua-channel');
-      } catch (e) {
-        console.log('[PremiumModal]', 'fungua_refresh_error', e?.message ?? e);
-      }
-      try {
-        onUnlockSuccess?.();
-      } catch (e) {
-        console.log('[PremiumModal]', 'onUnlockSuccess_error', e?.message ?? e);
-      }
+    const tappedAt = Date.now();
+    try {
       onClose?.();
-    })();
+    } catch (e) {
+      console.log('[PremiumModal]', 'onClose_error', e?.message ?? e);
+    }
+    try {
+      onUnlockSuccess?.();
+      console.log('[PremiumModal]', 'fungua_navigate_now', {
+        elapsedMs: Date.now() - tappedAt,
+      });
+    } catch (e) {
+      console.log('[PremiumModal]', 'onUnlockSuccess_error', e?.message ?? e);
+    }
+    void refreshSubscription('payment-fungua-channel').catch((e) => {
+      console.log('[PremiumModal]', 'fungua_refresh_error', e?.message ?? e);
+    });
   }, [onUnlockSuccess, onClose, refreshSubscription]);
 
   /**
