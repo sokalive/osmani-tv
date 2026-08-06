@@ -34,7 +34,12 @@ assertNotContains('App.js', 'SubscriptionExpiryReminderModal', 'KIFURUSHI modal 
 assertContains('App.js', 'NotificationPermissionReminderGate', 'notification gate mounted');
 assertContains('components/NotificationPermissionReminderGate.jsx', 'Pata Habari Zote Muhimu', 'Swahili title');
 assertContains('components/NotificationPermissionReminderGate.jsx', 'RUHUSU NOTIFICATIONS', 'allow button');
-assertContains('components/NotificationPermissionReminderGate.jsx', 'BAADAYE', 'later button');
+assertNotContains('components/NotificationPermissionReminderGate.jsx', 'BAADAYE', 'later button removed');
+assertNotContains(
+  'components/NotificationPermissionReminderGate.jsx',
+  'secondaryLabel',
+  'single primary button only',
+);
 assertContains(
   'components/NotificationPermissionReminderGate.jsx',
   'getOsmaniNotificationPermissionGranted',
