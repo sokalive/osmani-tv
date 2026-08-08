@@ -35,6 +35,10 @@ import {
   DeviceSubscriptionConflictError,
 } from '../lib/paymentCheckoutErrors';
 import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
+import {
+  readCachedCheckoutProvider,
+  writeCachedCheckoutProvider,
+} from '../lib/checkoutProviderCache';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { formatUserFacingApiError } from '../lib/catalogConnectivity';
 import {
@@ -104,10 +108,17 @@ const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
 const POLL_MS = 1500;
 /** Aggressive activation window after provider confirms (handoff: first 2 min). */
 const ACTIVATION_AGGRESSIVE_MS = 120_000;
-/** Waiting window when create-order HTTP timed out but USSD/PIN may still be active. */
-const CREATE_ORDER_ORPHAN_WAIT_SEC = 300;
+/** Default STK wait window once a real order_id exists. */
+const CREATE_ORDER_WAIT_SEC = 180;
 /** Hard cap: Lipia spinner must never exceed this even if create-order hangs unexpectedly. */
 const LIPIA_SUBMITTING_WATCHDOG_MS = 50_000;
+const CHECKOUT_PROVIDER_UNAVAILABLE_TITLE = 'Njia ya Malipo Haipatikani';
+const CHECKOUT_PROVIDER_UNAVAILABLE_MESSAGE =
+  'Imeshindwa kupata njia ya malipo kutoka seva. Hakuna njia mbadala — jaribu tena.';
+const CREATE_ORDER_INIT_FAILED_MESSAGE =
+  'Imeshindwa kuanzisha malipo. Hakuna ombi lililothibitishwa — jaribu tena.';
+const CREATE_ORDER_TIMEOUT_MESSAGE =
+  'Muda wa kuanzisha malipo umeisha. Hakuna STK iliyothibitishwa — jaribu tena.';
 
 /**
  * Local fallback used only when GET /api/payment-providers fails or
@@ -186,7 +197,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [successDetails, setSuccessDetails] = useState(null);
   const [providers, setProviders] = useState(FALLBACK_NETWORKS);
   const [logoErrors, setLogoErrors] = useState({});
-  const [checkoutProvider, setCheckoutProvider] = useState('zenopay');
+  /** null until backend (or safe verified cache) resolves — never invent zenopay. */
+  const [checkoutProvider, setCheckoutProvider] = useState(null);
+  /** loading | ready | error */
+  const [checkoutProviderStatus, setCheckoutProviderStatus] = useState('loading');
   const [checkoutTestMode, setCheckoutTestMode] = useState(false);
   const [phoneGuardVisible, setPhoneGuardVisible] = useState(false);
   const [phoneGuardTitle, setPhoneGuardTitle] = useState('Taarifa');
@@ -209,7 +223,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const identityPrefetchRef = useRef(null);
   const reconcileGuardRef = useRef(new PaymentReconcileGuard());
   const pollStartedAtRef = useRef(0);
-  const checkoutProviderRef = useRef('zenopay');
+  const checkoutProviderRef = useRef(null);
 
   const animateStepChange = useCallback(() => {
     fadeAnim.setValue(0);
@@ -436,28 +450,69 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     };
   }, [visible, availablePlans]);
 
-  /** Sync active checkout gateway (zenopay | sonicpesa | auraxpay) from admin API. */
-  const reloadCheckoutConfig = useCallback(async () => {
+  /** Sync active checkout gateway from admin API — never invent ZenoPay on failure. */
+  const reloadCheckoutConfig = useCallback(async ({ allowCache = true } = {}) => {
+    setCheckoutProviderStatus((prev) => (prev === 'ready' ? prev : 'loading'));
     try {
       const cfg = await getCheckoutPaymentProviders();
-      setCheckoutProvider(cfg.payment_provider);
+      const provider = cfg.payment_provider;
+      setCheckoutProvider(provider);
+      checkoutProviderRef.current = provider;
+      setCheckoutProviderStatus('ready');
       setCheckoutTestMode(cfg.auraxpay_test === true);
-      setCheckoutLogoUrl(cfg.logos?.auraxpay ?? null);
-      console.log('[PremiumModal]', 'checkout_provider', cfg.payment_provider, {
+      setCheckoutLogoUrl(cfg.logos?.[provider] ?? cfg.logos?.auraxpay ?? null);
+      void writeCachedCheckoutProvider(provider);
+      console.log('[PremiumModal]', 'checkout_provider', provider, {
         auraxpay: cfg.auraxpay,
         auraxpay_test: cfg.auraxpay_test,
+        sonicpesa: cfg.sonicpesa,
+        source: 'network',
       });
       return cfg;
     } catch (e) {
       console.log('[PremiumModal]', 'checkout_provider_load_failed', e?.message ?? e);
+      if (allowCache) {
+        const cached = await readCachedCheckoutProvider();
+        if (cached?.provider) {
+          setCheckoutProvider(cached.provider);
+          checkoutProviderRef.current = cached.provider;
+          setCheckoutProviderStatus('ready');
+          console.log('[PremiumModal]', 'checkout_provider', cached.provider, {
+            source: 'verified_cache',
+            savedAt: cached.savedAt || null,
+          });
+          return { payment_provider: cached.provider, fromCache: true };
+        }
+      }
+      // Do NOT fall back to zenopay — leave unresolved so Lipia stays blocked.
+      setCheckoutProvider(null);
+      checkoutProviderRef.current = null;
+      setCheckoutProviderStatus('error');
       return null;
     }
   }, []);
 
   useEffect(() => {
     if (!visible) return undefined;
-    void reloadCheckoutConfig();
-    return undefined;
+    let cancelled = false;
+    void (async () => {
+      // Prefer a previously verified provider immediately (usually SonicPesa) while network loads.
+      const cached = await readCachedCheckoutProvider();
+      if (cancelled) return;
+      if (cached?.provider) {
+        setCheckoutProvider(cached.provider);
+        checkoutProviderRef.current = cached.provider;
+        setCheckoutProviderStatus('ready');
+      } else {
+        setCheckoutProvider(null);
+        checkoutProviderRef.current = null;
+        setCheckoutProviderStatus('loading');
+      }
+      await reloadCheckoutConfig({ allowCache: true });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [visible, reloadCheckoutConfig]);
 
   /** Refresh gateway routing when admin toggles Aurax/SonicPesa without closing modal. */
@@ -597,10 +652,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         plan_id: selectedPlan?.id ?? null,
         provider: checkoutProvider,
       });
+      const unlockLatencyMs = Date.now() - (pollStartedAtRef.current || Date.now());
       console.log('[PremiumModal]', 'payment_success_dialog', {
         orderId: orderId ?? null,
         planName: forUnlock?.planName ?? selectedPlan?.name ?? null,
         expiresAt: forUnlock?.expiresAt ?? null,
+        confirmation_to_unlock_ms: unlockLatencyMs,
       });
       setStep(4);
       // Context unlock already applied. Avoid an immediate shared reverify race that can
@@ -906,66 +963,20 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
   /** Foreground resume — reconcile immediately after PIN/USSD or webhook activation. */
   useEffect(() => {
-    if (!visible || step !== 3 || doneRef.current) return undefined;
+    if (!visible || step !== 3 || doneRef.current || !orderId) return undefined;
     const sub = AppState.addEventListener('change', (next) => {
       if (next !== 'active') return;
-      if (orderId) {
-        void pollOnce(orderId).finally(() => scheduleNextPoll(orderId));
-      } else if (waitingDeviceId) {
-        void schedulePostPaymentActivationPolls({
-          paymentConfirmed: true,
-          source: 'foreground-resume',
-        });
-      }
+      void pollOnce(orderId).finally(() => scheduleNextPoll(orderId));
     });
     return () => sub.remove();
-  }, [
-    visible,
-    step,
-    orderId,
-    waitingDeviceId,
-    pollOnce,
-    scheduleNextPoll,
-    schedulePostPaymentActivationPolls,
-  ]);
+  }, [visible, step, orderId, pollOnce, scheduleNextPoll]);
 
   /**
-   * create-order HTTP may time out after USSD/PIN was already triggered.
-   * Poll subscription activation without order_id until success or countdown ends.
+   * Subscription stream unlock — only while waiting on a real create-order order_id.
+   * create-order timeout is a hard init failure (no orphan pending-payment UI).
    */
   useEffect(() => {
-    if (!visible || step !== 3 || orderId || !waitingDeviceId || doneRef.current) return undefined;
-
-    const recover = () => {
-      void schedulePostPaymentActivationPolls({
-        paymentConfirmed: true,
-        source: 'create-order-timeout-recovery',
-      });
-    };
-    recover();
-    let cancelled = false;
-    let orphanTimer = null;
-    const loop = () => {
-      if (cancelled) return;
-      recover();
-      const elapsedMs = Date.now() - (pollStartedAtRef.current || Date.now());
-      const delay = computePollIntervalMs({
-        elapsedMs,
-        waitingState: reconcileGuardRef.current.bestState,
-        retryable: true,
-        paymentConfirmed: true,
-      });
-      orphanTimer = setTimeout(loop, delay);
-    };
-    loop();
-    return () => {
-      cancelled = true;
-      if (orphanTimer) clearTimeout(orphanTimer);
-    };
-  }, [visible, step, orderId, waitingDeviceId, schedulePostPaymentActivationPolls]);
-
-  useEffect(() => {
-    if (!visible || step !== 3 || !waitingDeviceId || doneRef.current) return undefined;
+    if (!visible || step !== 3 || !orderId || !waitingDeviceId || doneRef.current) return undefined;
     closeSse();
     const url = `${resolveApiBaseUrl()}/api/subscription-stream?device_id=${encodeURIComponent(waitingDeviceId)}`;
     const stream = new EventSource(url, { pollingInterval: 0 });
@@ -1126,21 +1137,35 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       return;
     }
 
+    // Never route through an unresolved or invented provider (esp. silent zenopay).
+    let activeProvider = checkoutProvider ?? checkoutProviderRef.current;
+    if (!activeProvider || checkoutProviderStatus === 'error') {
+      setSubmitting(true);
+      const cfg = await reloadCheckoutConfig({ allowCache: true });
+      setSubmitting(false);
+      activeProvider = cfg?.payment_provider ?? checkoutProviderRef.current;
+      if (!activeProvider) {
+        setPhoneGuardTitle(CHECKOUT_PROVIDER_UNAVAILABLE_TITLE);
+        setPhoneGuardMessage(CHECKOUT_PROVIDER_UNAVAILABLE_MESSAGE);
+        setCloseAfterGuardDialog(false);
+        setPhoneGuardVisible(true);
+        return;
+      }
+    }
+
     console.log('PAYMENT TRIGGERED');
     payInFlightRef.current = true;
-    const activeProvider = checkoutProvider;
     const normalizedPhone = phoneNumber.replace(/\s/g, '');
 
-    // Instant next step FIRST — never await identity/network before UI advances.
     doneRef.current = false;
     setOrderId(null);
-    setRemainingSeconds(CREATE_ORDER_ORPHAN_WAIT_SEC);
+    setFailureReason('');
     setPaymentProgressStep(1);
     setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
     reconcileGuardRef.current.reset();
     pollStartedAtRef.current = Date.now();
-    setSubmitting(false);
-    setStep(3);
+    setSubmitting(true);
+    // Stay on step 2 until create-order returns a real order_id.
 
     // Soft background verify — block only if THIS device is definitively active.
     void refreshSubscription('payment-submit-gate')
@@ -1152,6 +1177,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
             resolveSource: paymentGateResult?.resolveSource ?? null,
           });
           payInFlightRef.current = false;
+          setSubmitting(false);
           showPaymentEntryDialog('active');
         } else if (paymentGateClassification !== 'inactive') {
           console.log('[PremiumModal]', 'payment_submit_gate_soft_allow', {
@@ -1216,15 +1242,21 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       });
       const { order_id: oid, expiresInSeconds } = await startPayment(payPayload);
       if (doneRef.current) return;
-      setOrderId(oid);
+      const orderIdValue = oid != null ? String(oid).trim() : '';
+      if (!orderIdValue) {
+        throw new Error('Missing order_id from server');
+      }
+      // Real order only — enter waiting / STK confirmation UI now.
+      setOrderId(orderIdValue);
       const wait =
         typeof expiresInSeconds === 'number' && expiresInSeconds > 0
           ? Math.floor(expiresInSeconds)
-          : 180;
+          : CREATE_ORDER_WAIT_SEC;
       setRemainingSeconds(wait);
       setWaitingDeviceId(deviceId);
+      setStep(3);
       void reportPaymentTelemetry('started', {
-        order_id: oid,
+        order_id: orderIdValue,
         plan_id: selectedPlan.id,
         provider: activeProvider,
         amount: selectedPlan.price,
@@ -1303,17 +1335,23 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       if (isPaymentCreateOrderTimeout(e)) {
         console.log(
           '[PremiumModal]',
-          'create_order_timeout_recovery',
+          'create_order_timeout_blocked',
           JSON.stringify({ provider: activeProvider }),
         );
-        // Already on step 3 — keep waiting for USSD/PIN / SSE.
-        void reportPaymentTelemetry('create_order_timeout_recovery', {
+        void reportPaymentTelemetry('create_order_timeout', {
           plan_id: selectedPlan?.id ?? null,
           provider: activeProvider,
         });
+        setFailureReason(CREATE_ORDER_TIMEOUT_MESSAGE);
+        setStep(5);
         return;
       }
-      const userMsg = e?.userMessage ?? e?.message ?? 'Imeshindwa kuanzisha malipo';
+      const userMsg =
+        e?.userMessage ??
+        e?.message ??
+        (/missing order_id/i.test(String(e?.message ?? ''))
+          ? CREATE_ORDER_INIT_FAILED_MESSAGE
+          : 'Imeshindwa kuanzisha malipo');
       if (e?.backendReason) {
         console.log(
           '[PremiumModal]',
@@ -1327,9 +1365,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           }),
         );
       }
-      let alertMsg = userMsg;
+      let alertMsg = /missing order_id/i.test(String(e?.message ?? ''))
+        ? CREATE_ORDER_INIT_FAILED_MESSAGE
+        : userMsg;
       if (checkoutTestMode && e?.backendReason) {
-        alertMsg = `${userMsg}\n\n[Jaribio] ${e.backendReason}`;
+        alertMsg = `${alertMsg}\n\n[Jaribio] ${e.backendReason}`;
       }
       void reportPaymentTelemetry('failure', {
         plan_id: selectedPlan?.id ?? null,
@@ -1516,7 +1556,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                             />
                           </View>
                           <Text style={[styles.networksLabel, styles.step2GapClear]}>Mitandao inayokubaliwa</Text>
-                          {checkoutProvider === 'auraxpay' ? (
+                          {checkoutProvider && CHECKOUT_GATEWAY_META[checkoutProvider] ? (
                             <View style={[styles.checkoutBadge, styles.step2GapClear]}>
                               {checkoutLogoUrl ? (
                                 <Image
@@ -1528,17 +1568,28 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                                 <View
                                   style={[
                                     styles.checkoutBadgeIcon,
-                                    { backgroundColor: CHECKOUT_GATEWAY_META.auraxpay.accent },
+                                    { backgroundColor: CHECKOUT_GATEWAY_META[checkoutProvider].accent },
                                   ]}
                                 >
                                   <Text style={styles.checkoutBadgeIconText}>
-                                    {CHECKOUT_GATEWAY_META.auraxpay.initial}
+                                    {CHECKOUT_GATEWAY_META[checkoutProvider].initial}
                                   </Text>
                                 </View>
                               )}
                               <Text style={styles.checkoutBadgeText}>
-                                {CHECKOUT_GATEWAY_META.auraxpay.name}
+                                {CHECKOUT_GATEWAY_META[checkoutProvider].name}
                               </Text>
+                            </View>
+                          ) : checkoutProviderStatus === 'error' ? (
+                            <View style={[styles.checkoutBadge, styles.step2GapClear]}>
+                              <Text style={styles.checkoutBadgeText}>
+                                Njia ya malipo haijathibitishwa — jaribu tena
+                              </Text>
+                            </View>
+                          ) : checkoutProviderStatus === 'loading' ? (
+                            <View style={[styles.checkoutBadge, styles.step2GapClear]}>
+                              <ActivityIndicator color={ACCENT} size="small" />
+                              <Text style={styles.checkoutBadgeText}>Inathibitisha njia ya malipo…</Text>
                             </View>
                           ) : null}
                           <View style={[styles.networksGrid, styles.step2GapClear]}>
@@ -1580,28 +1631,55 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         </View>
                         <View style={styles.step2FlexSpacer} />
                         <View style={styles.step2BottomSection}>
-                          <Pressable
-                            disabled={!isPhoneValid || submitting}
-                            style={[
-                              styles.ctaWrap,
-                              styles.ctaDockBtn,
-                              (!isPhoneValid || submitting) && styles.ctaDisabled,
-                            ]}
-                            onPress={handleStep2Pay}
-                          >
-                            <LinearGradient
-                              colors={ACCENT_GRADIENT}
-                              start={{ x: 0, y: 0 }}
-                              end={{ x: 1, y: 1 }}
-                              style={styles.ctaGradient}
+                          {checkoutProviderStatus === 'error' && !checkoutProvider ? (
+                            <Pressable
+                              style={[styles.ctaWrap, styles.ctaDockBtn]}
+                              onPress={() => {
+                                void reloadCheckoutConfig({ allowCache: true });
+                              }}
                             >
-                              {submitting ? (
-                                <ActivityIndicator color="#111827" />
-                              ) : (
-                                <Text style={styles.ctaText}>Lipia — {selectedAmountDisplay}</Text>
-                              )}
-                            </LinearGradient>
-                          </Pressable>
+                              <LinearGradient
+                                colors={ACCENT_GRADIENT}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.ctaGradient}
+                              >
+                                <Text style={styles.ctaText}>JARIBU NJIA YA MALIPO</Text>
+                              </LinearGradient>
+                            </Pressable>
+                          ) : (
+                            <Pressable
+                              disabled={
+                                !isPhoneValid ||
+                                submitting ||
+                                !checkoutProvider ||
+                                checkoutProviderStatus === 'loading'
+                              }
+                              style={[
+                                styles.ctaWrap,
+                                styles.ctaDockBtn,
+                                (!isPhoneValid ||
+                                  submitting ||
+                                  !checkoutProvider ||
+                                  checkoutProviderStatus === 'loading') &&
+                                  styles.ctaDisabled,
+                              ]}
+                              onPress={handleStep2Pay}
+                            >
+                              <LinearGradient
+                                colors={ACCENT_GRADIENT}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.ctaGradient}
+                              >
+                                {submitting ? (
+                                  <ActivityIndicator color="#111827" />
+                                ) : (
+                                  <Text style={styles.ctaText}>Lipia — {selectedAmountDisplay}</Text>
+                                )}
+                              </LinearGradient>
+                            </Pressable>
+                          )}
                         </View>
                       </View>
                     )}

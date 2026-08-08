@@ -29,7 +29,7 @@ function formatCountdown(totalSeconds) {
 }
 
 function providerLabel(provider) {
-  const id = String(provider ?? 'zenopay').toLowerCase();
+  const id = String(provider ?? '').toLowerCase();
   return CHECKOUT_GATEWAY_META[id]?.name ?? 'Malipo';
 }
 
@@ -110,7 +110,9 @@ export default function PaymentWaitingStep({
     outputRange: [1, 1.05],
   });
 
-  const providerMeta = CHECKOUT_GATEWAY_META[checkoutProvider] ?? CHECKOUT_GATEWAY_META.zenopay;
+  const providerMeta =
+    CHECKOUT_GATEWAY_META[checkoutProvider] ??
+    Object.freeze({ id: 'unknown', name: 'Malipo', accent: '#64748B', initial: 'M' });
   const currentStep = Math.min(Math.max(paymentProgressStep, 0), 3);
   const waitingState = String(appWaitingState ?? '').trim();
   const specialBody = waitingBody(waitingState);

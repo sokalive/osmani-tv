@@ -184,6 +184,7 @@ assert(paymentSrc.includes('CheckoutPaymentError'), 'structured checkout errors 
 assert(paymentSrc.includes('logPaymentCheckoutFailure'), 'payment API logs backend reason');
 assert(paymentSrc.includes('createAuraxpayOrder'), 'createAuraxpayOrder export');
 assert(paymentSrc.includes('resolveCheckoutStartPayment'), 'resolveCheckoutStartPayment export');
+assert(paymentSrc.includes('checkout_provider_unresolved'), 'unresolved provider rejected (no silent zenopay)');
 assert(!paymentSrc.includes("provider === 'sonicpesa' ? 'sonicpesa' : 'zenopay'"), 'binary provider collapse removed');
 
 const modalSrc = fs.readFileSync(path.join(root, 'components', 'PremiumModal.js'), 'utf8');
@@ -191,13 +192,21 @@ assert(modalSrc.includes('resolveCheckoutStartPayment'), 'PremiumModal uses reso
 assert(modalSrc.includes('Lipia — {selectedAmountDisplay}'), 'step-2 pay button shows amount only');
 assert(!modalSrc.includes('LIPIA KUPITIA'), 'no provider name on pay button');
 assert(!modalSrc.includes('payButtonLabel'), 'no provider-specific pay button label');
-assert(!modalSrc.includes('Njia ya malipo'), 'no visible checkout gateway cards');
 assert(!modalSrc.includes('checkoutGateways'), 'no checkout gateway card grid');
+assert(!modalSrc.includes('listEnabledCheckoutGateways'), 'no gateway card listing in modal');
 assert(modalSrc.includes('formatCheckoutPaymentError'), 'PremiumModal maps payment failure text');
 assert(modalSrc.includes('reloadCheckoutConfig'), 'PremiumModal reloads checkout config');
 assert(modalSrc.includes('aurax_settings_changed'), 'PremiumModal listens for Aurax admin SSE');
-assert(modalSrc.includes('CHECKOUT_GATEWAY_META'), 'PremiumModal shows active Aurax badge metadata');
+assert(modalSrc.includes('CHECKOUT_GATEWAY_META'), 'PremiumModal shows active gateway badge metadata');
 assert(modalSrc.includes('checkoutTestMode'), 'PremiumModal tracks auraxpay_test for admin probe UI');
+assert(!modalSrc.includes("useState('zenopay')"), 'PremiumModal does not default provider to zenopay');
+assert(modalSrc.includes('create_order_timeout_blocked'), 'timeout does not fake pending payment');
+assert(modalSrc.includes('verified_cache'), 'may restore verified checkout provider from cache');
+assert(modalSrc.includes('CHECKOUT_PROVIDER_UNAVAILABLE'), 'blocks Lipia when provider unresolved');
+
+const cacheSrc = fs.readFileSync(path.join(root, 'lib', 'checkoutProviderCache.js'), 'utf8');
+assert(cacheSrc.includes('CHECKOUT_PROVIDER_CACHE_KEY'), 'checkout provider cache module present');
+assert(cacheSrc.includes('coerceVerifiedCheckoutProvider'), 'cache coerces known providers only');
 
 // VersionCode / runtime backward compatibility (OTA targets)
 const appConfig = require(path.join(root, 'app.config.js'));

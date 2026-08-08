@@ -136,11 +136,21 @@ if (!modal.includes('probeSubscriptionActivation')) {
   fail('poll uses dedicated probeSubscriptionActivation');
 } else pass('poll uses dedicated probeSubscriptionActivation');
 
-if (!modal.includes('create_order_timeout_recovery')) fail('create-order timeout recovery path');
-else pass('create-order timeout recovery path');
+if (modal.includes('create_order_timeout_recovery') || modal.includes('create-order-timeout-recovery')) {
+  fail('create-order timeout must not enter fake pending recovery');
+} else pass('no create-order timeout recovery / fake pending');
+
+if (!modal.includes('create_order_timeout_blocked')) fail('create-order timeout blocked path');
+else pass('create-order timeout blocked path');
 
 if (!errors.includes('isPaymentCreateOrderTimeout')) fail('create-order timeout detector');
 else pass('create-order timeout detector');
+
+if (!modal.includes('Missing order_id from server')) fail('order_id required before waiting UI');
+else pass('order_id required before waiting UI');
+
+if (modal.includes("useState('zenopay')")) fail('must not default checkoutProvider to zenopay');
+else pass('checkoutProvider does not default to zenopay');
 
 if (!payment.includes('COMPLETED')) fail('broaden payment success status');
 else pass('broaden payment success status');

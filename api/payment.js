@@ -16,10 +16,8 @@ import { readNativeAndroidVersionCode } from '../lib/playVpsApiHost';
 import { parsePaymentActivationStatus } from '../lib/paymentWaitingState';
 
 /**
- * Create-order must return an order_id quickly so the UI can leave Lipia
- * and enter the waiting step. PIN/USSD continues on the handset after that —
- * do NOT wait forever for the HTTP response (that stuck the Lipia spinner).
- * On timeout, PremiumModal recovers into the orphan waiting / pending state.
+ * Create-order must return a real order_id before UI enters payment-waiting.
+ * Do NOT treat HTTP timeout as pending payment — PremiumModal shows retry/error.
  */
 export const PAYMENT_CREATE_ORDER_NO_TIMEOUT = false;
 /** Client abort for create-order. Long enough for slow mobile networks; short enough to never leave Lipia spinning. */
@@ -427,12 +425,23 @@ export async function createAuraxpayOrder(payload) {
 }
 
 /**
- * @param {'zenopay'|'sonicpesa'|'auraxpay'} provider
+ * Route create-order by an explicit backend-verified provider only.
+ * Never silently default unresolved/unknown provider to ZenoPay.
+ * @param {'zenopay'|'sonicpesa'|'auraxpay'|null|undefined} provider
  */
 export function resolveCheckoutStartPayment(provider) {
   if (provider === 'sonicpesa') return createSonicpesaOrder;
   if (provider === 'auraxpay') return createAuraxpayOrder;
-  return createPayment;
+  if (provider === 'zenopay') return createPayment;
+  throw new CheckoutPaymentError(
+    'Njia ya malipo haijathibitishwa. Fungua tena au jaribu tena.',
+    {
+      backendReason: 'checkout_provider_unresolved',
+      httpStatus: 0,
+      provider: provider == null ? null : String(provider),
+      path: '/api/payments/checkout-providers',
+    },
+  );
 }
 
 /**
