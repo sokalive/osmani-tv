@@ -100,17 +100,26 @@ else pass('PaymentSuccessStep');
 if (modal.includes('ENDELEA')) fail('no ENDELEA on payment success');
 else pass('no ENDELEA on payment success');
 
-if (!modal.includes("'poll-status-light'") && !modal.includes("'poll-probe'")) {
+if (
+  !modal.includes("'poll-status-light'") &&
+  !modal.includes("'poll-probe'") &&
+  !modal.includes('payment-status-success-immediate')
+) {
   fail('poll activation source');
 } else pass('poll activation source');
 
-if (!modal.includes('payment-status-entitlement')) {
+if (!modal.includes('payment-status-entitlement') && !modal.includes('payment-status-success-immediate')) {
   fail('payment-status entitlement unlock before probe');
 } else pass('payment-status entitlement unlock before probe');
 
 if (modal.includes("'poll-activating'")) {
   fail('must not double-probe via poll-activating after pollOnce probe');
 } else pass('no double-probe poll-activating path');
+
+const pollBlock = modal.match(/const pollOnce = useCallback[\s\S]*?},\s*\n\s*\[[\s\S]*?\]\s*,\s*\n\s*\);/);
+if (pollBlock && pollBlock[0].includes('probeSubscriptionActivation(')) {
+  fail('pollOnce must not block on subscription probes while PENDING');
+} else pass('pollOnce does not block on subscription probes');
 
 if (!activation.includes('probeSubscriptionStatusParallel')) {
   fail('parallel status probe');

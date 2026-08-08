@@ -100,21 +100,40 @@ const interval = computePollIntervalMs({
   retryable: false,
   paymentConfirmed: true,
 });
-if (interval < 500 || interval > 700) fail(`activating poll too slow/fast ${interval}`);
+if (interval < 300 || interval > 550) fail(`activating poll too slow/fast ${interval}`);
 else pass(`activating poll ${interval}ms`);
 
-const pollIdx = modal.indexOf('const pollOnce = useCallback');
-const entitlementIdx = modal.indexOf('isPaymentEntitlementConfirmed(result)', pollIdx);
-const probeIdx = modal.indexOf('probeSubscriptionActivation(', entitlementIdx);
-if (pollIdx < 0 || entitlementIdx < 0 || probeIdx < 0) {
-  fail('pollOnce entitlement/probe markers missing');
-} else if (entitlementIdx > probeIdx) {
-  fail('entitlement confirm must run before probeSubscriptionActivation');
-} else pass('entitlement confirm ordered before probe');
+const pendingInterval = computePollIntervalMs({
+  elapsedMs: 8_000,
+  waitingState: APP_WAITING_STATE.PAYMENT_PENDING,
+  retryable: false,
+  paymentConfirmed: false,
+});
+if (pendingInterval < 300 || pendingInterval > 900) {
+  fail(`pending status poll too slow/fast ${pendingInterval}`);
+} else pass(`pending status poll ${pendingInterval}ms`);
+
+if (!modal.includes('payment-status-success-immediate')) {
+  fail('SUCCESS status must unlock immediately without probe');
+} else pass('SUCCESS unlocks immediately');
+if (!modal.includes('do NOT run subscription verify/recover')) {
+  fail('PENDING path must skip heavy probe');
+} else pass('PENDING skips heavy verify/recover probe');
+if (!modal.includes('paymentConfirmedAtRef')) fail('true confirmation latency ref');
+else pass('paymentConfirmedAtRef present');
 
 if (modal.includes("'poll-activating'")) {
   fail('double-probe poll-activating must stay removed');
 } else pass('no double-probe after pollOnce');
+
+const pollIdx = modal.indexOf('const pollOnce = useCallback');
+const successImmediateIdx = modal.indexOf("result.status === 'SUCCESS'", pollIdx);
+const verifyProbeInPoll = modal.slice(pollIdx, pollIdx + 2500).includes('probeSubscriptionActivation(');
+if (pollIdx < 0 || successImmediateIdx < 0) {
+  fail('pollOnce SUCCESS immediate markers missing');
+} else if (verifyProbeInPoll) {
+  fail('pollOnce must not call probeSubscriptionActivation (blocks status polls)');
+} else pass('pollOnce has no blocking subscription probe');
 
 if (!success.includes('🎉 Hongera!')) fail('Hongera title');
 else pass('Hongera title');

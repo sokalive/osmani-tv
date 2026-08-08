@@ -221,6 +221,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const identityPrefetchRef = useRef(null);
   const reconcileGuardRef = useRef(new PaymentReconcileGuard());
   const pollStartedAtRef = useRef(0);
+  /** Wall-clock when payment SUCCESS / entitlement first observed — for true confirm→unlock latency. */
+  const paymentConfirmedAtRef = useRef(0);
   const checkoutProviderRef = useRef(null);
 
   const animateStepChange = useCallback(() => {
@@ -307,6 +309,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
     reconcileGuardRef.current.reset();
     pollStartedAtRef.current = 0;
+    paymentConfirmedAtRef.current = 0;
     payInFlightRef.current = false;
     identityPrefetchRef.current = null;
     if (lipiaWatchdogRef.current) {
@@ -650,11 +653,15 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         provider: checkoutProvider,
       });
       const unlockLatencyMs = Date.now() - (pollStartedAtRef.current || Date.now());
+      const confirmToUnlockMs = paymentConfirmedAtRef.current
+        ? Date.now() - paymentConfirmedAtRef.current
+        : null;
       console.log('[PremiumModal]', 'payment_success_dialog', {
         orderId: orderId ?? null,
         planName: forUnlock?.planName ?? selectedPlan?.name ?? null,
         expiresAt: forUnlock?.expiresAt ?? null,
-        confirmation_to_unlock_ms: unlockLatencyMs,
+        confirmation_to_unlock_ms: confirmToUnlockMs ?? unlockLatencyMs,
+        poll_start_to_unlock_ms: unlockLatencyMs,
       });
       setStep(4);
       // Context unlock already applied. Avoid an immediate shared reverify race that can
@@ -813,13 +820,24 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
 
         const waiting = result.appWaitingState ?? APP_WAITING_STATE.PAYMENT_PENDING;
-        applyWaitingState(waiting, {
-          paymentConfirmed:
-            waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
-            waiting === APP_WAITING_STATE.ACTIVE ||
-            result.status === 'SUCCESS' ||
-            result.entitlementActive === true,
-        });
+        const paymentConfirmed =
+          waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
+          waiting === APP_WAITING_STATE.ACTIVE ||
+          result.status === 'SUCCESS' ||
+          result.entitlementActive === true;
+
+        if (paymentConfirmed && !paymentConfirmedAtRef.current) {
+          paymentConfirmedAtRef.current = Date.now();
+          console.log('[PremiumModal]', 'payment_confirmed', {
+            orderId: oid,
+            status: result.status,
+            waiting,
+            entitlementActive: result.entitlementActive === true,
+            source: 'status-poll',
+          });
+        }
+
+        applyWaitingState(waiting, { paymentConfirmed });
 
         if (waiting === APP_WAITING_STATE.PHONE_CONFLICT) {
           handleTerminalConflict(APP_WAITING_STATE.PHONE_CONFLICT, result.reason);
@@ -841,54 +859,39 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
         if (reconcileGuardRef.current.isStale(gen)) return;
 
-        // Trust payment-status entitlement BEFORE any subscription probe.
-        // Prior order awaited a multi-request probe first, delaying unlock by
-        // tens of seconds even when entitlement_active / ACTIVE was already set.
-        if (isPaymentEntitlementConfirmed(result)) {
+        // Money confirmed (SUCCESS) or entitlement already active → unlock NOW.
+        // Never wait for verify/recover after provider payment success.
+        if (isPaymentEntitlementConfirmed(result) || result.status === 'SUCCESS') {
           const hint = subscriptionHintFromPaymentStatusRaw(result.raw);
-          const subscription = {
-            ...hint,
-            active: true,
-            isActive: true,
-            expiresAt: latestExpiryIso(hint.expiresAt, result.expiresAt),
-          };
+          const subscription = mergeCheckoutPlanIntoSubscription(
+            {
+              ...hint,
+              active: true,
+              isActive: true,
+              expiresAt: latestExpiryIso(hint.expiresAt, result.expiresAt),
+            },
+            selectedPlan,
+          );
           await finalizePaymentSuccess(subscription, result.expiresAt);
           console.log('[PremiumModal]', 'payment_activation_success', {
-            source: 'payment-status-entitlement',
+            source:
+              isPaymentEntitlementConfirmed(result)
+                ? 'payment-status-entitlement'
+                : 'payment-status-success-immediate',
             waiting,
             entitlementActive: result.entitlementActive === true,
+            status: result.status,
+            confirmation_to_unlock_ms: paymentConfirmedAtRef.current
+              ? Date.now() - paymentConfirmedAtRef.current
+              : null,
           });
           return;
         }
 
-        const paymentConfirmed =
-          waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
-          result.status === 'SUCCESS';
-
-        if (paymentConfirmed) {
-          setPaymentProgressStep(2);
-          applyWaitingState(APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING, {
-            paymentConfirmed: true,
-          });
-        }
-
-        const identity = await getDeviceIdentity();
-        const { deviceId, deviceFingerprint } = identity;
-        if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
-
-        // After provider confirm: parallel status GETs only (no second full probe tick).
-        const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, identity, {
-          light: paymentConfirmed,
-        });
-        if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
-
-        if (probed.verified && isSubscriptionActive(probed.verified)) {
-          await finalizePaymentSuccess(probed.verified, probed.fetchExpires);
-          console.log('[PremiumModal]', 'payment_activation_success', {
-            source: paymentConfirmed ? 'poll-status-light' : 'poll-probe',
-          });
-          return;
-        }
+        // PENDING only: do NOT run subscription verify/recover here — those Contabo
+        // round-trips were blocking the next status poll for tens of seconds/minutes
+        // after money was already taken (status stayed PENDING while probes ran).
+        return;
       } catch (e) {
         if (reconcileGuardRef.current.isStale(gen)) return;
         const msg = String(e?.message ?? e ?? '');
@@ -903,6 +906,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       handleFailed,
       handleTerminalConflict,
       finalizePaymentSuccess,
+      selectedPlan,
     ],
   );
 
@@ -986,21 +990,31 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           const payload = JSON.parse(event?.data ?? '{}');
           const payloadActive = payload?.isActive === true || payload?.active === true;
           if (!payloadActive) return;
+          if (!paymentConfirmedAtRef.current) {
+            paymentConfirmedAtRef.current = Date.now();
+          }
           // Trust device subscription stream — verify lag must not keep channels locked.
           await finalizePaymentSuccess(
-            {
-              active: true,
-              isActive: true,
-              expiresAt: payload.expiresAt ?? payload.expires_at ?? null,
-              planName: payload.planName ?? payload.plan_name ?? null,
-              planId: payload.planId ?? payload.plan_id ?? null,
-              amount: payload.amount ?? null,
-              startedAt: payload.startedAt ?? payload.started_at ?? null,
-              remainingDays: payload.remainingDays ?? payload.remaining_days ?? null,
-            },
+            mergeCheckoutPlanIntoSubscription(
+              {
+                active: true,
+                isActive: true,
+                expiresAt: payload.expiresAt ?? payload.expires_at ?? null,
+                planName: payload.planName ?? payload.plan_name ?? null,
+                planId: payload.planId ?? payload.plan_id ?? null,
+                amount: payload.amount ?? null,
+                startedAt: payload.startedAt ?? payload.started_at ?? null,
+                remainingDays: payload.remainingDays ?? payload.remaining_days ?? null,
+              },
+              selectedPlan,
+            ),
             payload.expiresAt ?? payload.expires_at ?? null,
           );
-          console.log('[PremiumModal]', 'subscription_stream_active');
+          console.log('[PremiumModal]', 'subscription_stream_active', {
+            confirmation_to_unlock_ms: paymentConfirmedAtRef.current
+              ? Date.now() - paymentConfirmedAtRef.current
+              : null,
+          });
         } catch {
           // ignore malformed stream payloads
         }
@@ -1020,7 +1034,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       }
       closeSse();
     };
-  }, [visible, step, waitingDeviceId, closeSse, finalizePaymentSuccess]);
+  }, [visible, step, orderId, waitingDeviceId, closeSse, finalizePaymentSuccess, selectedPlan]);
 
   /** Admin / gateway payment_success SSE — unlock from payload when possible; else light probe. */
   useEffect(() => {
@@ -1047,9 +1061,21 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
               });
               return;
             }
-            if (!(await sseGrantTargetsThisDevice(payload))) {
+            const orderMatched =
+              Boolean(payloadOrderId && orderId && payloadOrderId === orderId);
+            // Matching order_id for THIS payment is enough — skip slow device-set
+            // resolution that previously delayed unlock by seconds after money success.
+            if (!orderMatched && !(await sseGrantTargetsThisDevice(payload))) {
               console.log('[PremiumModal]', 'payment_sse_skipped_other_device', { event: ev });
               return;
+            }
+            if (!paymentConfirmedAtRef.current) {
+              paymentConfirmedAtRef.current = Date.now();
+              console.log('[PremiumModal]', 'payment_confirmed', {
+                orderId: orderId ?? null,
+                source: `sse:${ev}`,
+                orderMatched,
+              });
             }
             const inner =
               payload?.payload && typeof payload.payload === 'object'
@@ -1059,24 +1085,24 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                   : payload;
             const payloadDeviceId = pickSubscriptionSseDeviceId(inner);
             const hasTrustedTarget =
-              Boolean(payloadDeviceId) || Boolean(payloadOrderId && orderId && payloadOrderId === orderId);
+              Boolean(payloadDeviceId) || orderMatched;
             const hint = parseInstantSubscriptionFromSse(payload, ev);
-            const orderMatched =
-              Boolean(payloadOrderId && orderId && payloadOrderId === orderId);
-            // Matching order_id on activation SSE is enough — do not wait for a
-            // slow/failed verify probe (previously added multi-second delay).
             if (orderMatched || (hasTrustedTarget && hint?.active === true)) {
-              await finalizePaymentSuccess(
+              const forUnlock = mergeCheckoutPlanIntoSubscription(
                 {
                   ...(hint && typeof hint === 'object' ? hint : {}),
                   active: true,
                   isActive: true,
                   expiresAt: hint?.expiresAt ?? null,
                 },
-                hint?.expiresAt ?? null,
+                selectedPlan,
               );
+              await finalizePaymentSuccess(forUnlock, hint?.expiresAt ?? null);
               console.log('[PremiumModal]', 'payment_activation_success', {
                 source: orderMatched ? `sse-order:${ev}` : `sse-payload:${ev}`,
+                confirmation_to_unlock_ms: paymentConfirmedAtRef.current
+                  ? Date.now() - paymentConfirmedAtRef.current
+                  : null,
               });
               return;
             }
@@ -1094,7 +1120,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     return () => {
       offs.forEach((off) => off());
     };
-  }, [visible, step, orderId, schedulePostPaymentActivationPolls, finalizePaymentSuccess]);
+  }, [
+    visible,
+    step,
+    orderId,
+    selectedPlan,
+    schedulePostPaymentActivationPolls,
+    finalizePaymentSuccess,
+  ]);
 
   const handleCancel = () => {
     clearTimers();
