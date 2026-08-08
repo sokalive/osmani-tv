@@ -58,6 +58,10 @@ import {
 } from '../lib/paymentPlansCache';
 import { traceAccountDisplay } from '../lib/accountDisplayTrace';
 import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
+import {
+  beginSecureScreenExemption,
+  endSecureScreenExemption,
+} from '../lib/security/secureScreen';
 
 /** Extra scroll padding above pinned Update App footer */
 const ACCOUNT_SCROLL_EXTRA = 24;
@@ -349,6 +353,16 @@ export default function AkauntiYanguScreen() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [cooldownEndMs]);
+
+  // Allow screenshots only while Akaunti Yangu is focused; restore FLAG_SECURE on blur.
+  useFocusEffect(
+    useCallback(() => {
+      void beginSecureScreenExemption();
+      return () => {
+        void endSecureScreenExemption();
+      };
+    }, []),
+  );
 
   useFocusEffect(
     useCallback(() => {

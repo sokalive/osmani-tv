@@ -11,6 +11,7 @@ import { cacheSecurityPhone, getSecurityPhoneForReport, pickPhoneFromApiBody } f
 import { readLocalPhoneDigits } from '../lib/devicePhoneCache';
 import { formatTanzaniaPhoneForApi, normalizeTanzaniaMobilePhone } from '../lib/tanzaniaPhone';
 import { createTransferRequestError } from '../lib/transferRequestErrors';
+import { ACTIVE_SUBSCRIPTION_PAYMENT_BLOCK_MESSAGE } from '../lib/paymentEntryGuard';
 
 /**
  * Device-bound subscription HTTP client.
@@ -1338,36 +1339,153 @@ export async function recoverSubscription(deviceId, deviceFingerprint, identityC
  *
  * @param {string} manualGiftAckKey Same stable key as verify `manualGiftAckKey`.
  */
+const OFFER_REDEEM_GENERIC_MESSAGE = 'Jaribu tena baadaye.';
+
+/** Normalize backend code/reason/error tokens for exact offer-redeem matching. */
+function collectOfferRedeemErrorTokens(body) {
+  if (!isPlainObject(body)) return [];
+  const raw = [
+    body.code,
+    body.reason,
+    body.error_code,
+    body.errorCode,
+    body.name,
+    body.type,
+    body.error_type,
+    body.errorType,
+  ];
+  // Structured `error` may be an enum string (CODE_BLOCKED) or a human message.
+  if (typeof body.error === 'string') raw.push(body.error);
+  const tokens = [];
+  for (const item of raw) {
+    const s = String(item ?? '')
+      .trim()
+      .toLowerCase();
+    if (!s) continue;
+    tokens.push(s);
+    tokens.push(s.replace(/[\s-]+/g, '_'));
+  }
+  return tokens;
+}
+
+function offerRedeemHasToken(tokens, candidates) {
+  return candidates.some((c) => tokens.includes(c));
+}
+
+/**
+ * Map redeem-offer-code failures to Swahili UI copy.
+ * Prefer exact backend enums; never treat HTTP 403 / "forbidden" alone as a blocked code.
+ */
 function mapOfferRedeemErrorMessage(body, httpStatus) {
-  const msg = String(body?.error ?? body?.message ?? '').toLowerCase();
-  const code = String(body?.code ?? body?.reason ?? '').toLowerCase();
-  const t = `${msg} ${code}`;
+  const plain = isPlainObject(body) ? body : {};
+  const tokens = collectOfferRedeemErrorTokens(plain);
+  const msg = String(plain.message_sw ?? plain.messageSw ?? plain.message ?? plain.error ?? '')
+    .trim()
+    .toLowerCase();
+  const status = Number(httpStatus);
+
+  // Active subscription on device — never "imezuiwa" / "si sahihi".
   if (
-    t.includes('already') ||
-    t.includes('other_device') ||
-    t.includes('other device') ||
-    t.includes('imetumika') ||
-    t.includes('kingine')
+    status === 409 ||
+    offerRedeemHasToken(tokens, [
+      'active_subscription_exists',
+      'activesubscriptionexistserror',
+      'active_subscription_exists_error',
+      'device_already_has_active_subscription',
+      'device_subscription_conflict',
+      'phone_already_has_active_subscription',
+      'phone_subscription_conflict',
+    ]) ||
+    msg.includes('activesubscriptionexists') ||
+    msg.includes('active_subscription_exists') ||
+    msg.includes('device_already_has_active_subscription')
+  ) {
+    return ACTIVE_SUBSCRIPTION_PAYMENT_BLOCK_MESSAGE;
+  }
+
+  // Already used / other device.
+  if (
+    offerRedeemHasToken(tokens, [
+      'already_used',
+      'code_already_used',
+      'offer_code_already_used',
+      'other_device',
+      'redeemed_other_device',
+      'used_on_other_device',
+      'already_redeemed',
+    ]) ||
+    msg.includes('other_device') ||
+    msg.includes('other device') ||
+    msg.includes('already used') ||
+    msg.includes('already redeemed') ||
+    msg.includes('tayari imetumika') ||
+    msg.includes('imetumika kwenye kifaa kingine')
   ) {
     return 'Code hii tayari imetumika kwenye kifaa kingine';
   }
-  if (t.includes('expired') || t.includes('expires') || t.includes('imeisha') || t.includes('muda wake')) {
+
+  // Expired.
+  if (
+    offerRedeemHasToken(tokens, ['expired', 'code_expired', 'offer_code_expired', 'expires']) ||
+    msg.includes('code hii imeisha') ||
+    msg.includes('imeisha muda') ||
+    /\bexpired\b/.test(msg) ||
+    /\bexpires\b/.test(msg)
+  ) {
     return 'Code hii imeisha muda wake';
   }
-  if (t.includes('block') || t.includes('banned') || t.includes('zui') || t.includes('forbidden')) {
+
+  // Offer code itself blocked — exact signals only (no broad "block"/"forbidden"/"zui").
+  const codeBlockedFlag =
+    plain.blocked === true ||
+    plain.blocked === 1 ||
+    plain.blocked === 'true' ||
+    plain.offer_code_blocked === true ||
+    plain.offerCodeBlocked === true ||
+    plain.code_blocked === true ||
+    plain.codeBlocked === true;
+  if (
+    codeBlockedFlag ||
+    offerRedeemHasToken(tokens, [
+      'code_blocked',
+      'offer_code_blocked',
+      'offer_blocked',
+      'code_banned',
+      'offer_code_banned',
+    ]) ||
+    msg === 'code is blocked' ||
+    msg === 'offer code is blocked' ||
+    msg === 'code hii imezuiwa' ||
+    msg.includes('code is blocked') ||
+    msg.includes('offer code is blocked')
+  ) {
     return 'Code hii imezuiwa';
   }
+
+  // Invalid / not found.
   if (
-    t.includes('invalid') ||
-    t.includes('wrong') ||
-    t.includes('si sahihi') ||
-    httpStatus === 400 ||
-    httpStatus === 404 ||
-    httpStatus === 422
+    offerRedeemHasToken(tokens, [
+      'invalid_code',
+      'invalid',
+      'code_invalid',
+      'offer_code_invalid',
+      'not_found',
+      'code_not_found',
+      'offer_code_not_found',
+      'unknown_code',
+    ]) ||
+    msg.includes('invalid') ||
+    msg.includes('si sahihi') ||
+    msg.includes('not found') ||
+    status === 400 ||
+    status === 404 ||
+    status === 422
   ) {
     return 'Code si sahihi';
   }
-  return 'Code si sahihi';
+
+  // Unexpected 4xx/5xx (incl. bare 403 Forbidden) — never mislabel as blocked/invalid.
+  return OFFER_REDEEM_GENERIC_MESSAGE;
 }
 
 /**
