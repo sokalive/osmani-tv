@@ -34,7 +34,6 @@ import {
   PhoneSubscriptionConflictError,
   DeviceSubscriptionConflictError,
 } from '../lib/paymentCheckoutErrors';
-import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
 import {
   readCachedCheckoutProvider,
   writeCachedCheckoutProvider,
@@ -206,7 +205,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [phoneGuardTitle, setPhoneGuardTitle] = useState('Taarifa');
   const [phoneGuardMessage, setPhoneGuardMessage] = useState('');
   const [closeAfterGuardDialog, setCloseAfterGuardDialog] = useState(false);
-  const [checkoutLogoUrl, setCheckoutLogoUrl] = useState(null);
   const [paymentProgressStep, setPaymentProgressStep] = useState(1);
   const [appWaitingState, setAppWaitingState] = useState(APP_WAITING_STATE.PAYMENT_PENDING);
 
@@ -460,7 +458,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       checkoutProviderRef.current = provider;
       setCheckoutProviderStatus('ready');
       setCheckoutTestMode(cfg.auraxpay_test === true);
-      setCheckoutLogoUrl(cfg.logos?.[provider] ?? cfg.logos?.auraxpay ?? null);
       void writeCachedCheckoutProvider(provider);
       console.log('[PremiumModal]', 'checkout_provider', provider, {
         auraxpay: cfg.auraxpay,
@@ -1556,40 +1553,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                             />
                           </View>
                           <Text style={[styles.networksLabel, styles.step2GapClear]}>Mitandao inayokubaliwa</Text>
-                          {checkoutProvider && CHECKOUT_GATEWAY_META[checkoutProvider] ? (
-                            <View style={[styles.checkoutBadge, styles.step2GapClear]}>
-                              {checkoutLogoUrl ? (
-                                <Image
-                                  source={{ uri: checkoutLogoUrl }}
-                                  style={styles.checkoutBadgeLogo}
-                                  resizeMode="contain"
-                                />
-                              ) : (
-                                <View
-                                  style={[
-                                    styles.checkoutBadgeIcon,
-                                    { backgroundColor: CHECKOUT_GATEWAY_META[checkoutProvider].accent },
-                                  ]}
-                                >
-                                  <Text style={styles.checkoutBadgeIconText}>
-                                    {CHECKOUT_GATEWAY_META[checkoutProvider].initial}
-                                  </Text>
-                                </View>
-                              )}
-                              <Text style={styles.checkoutBadgeText}>
-                                {CHECKOUT_GATEWAY_META[checkoutProvider].name}
-                              </Text>
-                            </View>
-                          ) : checkoutProviderStatus === 'error' ? (
+                          {checkoutProviderStatus === 'error' && !checkoutProvider ? (
                             <View style={[styles.checkoutBadge, styles.step2GapClear]}>
                               <Text style={styles.checkoutBadgeText}>
-                                Njia ya malipo haijathibitishwa — jaribu tena
+                                Malipo hayako tayari — jaribu tena
                               </Text>
-                            </View>
-                          ) : checkoutProviderStatus === 'loading' ? (
-                            <View style={[styles.checkoutBadge, styles.step2GapClear]}>
-                              <ActivityIndicator color={ACCENT} size="small" />
-                              <Text style={styles.checkoutBadgeText}>Inathibitisha njia ya malipo…</Text>
                             </View>
                           ) : null}
                           <View style={[styles.networksGrid, styles.step2GapClear]}>
@@ -1644,7 +1612,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                                 end={{ x: 1, y: 1 }}
                                 style={styles.ctaGradient}
                               >
-                                <Text style={styles.ctaText}>JARIBU NJIA YA MALIPO</Text>
+                                <Text style={styles.ctaText}>JARIBU TENA</Text>
                               </LinearGradient>
                             </Pressable>
                           ) : (
@@ -1689,8 +1657,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         selectedAmountDisplay={selectedAmountDisplay}
                         orderId={orderId}
                         remainingSeconds={remainingSeconds}
-                        checkoutProvider={checkoutProvider}
-                        checkoutLogoUrl={checkoutLogoUrl}
                         paymentProgressStep={paymentProgressStep}
                         appWaitingState={appWaitingState}
                         ringSpin={ringSpin}

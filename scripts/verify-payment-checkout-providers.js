@@ -197,12 +197,14 @@ assert(!modalSrc.includes('listEnabledCheckoutGateways'), 'no gateway card listi
 assert(modalSrc.includes('formatCheckoutPaymentError'), 'PremiumModal maps payment failure text');
 assert(modalSrc.includes('reloadCheckoutConfig'), 'PremiumModal reloads checkout config');
 assert(modalSrc.includes('aurax_settings_changed'), 'PremiumModal listens for Aurax admin SSE');
-assert(modalSrc.includes('CHECKOUT_GATEWAY_META'), 'PremiumModal shows active gateway badge metadata');
+assert(!modalSrc.includes('CHECKOUT_GATEWAY_META'), 'PremiumModal does not show gateway brand badge UI');
 assert(modalSrc.includes('checkoutTestMode'), 'PremiumModal tracks auraxpay_test for admin probe UI');
 assert(!modalSrc.includes("useState('zenopay')"), 'PremiumModal does not default provider to zenopay');
 assert(modalSrc.includes('create_order_timeout_blocked'), 'timeout does not fake pending payment');
 assert(modalSrc.includes('verified_cache'), 'may restore verified checkout provider from cache');
 assert(modalSrc.includes('CHECKOUT_PROVIDER_UNAVAILABLE'), 'blocks Lipia when provider unresolved');
+assert(!modalSrc.includes('>SonicPesa<') && !modalSrc.includes("'SonicPesa'"), 'customer payment UI does not show SonicPesa brand');
+assert(!modalSrc.includes('>ZenoPay<') && !modalSrc.includes("'ZenoPay'"), 'customer payment UI does not show ZenoPay brand');
 
 const cacheSrc = fs.readFileSync(path.join(root, 'lib', 'checkoutProviderCache.js'), 'utf8');
 assert(cacheSrc.includes('CHECKOUT_PROVIDER_CACHE_KEY'), 'checkout provider cache module present');

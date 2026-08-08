@@ -161,12 +161,17 @@ assert(modal.includes('showPaymentEntryDialog'), '7a. payment entry gate dialog'
 assert(modal.includes("classification === 'active'"), '7b. active subscription blocks Lipia');
 assert(modal.includes('DeviceSubscriptionConflictError'), '7c. device conflict guard');
 
-// UI truthfulness
-assert(waiting.includes("name: 'Malipo'"), 'waiting UI does not invent ZenoPay meta');
-assert(!waiting.includes('?? CHECKOUT_GATEWAY_META.zenopay'), 'waiting badge no zenopay fallback');
+// UI truthfulness — hide gateway brands from customers; keep internal routing.
+assert(!waiting.includes('CHECKOUT_GATEWAY_META'), 'waiting UI has no provider gateway meta');
+assert(!waiting.includes('SonicPesa'), 'waiting UI does not name SonicPesa');
+assert(!waiting.includes('ZenoPay'), 'waiting UI does not name ZenoPay');
+assert(!waiting.includes('providerBadgeText'), 'waiting UI has no provider badge label');
 assert(cache.includes('CHECKOUT_PROVIDER_CACHE_KEY'), 'verified provider cache module');
 assert(checkout.includes('sonicpesa'), 'checkout provider meta includes SonicPesa');
-assert(modal.includes("CHECKOUT_GATEWAY_META[checkoutProvider].name"), 'step2 shows active provider badge');
+assert(!modal.includes("CHECKOUT_GATEWAY_META[checkoutProvider].name"), 'step2 hides provider brand name');
+assert(!modal.includes('checkoutLogoUrl'), 'no provider logo passed to waiting UI');
+assert(!modal.includes('>SonicPesa<') && !modal.includes("'SonicPesa'"), 'modal JSX does not show SonicPesa brand');
+assert(!modal.includes('>ZenoPay<') && !modal.includes("'ZenoPay'"), 'modal JSX does not show ZenoPay brand');
 
 if (process.exitCode) process.exit(1);
 console.log('\n[verify-sonicpesa-checkout-safe] ok');

@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { CHECKOUT_GATEWAY_META } from '../lib/checkoutPaymentProviders';
 
 const ACCENT = '#FACC15';
 const ACCENT_GLOW = 'rgba(250, 204, 21, 0.55)';
@@ -26,11 +25,6 @@ function formatCountdown(totalSeconds) {
   const m = Math.floor(s / 60);
   const sec = s % 60;
   return `${m}:${sec.toString().padStart(2, '0')}`;
-}
-
-function providerLabel(provider) {
-  const id = String(provider ?? '').toLowerCase();
-  return CHECKOUT_GATEWAY_META[id]?.name ?? 'Malipo';
 }
 
 function statusLabel(step, appWaitingState) {
@@ -76,8 +70,6 @@ export default function PaymentWaitingStep({
   selectedAmountDisplay,
   orderId,
   remainingSeconds,
-  checkoutProvider,
-  checkoutLogoUrl,
   paymentProgressStep,
   appWaitingState,
   ringSpin,
@@ -110,9 +102,6 @@ export default function PaymentWaitingStep({
     outputRange: [1, 1.05],
   });
 
-  const providerMeta =
-    CHECKOUT_GATEWAY_META[checkoutProvider] ??
-    Object.freeze({ id: 'unknown', name: 'Malipo', accent: '#64748B', initial: 'M' });
   const currentStep = Math.min(Math.max(paymentProgressStep, 0), 3);
   const waitingState = String(appWaitingState ?? '').trim();
   const specialBody = waitingBody(waitingState);
@@ -142,16 +131,6 @@ export default function PaymentWaitingStep({
       <Text style={styles.title}>{waitingTitle(waitingState)}</Text>
 
       <View style={styles.badgeRow}>
-        <View style={styles.providerBadge}>
-          {checkoutLogoUrl ? (
-            <Image source={{ uri: checkoutLogoUrl }} style={styles.providerLogo} resizeMode="contain" />
-          ) : (
-            <View style={[styles.providerIcon, { backgroundColor: providerMeta.accent }]}>
-              <Text style={styles.providerIconText}>{providerMeta.initial}</Text>
-            </View>
-          )}
-          <Text style={styles.providerBadgeText}>{providerLabel(checkoutProvider)}</Text>
-        </View>
         <View style={styles.statusBadge}>
           <View style={styles.statusDot} />
           <Text style={styles.statusBadgeText}>{statusLabel(currentStep, waitingState)}</Text>
@@ -325,39 +304,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 6,
-  },
-  providerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: '#1A1F28',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  providerLogo: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-  },
-  providerIcon: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  providerIconText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  providerBadgeText: {
-    color: '#E5E7EB',
-    fontSize: 11,
-    fontWeight: '700',
   },
   statusBadge: {
     flexDirection: 'row',
