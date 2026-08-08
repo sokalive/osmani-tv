@@ -74,6 +74,7 @@ import { mergeCheckoutPlanIntoSubscription } from '../lib/accountSubscriptionDis
 import {
   APP_WAITING_STATE,
   computePollIntervalMs,
+  isPrematureFailedPaymentStatus,
   isTerminalWaitingState,
   mapWaitingStateToProgressStep,
   PaymentReconcileGuard,
@@ -825,6 +826,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           waiting === APP_WAITING_STATE.ACTIVE ||
           result.status === 'SUCCESS' ||
           result.entitlementActive === true;
+        const elapsedMs = Date.now() - (pollStartedAtRef.current || Date.now());
 
         if (paymentConfirmed && !paymentConfirmedAtRef.current) {
           paymentConfirmedAtRef.current = Date.now();
@@ -837,7 +839,25 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           });
         }
 
-        applyWaitingState(waiting, { paymentConfirmed });
+        // Premature FAILED (e.g. provider_order_id=null while STK still initiating)
+        // must NOT abort waiting — keep status-only polling.
+        if (
+          (waiting === APP_WAITING_STATE.FAILED || result.status === 'FAILED') &&
+          isPrematureFailedPaymentStatus(result, elapsedMs)
+        ) {
+          console.log('[PremiumModal]', 'ignore_premature_failed', {
+            orderId: oid,
+            elapsedMs,
+            reason: result.reason || null,
+            provider_order_id:
+              result?.raw?.provider_order_id ?? result?.raw?.providerOrderId ?? null,
+            provider_initiation:
+              result?.raw?.provider_initiation ?? result?.raw?.providerInitiation ?? null,
+          });
+          return;
+        }
+
+        const accepted = applyWaitingState(waiting, { paymentConfirmed });
 
         if (waiting === APP_WAITING_STATE.PHONE_CONFLICT) {
           handleTerminalConflict(APP_WAITING_STATE.PHONE_CONFLICT, result.reason);
@@ -853,6 +873,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         }
 
         if (waiting === APP_WAITING_STATE.FAILED || result.status === 'FAILED') {
+          // Guard rejects FAILED after ACTIVATING/ACTIVE; never force-fail past confirmation.
+          if (!accepted) {
+            console.log('[PremiumModal]', 'failed_ignored_after_guard', {
+              orderId: oid,
+              best: reconcileGuardRef.current.bestState,
+            });
+            return;
+          }
           handleFailed(result.reason);
           return;
         }

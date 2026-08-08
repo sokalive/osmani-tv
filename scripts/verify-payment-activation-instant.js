@@ -35,8 +35,15 @@ const ctx = read('context/OsmaniAppContext.jsx');
 // paymentWaitingState is CJS-compatible (no import) when required via createRequire from .js that uses exports.
 let computePollIntervalMs;
 let APP_WAITING_STATE;
+let shouldAcceptWaitingStateUpdate;
+let isPrematureFailedPaymentStatus;
 try {
-  ({ computePollIntervalMs, APP_WAITING_STATE } = requireCjs('../lib/paymentWaitingState.js'));
+  ({
+    computePollIntervalMs,
+    APP_WAITING_STATE,
+    shouldAcceptWaitingStateUpdate,
+    isPrematureFailedPaymentStatus,
+  } = requireCjs('../lib/paymentWaitingState.js'));
 } catch (e) {
   fail(`paymentWaitingState require: ${e.message}`);
 }
@@ -153,6 +160,59 @@ if (!ctx.includes('deferred')) {
 
 if (!waiting.includes('PROVIDER_CONFIRMED_ACTIVATING')) fail('waiting state contract');
 else pass('waiting state contract');
+
+if (!waiting.includes('isPrematureFailedPaymentStatus')) fail('premature FAILED helper');
+else pass('premature FAILED helper');
+
+if (!modal.includes('ignore_premature_failed')) fail('poll must ignore premature FAILED');
+else pass('poll ignores premature FAILED');
+
+if (!modal.includes('failed_ignored_after_guard')) fail('FAILED must respect reconcile guard');
+else pass('FAILED respects reconcile guard');
+
+if (
+  !shouldAcceptWaitingStateUpdate(
+    APP_WAITING_STATE.PAYMENT_PENDING,
+    APP_WAITING_STATE.FAILED,
+  )
+) {
+  fail('PENDING must accept legitimate FAILED');
+} else pass('PENDING accepts FAILED');
+
+if (
+  shouldAcceptWaitingStateUpdate(
+    APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING,
+    APP_WAITING_STATE.FAILED,
+  )
+) {
+  fail('ACTIVATING must reject stale FAILED');
+} else pass('ACTIVATING rejects stale FAILED');
+
+if (
+  !isPrematureFailedPaymentStatus(
+    {
+      status: 'FAILED',
+      appWaitingState: 'FAILED',
+      raw: { provider_order_id: null, provider_initiation: 'pending' },
+    },
+    3000,
+  )
+) {
+  fail('null provider_order_id + pending initiation must be premature');
+} else pass('early null-provider FAILED is premature');
+
+if (
+  isPrematureFailedPaymentStatus(
+    {
+      status: 'FAILED',
+      appWaitingState: 'FAILED',
+      raw: { provider_order_id: 'sp_abc', provider_initiation: 'done' },
+    },
+    10_000,
+  )
+) {
+  fail('FAILED with provider_order_id must not be premature');
+} else pass('real FAILED with provider txn is terminal');
 
 if (process.exitCode) process.exit(1);
 console.log('\n[verify-payment-activation-instant] ok');
