@@ -24,6 +24,11 @@ import { parsePaymentActivationStatus } from '../lib/paymentWaitingState';
 export const PAYMENT_CREATE_ORDER_NO_TIMEOUT = false;
 /** Client abort for create-order. Long enough for slow mobile networks; short enough to never leave Lipia spinning. */
 export const PAYMENT_CREATE_ORDER_TIMEOUT_MS = 45_000;
+/**
+ * Contabo payment catalog can exceed the generic 12s admin ceiling under concurrent
+ * boot load / high-latency clients. Match create-order budget so plans can render.
+ */
+export const PAYMENT_CATALOG_TIMEOUT_MS = 45_000;
 
 /**
  * Payment + subscription HTTP API (ZenoPay STK push).
@@ -130,7 +135,10 @@ function isExpiryValid(expiresAt) {
  * @returns {Promise<unknown[]>}
  */
 export async function getPlans() {
-  const body = await fetchAdminApiJson('/api/plans', { tag: 'payment-plans' });
+  const body = await fetchAdminApiJson('/api/plans', {
+    tag: 'payment-plans',
+    timeoutMs: PAYMENT_CATALOG_TIMEOUT_MS,
+  });
   if (Array.isArray(body)) return body;
   if (body && Array.isArray(body.plans)) return body.plans;
   if (body && Array.isArray(body.data)) return body.data;
@@ -186,7 +194,10 @@ function normalizeProviderRow(raw) {
  * @returns {Promise<{ id: string; name: string; logoUrl: string|null; active: boolean }[]>}
  */
 export async function getPaymentProviders() {
-  const body = await fetchAdminApiJson('/api/payment-providers', { tag: 'payment-providers' });
+  const body = await fetchAdminApiJson('/api/payment-providers', {
+    tag: 'payment-providers',
+    timeoutMs: PAYMENT_CATALOG_TIMEOUT_MS,
+  });
   let raw = [];
   if (Array.isArray(body)) raw = body;
   else if (body && Array.isArray(body.providers)) raw = body.providers;
@@ -202,6 +213,7 @@ export async function getPaymentProviders() {
 export async function getCheckoutPaymentProviders() {
   const body = await fetchAdminApiJson('/api/payments/checkout-providers', {
     tag: 'payment-checkout-providers',
+    timeoutMs: PAYMENT_CATALOG_TIMEOUT_MS,
   });
   const cfg = parseCheckoutProvidersResponse(body);
   console.log(
