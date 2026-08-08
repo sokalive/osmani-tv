@@ -25,6 +25,7 @@ import { resolveAnalyticsChannelId } from '../lib/analyticsChannelId';
 import { clearActiveChannel, setActiveChannel } from '../lib/presenceTracker';
 import { subscriptionTransferSseRole } from '../lib/subscriptionSseGuard';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
+import { setChannelPlaybackActive } from '../lib/otaSessionGate';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { buildPlayerChannelFromRow, findRawChannelById } from '../lib/playerChannelFromRow';
 import { normalizePlayerType } from '../lib/channelStream';
@@ -156,6 +157,13 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const initialChannel = route?.params?.channel ?? null;
   const [liveChannel, setLiveChannel] = useState(initialChannel);
   const [channelDisabledNotified, setChannelDisabledNotified] = useState(false);
+
+  // Defer in-session OTA reload while this screen is mounted.
+  useEffect(() => {
+    setChannelPlaybackActive(true);
+    return () => setChannelPlaybackActive(false);
+  }, []);
+
   const {
     rawChannels,
     freeMode,

@@ -225,6 +225,18 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   /** Wall-clock when payment SUCCESS / entitlement first observed — for true confirm→unlock latency. */
   const paymentConfirmedAtRef = useRef(0);
   const checkoutProviderRef = useRef(null);
+  /** Mirrors step for async gates (payment-submit-gate must not use a stale closure). */
+  const stepRef = useRef(1);
+  /**
+   * Checkout session machine for anti-stacking:
+   * idle | submitting | waiting | success | failed
+   * Anti-stack dialog is only valid in idle (before/without an in-flight purchase).
+   */
+  const checkoutSessionRef = useRef('idle');
+
+  useEffect(() => {
+    stepRef.current = step;
+  }, [step]);
 
   const animateStepChange = useCallback(() => {
     fadeAnim.setValue(0);
@@ -270,8 +282,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   }, []);
 
   const showPaymentEntryDialog = useCallback((kind) => {
-    // Never cover waiting / Hongera after payment flow has started or finished.
+    // Never cover waiting / Hongera after payment checkout has started or finished.
     if (doneRef.current) return;
+    if (payInFlightRef.current) return;
+    const currentStep = stepRef.current;
+    if (currentStep === 3 || currentStep === 4 || currentStep === 5) return;
+    if (checkoutSessionRef.current === 'waiting' || checkoutSessionRef.current === 'success') {
+      return;
+    }
     const active = kind === 'active';
     setPaymentEntryGate(active ? 'blocked' : 'unavailable');
     setPhoneGuardTitle(
@@ -292,6 +310,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     if (!visible) return;
     clearTimers();
     doneRef.current = false;
+    checkoutSessionRef.current = 'idle';
+    stepRef.current = 1;
     setStep(1);
     setPlansError('');
     setSelectedPlan(null);
@@ -329,7 +349,15 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
     // After Lipia / waiting / Hongera: unlock sets isSubscribed=true — do not
     // replace Hongera with the "Kifurushi Kinaendelea" entry gate.
-    if (doneRef.current || step === 3 || step === 4 || step === 5) {
+    if (
+      doneRef.current ||
+      checkoutSessionRef.current === 'waiting' ||
+      checkoutSessionRef.current === 'success' ||
+      checkoutSessionRef.current === 'submitting' ||
+      step === 3 ||
+      step === 4 ||
+      step === 5
+    ) {
       return undefined;
     }
 
@@ -349,7 +377,17 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     void refreshSubscription('payment-entry-gate')
       .then((result) => {
         if (cancelled) return;
-        if (doneRef.current || step === 3 || step === 4 || step === 5) return;
+        if (
+          doneRef.current ||
+          checkoutSessionRef.current === 'waiting' ||
+          checkoutSessionRef.current === 'success' ||
+          checkoutSessionRef.current === 'submitting' ||
+          step === 3 ||
+          step === 4 ||
+          step === 5
+        ) {
+          return;
+        }
         if (isSubscribed === true) {
           showPaymentEntryDialog('active');
           return;
@@ -381,6 +419,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       clearTimers();
       closeSse();
       doneRef.current = false;
+      checkoutSessionRef.current = 'idle';
       // Keep 'allowed' so the next open never flashes verify-wait UI for one frame.
       setPaymentEntryGate('allowed');
     }
@@ -627,6 +666,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     async (verified, fetchExpires = null) => {
       if (doneRef.current) return;
       doneRef.current = true;
+      checkoutSessionRef.current = 'success';
+      // Dismiss any stale anti-stacking guard that raced ahead of SUCCESS.
+      setPhoneGuardVisible(false);
+      setPaymentEntryGate('allowed');
       setPaymentProgressStep(3);
       clearTimers();
       closeSse();
@@ -795,6 +838,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     (reason) => {
       if (doneRef.current) return;
       doneRef.current = true;
+      checkoutSessionRef.current = 'failed';
       clearTimers();
       closeSse();
       applyWaitingState(APP_WAITING_STATE.FAILED);
@@ -1222,6 +1266,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
     console.log('PAYMENT TRIGGERED');
     payInFlightRef.current = true;
+    checkoutSessionRef.current = 'submitting';
     const normalizedPhone = phoneNumber.replace(/\s/g, '');
 
     doneRef.current = false;
@@ -1234,16 +1279,30 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setSubmitting(true);
     // Stay on step 2 until create-order returns a real order_id.
 
-    // Soft background verify — block only if THIS device is definitively active.
+    // Soft background verify — block only if THIS device is definitively active
+    // BEFORE checkout enters waiting. Never interrupt an in-flight STK/waiting UI.
     void refreshSubscription('payment-submit-gate')
       .then((paymentGateResult) => {
         if (doneRef.current) return;
+        if (
+          checkoutSessionRef.current === 'waiting' ||
+          checkoutSessionRef.current === 'success' ||
+          stepRef.current === 3 ||
+          stepRef.current === 4
+        ) {
+          console.log('[PremiumModal]', 'payment_submit_gate_ignored_after_checkout_start', {
+            session: checkoutSessionRef.current,
+            step: stepRef.current,
+          });
+          return;
+        }
         const paymentGateClassification = classifyPaymentEntrySubscription(paymentGateResult);
         if (paymentGateClassification === 'active' || isSubscribed === true) {
           console.log('[PremiumModal]', 'payment_submit_gate_active_after_ui', {
             resolveSource: paymentGateResult?.resolveSource ?? null,
           });
           payInFlightRef.current = false;
+          checkoutSessionRef.current = 'idle';
           setSubmitting(false);
           showPaymentEntryDialog('active');
         } else if (paymentGateClassification !== 'inactive') {
@@ -1314,6 +1373,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         throw new Error('Missing order_id from server');
       }
       // Real order only — enter waiting / STK confirmation UI now.
+      checkoutSessionRef.current = 'waiting';
       setOrderId(orderIdValue);
       const wait =
         typeof expiresInSeconds === 'number' && expiresInSeconds > 0

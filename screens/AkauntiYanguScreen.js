@@ -57,6 +57,7 @@ import {
 } from '../lib/paymentPlansCache';
 import { traceAccountDisplay } from '../lib/accountDisplayTrace';
 import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
+import { setScreenshotPolicy } from '../lib/security/screenshotPolicy';
 
 /** Extra scroll padding above pinned Update App footer */
 const ACCOUNT_SCROLL_EXTRA = 24;
@@ -117,6 +118,16 @@ export default function AkauntiYanguScreen() {
   const [redeemBusy, setRedeemBusy] = useState(false);
   const [cooldownEndMs, setCooldownEndMs] = useState(null);
   const [cooldownRemainingSec, setCooldownRemainingSec] = useState(0);
+
+  // Screenshots allowed only while this tab is focused.
+  useFocusEffect(
+    useCallback(() => {
+      void setScreenshotPolicy('allow_akaunti');
+      return () => {
+        void setScreenshotPolicy('protect');
+      };
+    }, []),
+  );
   const [deviceIdFull, setDeviceIdFull] = useState('');
   /** Bumps on each Account tab focus — remounts Update App section (post-OTA cache bust). */
   const [accountUpdateSectionKey, setAccountUpdateSectionKey] = useState(0);
