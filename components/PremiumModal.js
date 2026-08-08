@@ -270,6 +270,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   }, []);
 
   const showPaymentEntryDialog = useCallback((kind) => {
+    // Never cover waiting / Hongera after payment flow has started or finished.
+    if (doneRef.current) return;
     const active = kind === 'active';
     setPaymentEntryGate(active ? 'blocked' : 'unavailable');
     setPhoneGuardTitle(
@@ -325,6 +327,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     if (!visible) return undefined;
     let cancelled = false;
 
+    // After Lipia / waiting / Hongera: unlock sets isSubscribed=true — do not
+    // replace Hongera with the "Kifurushi Kinaendelea" entry gate.
+    if (doneRef.current || step === 3 || step === 4 || step === 5) {
+      return undefined;
+    }
+
     // Hard block from live context — never open plans while THIS device is subscribed.
     if (isSubscribed === true) {
       console.log('[PremiumModal]', 'payment_entry_gate', {
@@ -341,6 +349,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     void refreshSubscription('payment-entry-gate')
       .then((result) => {
         if (cancelled) return;
+        if (doneRef.current || step === 3 || step === 4 || step === 5) return;
         if (isSubscribed === true) {
           showPaymentEntryDialog('active');
           return;
@@ -365,7 +374,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     return () => {
       cancelled = true;
     };
-  }, [visible, refreshSubscription, showPaymentEntryDialog, isSubscribed]);
+  }, [visible, refreshSubscription, showPaymentEntryDialog, isSubscribed, step]);
 
   useEffect(() => {
     if (!visible) {
