@@ -39,7 +39,6 @@ import ManualSubscriptionGiftModal from './components/ManualSubscriptionGiftModa
 import PopupSettingsModal from './components/PopupSettingsModal';
 import TransferConfirmModal from './components/TransferConfirmModal';
 import TransferSuccessModal from './components/TransferSuccessModal';
-import { registerTransferNavigateHome } from './lib/transferNavigation';
 import SubscriptionActivationSuccessModal from './components/SubscriptionActivationSuccessModal';
 import UpdateOverlay from './components/UpdateOverlay';
 import ChannelUpdateGateHost from './components/ChannelUpdateGateHost';
@@ -180,34 +179,6 @@ const COLORS = {
 };
 
 const filters = ['Zote', 'Trending', 'Sports', 'Tamthilia'];
-
-/** Premium depth gradients + glow for Home category pills (layout/size unchanged). */
-const FILTER_VISUAL = Object.freeze({
-  Zote: {
-    icon: 'apps-outline',
-    colors: ['#0B1F3A', '#1E4A8C', '#2563EB'],
-    selected: ['#38BDF8', '#2563EB', '#1E3A8A'],
-    glow: '#3B82F6',
-  },
-  Trending: {
-    icon: 'flame-outline',
-    colors: ['#3F0D0D', '#9A1F1F', '#C2410C'],
-    selected: ['#FB923C', '#EF4444', '#B91C1C'],
-    glow: '#F97316',
-  },
-  Sports: {
-    icon: 'football-outline',
-    colors: ['#052E16', '#166534', '#15803D'],
-    selected: ['#4ADE80', '#22C55E', '#15803D'],
-    glow: '#22C55E',
-  },
-  Tamthilia: {
-    icon: 'film-outline',
-    colors: ['#2E1065', '#5B21B6', '#7C3AED'],
-    selected: ['#C084FC', '#A855F7', '#6D28D9'],
-    glow: '#A855F7',
-  },
-});
 
 /** Full image URL for API `thumbnail` (absolute or `/uploads/...`). */
 function resolveChannelThumbnailUri(raw) {
@@ -664,7 +635,7 @@ function ChannelCatalogScreen({
       manualGiftFocusTimerRef.current = setTimeout(() => {
         manualGiftFocusTimerRef.current = null;
         void tryShowManualGiftRef.current('focus');
-      }, 0);
+      }, 500);
       return () => {
         if (manualGiftFocusTimerRef.current != null) {
           clearTimeout(manualGiftFocusTimerRef.current);
@@ -1282,59 +1253,16 @@ function ChannelCatalogScreen({
         >
           {filters.map((filter) => {
             const isSelected = selectedFilter === filter;
-            const visual = FILTER_VISUAL[filter] ?? FILTER_VISUAL.Zote;
             return (
               <Pressable
                 key={filter}
                 onPress={() => setSelectedFilter(filter)}
-                accessibilityRole="button"
-                accessibilityLabel={filter}
-                accessibilityState={{ selected: isSelected }}
-                style={
-                  isSelected
-                    ? {
-                        shadowColor: visual.glow,
-                        shadowOpacity: 0.55,
-                        shadowRadius: 10,
-                        shadowOffset: { width: 0, height: 3 },
-                        elevation: 6,
-                      }
-                    : {
-                        shadowColor: '#000',
-                        shadowOpacity: 0.28,
-                        shadowRadius: 5,
-                        shadowOffset: { width: 0, height: 2 },
-                        elevation: 3,
-                      }
-                }
+                style={[
+                  styles.filterPill,
+                  { backgroundColor: isSelected ? COLORS.filterSelected : COLORS.filterPill },
+                ]}
               >
-                <LinearGradient
-                  colors={isSelected ? visual.selected : visual.colors}
-                  locations={[0, 0.48, 1]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[
-                    styles.filterPill,
-                    isSelected ? styles.filterPillSelected : styles.filterPillIdle,
-                  ]}
-                >
-                  <LinearGradient
-                    colors={['rgba(255,255,255,0.34)', 'rgba(255,255,255,0.06)', 'transparent']}
-                    locations={[0, 0.35, 1]}
-                    start={{ x: 0.5, y: 0 }}
-                    end={{ x: 0.5, y: 1 }}
-                    style={styles.filterPillSheen}
-                    pointerEvents="none"
-                  />
-                  <Ionicons
-                    name={visual.icon}
-                    size={14}
-                    color={isSelected ? COLORS.white : 'rgba(255,255,255,0.92)'}
-                  />
-                  <Text style={[styles.filterText, isSelected && styles.filterTextSelected]}>
-                    {filter}
-                  </Text>
-                </LinearGradient>
+                <Text style={styles.filterText}>{filter}</Text>
               </Pressable>
             );
           })}
@@ -1921,18 +1849,6 @@ function SubscriptionLifecycleGates() {
     dismissActivationSuccess,
   } = useOsmaniApp();
 
-  useEffect(() => {
-    registerTransferNavigateHome(() => {
-      try {
-        if (!navigationRef?.isReady?.()) return;
-        navigationRef.navigate('MainTabs', { screen: 'Home' });
-      } catch {
-        /* ignore */
-      }
-    });
-    return () => registerTransferNavigateHome(null);
-  }, []);
-
   useRegisterBlockingSheet('lifecycle-transfer', Boolean(pendingTransfer));
   useRegisterBlockingSheet('lifecycle-activation-success', activationSuccessVisible);
 
@@ -2028,35 +1944,13 @@ const styles = StyleSheet.create({
   },
   filterPill: {
     borderRadius: 50,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
     paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    overflow: 'hidden',
-  },
-  filterPillSheen: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 50,
-  },
-  filterPillIdle: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-  },
-  filterPillSelected: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.32)',
   },
   filterText: {
     color: COLORS.white,
-    fontWeight: '600',
+    fontWeight: '500',
     fontSize: 14,
-    textShadowColor: 'rgba(0,0,0,0.35)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
-  },
-  filterTextSelected: {
-    fontWeight: '800',
   },
   sectionHeader: {
     marginTop: 12,

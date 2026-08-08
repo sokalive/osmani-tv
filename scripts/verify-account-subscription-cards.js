@@ -46,8 +46,8 @@ if (!account.includes('formatSubscriptionExpiryDate(displayExpiresAt')) {
 } else pass('Box 4 uses date-only expiry formatter');
 
 if (!account.includes('resolveAccountDisplayExpiresAt')) {
-  fail('Box 4 uses backend canonical expiry helper');
-} else pass('Box 4 uses backend canonical expiry helper');
+  fail('Box 4 uses Admin-plan-aligned display expiry');
+} else pass('Box 4 uses Admin-plan-aligned display expiry');
 
 if (!account.includes('resolveAccountRemainingDays')) fail('Account uses bounded real remaining days');
 else pass('Account uses bounded real remaining days');

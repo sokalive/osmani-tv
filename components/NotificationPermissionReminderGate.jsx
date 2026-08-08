@@ -49,6 +49,11 @@ export default function NotificationPermissionReminderGate() {
     return () => sub.remove();
   }, [evaluate]);
 
+  const onLater = useCallback(() => {
+    dismissedThisForegroundRef.current = true;
+    setVisible(false);
+  }, []);
+
   const onAllow = useCallback(async () => {
     if (requesting) return;
     setRequesting(true);
@@ -60,7 +65,6 @@ export default function NotificationPermissionReminderGate() {
         dismissedThisForegroundRef.current = true;
         setVisible(false);
       }
-      // If denied: keep popup visible so the user can press RUHUSU NOTIFICATIONS again.
     } finally {
       setRequesting(false);
     }
@@ -73,7 +77,9 @@ export default function NotificationPermissionReminderGate() {
       message="Usikose taarifa za michezo ya moja kwa moja, tamthilia mpya, vipindi vipya na matangazo muhimu ya Osmani TV. Ruhusu notifications ili upokee taarifa hizi papo hapo kwenye simu yako."
       iconName="notifications"
       primaryLabel="RUHUSU NOTIFICATIONS"
+      secondaryLabel="BAADAYE"
       onSawa={onAllow}
+      onSecondary={onLater}
     />
   );
 }

@@ -20,7 +20,7 @@ import {
   resolveActiveSubscription,
   writeSubscriptionCache,
 } from '../api/subscription';
-import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS, SUBSCRIPTION_WAKE_SSE_EVENTS, USER_CENTER_SSE_EVENTS, DELETE_USER_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
+import { ADMIN_RUNTIME_MODE_SSE_EVENTS, ADMIN_SOFT_REFRESH_SSE_EVENTS, SUBSCRIPTION_WAKE_SSE_EVENTS, USER_CENTER_SSE_EVENTS } from '../lib/adminSseRefreshEvents';
 import {
   dropLegacyBannersCache,
   readBannersCache,
@@ -89,7 +89,6 @@ import {
 import { reportUserCenterEvent } from '../api/userCenterSync';
 import { registerDeviceIntelligence } from '../api/usersIntelligence';
 import { isTransferAwaitingSourceApproval } from '../lib/transferAwaitingSourceApproval';
-import { runTransferNavigateHome } from '../lib/transferNavigation';
 
 const STARTUP_FETCH_TIMEOUT_MS = 20_000;
 const COLD_START_SUBSCRIPTION_TIMEOUT_MS = SUBSCRIPTION_RECOVERY_BOOT_TIMEOUT_MS;
@@ -237,19 +236,6 @@ export function OsmaniAppProvider({ children }) {
   const lastBootResolveRef = useRef(null);
   /** Prevents duplicate Hongera popups for the same grant within a session. */
   const lastActivationSuccessKeyRef = useRef('');
-  /**
-   * After optimistic SSE/payment unlock, ignore non-authoritative inactive verify
-   * briefly so replica lag cannot re-lock — and so we can reverify immediately
-   * (Account boxes) instead of waiting 2.5s before reconcile.
-   */
-  const instantUnlockProtectUntilRef = useRef(0);
-  const instantUnlockExpiresAtRef = useRef(null);
-  const instantUnlockGraceRetryTimerRef = useRef(null);
-  const INSTANT_UNLOCK_GRACE_MS = 5000;
-  const isWithinInstantUnlockGrace = useCallback(
-    () => Date.now() < instantUnlockProtectUntilRef.current,
-    [],
-  );
   const trialWatchSettingsRef = useRef(TRIAL_WATCH_FAIL_CLOSED);
   const settingsRef = useRef(defaultSettings);
   const rawChannelsRef = useRef([]);
@@ -305,8 +291,6 @@ export function OsmaniAppProvider({ children }) {
     // Invalidate any in-flight reverify so a stale inactive result cannot re-lock
     // channels right after payment / SSE / unlock-channels apply.
     lastVerifyKeyRef.current += 1;
-    instantUnlockProtectUntilRef.current = Date.now() + INSTANT_UNLOCK_GRACE_MS;
-    instantUnlockExpiresAtRef.current = expiresAt;
     isSubscribedRef.current = true;
     authoritativeInactiveRef.current = false;
     cacheTrustedActiveRef.current = false;
@@ -368,13 +352,8 @@ export function OsmaniAppProvider({ children }) {
 
   const showActivationSuccess = useCallback((details, source = 'admin_grant') => {
     const built = buildPaymentSuccessDetails(details);
-    const hasDisplayable =
-      Boolean(built?.expiresAt) ||
-      Boolean(built?.planName) ||
-      (source === 'transfer' &&
-        (Number.isFinite(built?.amount) || Number.isFinite(built?.remainingDays)));
-    if (!hasDisplayable) return;
-    const dedupeKey = `${source}:${built.expiresAt ?? ''}:${built.planName ?? ''}:${built.amount ?? ''}`;
+    if (!built?.expiresAt && !built?.planName) return;
+    const dedupeKey = `${source}:${built.expiresAt ?? ''}:${built.planName ?? ''}`;
     if (lastActivationSuccessKeyRef.current === dedupeKey) {
       console.log('[ACTIVATION_SUCCESS]', 'deduped', { dedupeKey });
       return;
@@ -578,44 +557,6 @@ export function OsmaniAppProvider({ children }) {
               resolveSource: r.resolveSource ?? null,
             });
           }
-        } else if (
-          !authoritativeInactive &&
-          !authoritativeReconcile &&
-          !transferLockActive &&
-          !active &&
-          isSubscribedRef.current &&
-          Date.now() < instantUnlockProtectUntilRef.current
-        ) {
-          const { cached, sameDevice } = await cacheSameDevice();
-          active = true;
-          expiresAt =
-            instantUnlockExpiresAtRef.current ??
-            (sameDevice && cached?.active ? cached.expiresAt ?? null : null) ??
-            null;
-          effectiveResult = {
-            ...r,
-            active: true,
-            expiresAt,
-            instantUnlockPreserved: true,
-            amount: cached?.planSnapshot?.amount ?? r.amount ?? null,
-            planName: cached?.planSnapshot?.planName ?? r.planName ?? null,
-            planId: cached?.planSnapshot?.planId ?? r.planId ?? null,
-            planDurationDays:
-              cached?.planSnapshot?.planDurationDays ?? r.planDurationDays ?? null,
-          };
-          console.log('[SUBSCRIPTION_VERIFY]', reason, 'instant_unlock_grace_preserved', {
-            resolveSource: r.resolveSource ?? null,
-            protectMsLeft: Math.max(0, instantUnlockProtectUntilRef.current - Date.now()),
-          });
-          if (instantUnlockGraceRetryTimerRef.current == null) {
-            const delayMs = Math.max(80, instantUnlockProtectUntilRef.current - Date.now() + 40);
-            instantUnlockGraceRetryTimerRef.current = setTimeout(() => {
-              instantUnlockGraceRetryTimerRef.current = null;
-              void reverifySubscription(`${reason}:grace-retry`);
-            }, delayMs);
-          }
-          // Keep optimistic unlock + Account/Hongera details; do not apply sparse inactive body.
-          return effectiveResult;
         }
 
         if (
@@ -749,7 +690,7 @@ export function OsmaniAppProvider({ children }) {
         setSubscriptionVersion((v) => v + 1);
         if (active) {
           let planSnapshot = extractPlanSnapshotFromDetails(mergedDetails);
-          if (!planSnapshot && (effectiveResult.transportPreserved === true || effectiveResult.instantUnlockPreserved === true)) {
+          if (!planSnapshot && effectiveResult.transportPreserved === true) {
             const cachedSnap = await readSubscriptionCache();
             planSnapshot = cachedSnap.planSnapshot ?? null;
           }
@@ -759,27 +700,10 @@ export function OsmaniAppProvider({ children }) {
           const backendNewer =
             Number.isFinite(verifyExpiresMs) &&
             (!Number.isFinite(cacheExpiresMs) || verifyExpiresMs > cacheExpiresMs);
-          const cachedPlanId = String(cached?.planSnapshot?.planId ?? '').trim();
-          const verifyPlanId = String(planSnapshot?.planId ?? '').trim();
-          const cachedAmount = Number(cached?.planSnapshot?.amount);
-          const verifyAmount = Number(planSnapshot?.amount);
-          const planMetadataChanged =
-            (verifyPlanId !== '' && cachedPlanId !== '' && verifyPlanId !== cachedPlanId) ||
-            (Number.isFinite(verifyAmount) &&
-              Number.isFinite(cachedAmount) &&
-              verifyAmount !== cachedAmount);
-          if (
-            (backendNewer || planMetadataChanged) &&
-            effectiveResult.transportPreserved !== true &&
-            effectiveResult.instantUnlockPreserved !== true
-          ) {
-            console.log('[SUBSCRIPTION_CACHE]', reason, 'overwrite_canonical_plan', {
+          if (backendNewer && effectiveResult.transportPreserved !== true) {
+            console.log('[SUBSCRIPTION_CACHE]', reason, 'overwrite_newer_expiry', {
               cacheExpiresAt: cached?.expiresAt ?? null,
               verifyExpiresAt: expiresAt,
-              cachedPlanId: cachedPlanId || null,
-              verifyPlanId: verifyPlanId || null,
-              cachedAmount: Number.isFinite(cachedAmount) ? cachedAmount : null,
-              verifyAmount: Number.isFinite(verifyAmount) ? verifyAmount : null,
             });
           }
           await writeSubscriptionCache({
@@ -808,19 +732,6 @@ export function OsmaniAppProvider({ children }) {
           serverTime: detailSource.serverTime ?? null,
           transportPreserved: effectiveResult.transportPreserved === true,
         });
-        // Sparse SSE may unlock without plan fields — Hongera after verify fills them.
-        if (active && detailsPayload) {
-          const reasonText = String(reason);
-          if (
-            /sse:(manual_subscription_granted|manual_gift|package_granted|admin_subscription_granted|subscription_manual_grant|device_subscription_granted|manual_subscription(?:_changed|_granted)?)\b/.test(
-              reasonText,
-            )
-          ) {
-            showActivationSuccess(detailsPayload, 'admin_grant');
-          } else if (reasonText.includes('subscription_request_updated')) {
-            showActivationSuccess(detailsPayload, 'custom_grant');
-          }
-        }
         return effectiveResult;
       } catch (e) {
         console.log('[SUBSCRIPTION_VERIFY]', reason, 'error', e?.message ?? e);
@@ -1723,7 +1634,7 @@ export function OsmaniAppProvider({ children }) {
             skip: userInitiated ? 'user_transfer_clear' : 'silent_transfer_clear',
           });
           await handleRemoteTransferAway(payload, 'subscription_revoked', {
-            showSuccessModal: false,
+            showSuccessModal: userInitiated,
           });
           return;
         }
@@ -1732,48 +1643,26 @@ export function OsmaniAppProvider({ children }) {
           hadActiveBefore,
           sseReason,
         });
-        authoritativeInactiveRef.current = true;
-        cacheTrustedActiveRef.current = false;
         await clearLocalActiveSubscription('sse:subscription_revoked');
       })();
     });
-    // Admin DELETE USER — wipe Premium immediately; never wait for restart/cache.
-    const offDeleteUser = DELETE_USER_SSE_EVENTS.map((ev) =>
-      subscribeRealtimeEvent(ev, (payload) => {
-        void (async () => {
-          const role = await subscriptionTransferSseRole(payload, ev);
-          if (role === 'other') return;
-          console.log('[DELETE_USER_SSE]', ev, payload, { role });
-          authoritativeInactiveRef.current = true;
-          cacheTrustedActiveRef.current = false;
-          try {
-            await clearSubscriptionCache(`sse:${ev}:pre-clear`);
-          } catch {
-            /* ignore */
-          }
-          isSubscribedRef.current = false;
-          setIsSubscribed(false);
-          setSubscriptionExpiresAt(null);
-          setSubscriptionDetails(null);
-          setSubscriptionVersion((v) => v + 1);
-          await clearLocalActiveSubscription(`sse:${ev}`);
-          const r = await reverifySubscription(`sse:${ev}`);
-          if (r?.active !== true) {
-            authoritativeInactiveRef.current = true;
-            cacheTrustedActiveRef.current = false;
-          }
-          scheduleAdminDrivenSoftSync(`sse:${ev}`);
-        })();
-      }),
-    );
     const offSubscriptionLifecycle = SUBSCRIPTION_WAKE_SSE_EVENTS.map((ev) =>
       subscribeRealtimeEvent(ev, (payload) => {
         console.log('[SUBSCRIPTION_SSE]', ev, payload);
-          void (async () => {
-          await tryInstantApplyFromSse(ev, payload);
-          // Reverify immediately so Account boxes / gift flags refresh without a
-          // multi-second wait. Replica-lag re-lock is blocked by instant-unlock grace.
-          void reverifySubscription(`sse:${ev}`);
+        void (async () => {
+          const details = await tryInstantApplyFromSse(ev, payload);
+          const paymentActivation =
+            ev === 'payment_success' ||
+            ev === 'payment_completed' ||
+            ev === 'subscription_activated';
+          // Defer reconcile after instant payment unlock — replica lag must not re-lock.
+          if (details && paymentActivation) {
+            setTimeout(() => {
+              void reverifySubscription(`sse:${ev}:deferred`);
+            }, 2500);
+          } else {
+            void reverifySubscription(`sse:${ev}`);
+          }
           scheduleAdminDrivenSoftSync(`sse:${ev}`);
           if (ev === 'payment_success' || ev === 'payment_completed') {
             void reportUserCenterEvent('payment_success', { source: 'sse', sse_event: ev });
@@ -1804,7 +1693,7 @@ export function OsmaniAppProvider({ children }) {
             Boolean(sourceTransferSessionRef.current?.code) ||
             isUserConfirmedTransferReason(sseReason);
           await handleRemoteTransferAway(payload, 'transfer_completed', {
-            showSuccessModal: false,
+            showSuccessModal: userInitiated,
           });
           return;
         }
@@ -1813,7 +1702,7 @@ export function OsmaniAppProvider({ children }) {
         void tryInstantApplyFromSse('transfer_completed', payload);
         const r = await reverifySubscription('sse:transfer_completed');
         if (r?.active === true) {
-          await completeTargetTransferRedemption(r, 'sse:transfer_completed');
+          showActivationSuccess(r, 'transfer');
         }
       })();
     });
@@ -1826,9 +1715,9 @@ export function OsmaniAppProvider({ children }) {
       sourceTransferSessionRef.current = null;
       setPendingTransfer(null);
       void tryInstantApplyFromSse('transfer_approved', payload);
-      void reverifySubscription('sse:transfer_approved').then(async (r) => {
+      void reverifySubscription('sse:transfer_approved').then((r) => {
         if (r?.active === true) {
-          await completeTargetTransferRedemption(r, 'sse:transfer_approved');
+          showActivationSuccess(r, 'transfer');
         }
       });
     });
@@ -1974,7 +1863,6 @@ export function OsmaniAppProvider({ children }) {
       offDeviceStream();
       offSnapshot();
       offRevoked();
-      offDeleteUser.forEach((off) => off());
       offSubscriptionLifecycle.forEach((off) => off());
       offUserCenter.forEach((off) => off());
       offCompleted();
@@ -1985,7 +1873,7 @@ export function OsmaniAppProvider({ children }) {
       offRuntimeModes.forEach((off) => off());
       offCatalogAliases.forEach((off) => off());
     };
-  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway, tryInstantApplyFromSse, showActivationSuccess, completeTargetTransferRedemption, applyChannelCatalogRealtime]);
+  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway, tryInstantApplyFromSse, showActivationSuccess, applyChannelCatalogRealtime]);
 
   // Foreground sync: refresh catalog + reverify periodically while app is active.
   useEffect(() => {
@@ -2082,32 +1970,17 @@ export function OsmaniAppProvider({ children }) {
   }, []);
 
   /**
-   * Target device: instant unlock + Hongera after transfer redeem/SSE.
-   */
-  const completeTargetTransferRedemption = useCallback(
-    async (verified, reason = 'transfer-redeem') => {
-      if (!verified || verified.active !== true) return null;
-      unlockChannels(verified);
-      showActivationSuccess(verified, 'transfer');
-      console.log('[TRANSFER_TARGET]', 'redemption_complete', { reason });
-      return verified;
-    },
-    [unlockChannels, showActivationSuccess],
-  );
-
-  /**
-   * Source Phone A: instant loss of premium access; navigate Home (no blocking modal).
+   * Source Phone A: instant loss of premium access; success popup only when user initiated transfer.
    */
   const applySourceTransferCompleted = useCallback(
     async (reason = 'transfer_completed', opts = {}) => {
-      const showSuccessModal = opts.showSuccessModal === true;
+      const showSuccessModal = opts.showSuccessModal !== false;
       sourceTransferClearLockUntilRef.current = Date.now() + SOURCE_TRANSFER_CLEAR_LOCK_MS;
       const hadActive = isSubscribedRef.current;
       sourceTransferSessionRef.current = null;
       setPendingTransfer(null);
       await clearLocalActiveSubscription(reason);
       if (hadActive && showSuccessModal) setSourceTransferSuccessVisible(true);
-      runTransferNavigateHome();
       void reverifySubscription(`bg:${reason}`);
     },
     [clearLocalActiveSubscription, reverifySubscription],
@@ -2133,7 +2006,7 @@ export function OsmaniAppProvider({ children }) {
       const hadActiveBefore = isSubscribedRef.current;
       if (!hadActiveBefore) return;
       await applySourceTransferCompleted(`sse:${eventName}`, {
-        showSuccessModal: false,
+        showSuccessModal: showSuccessModal && userInitiated,
       });
     },
     [applySourceTransferCompleted],
@@ -2254,7 +2127,6 @@ export function OsmaniAppProvider({ children }) {
       sourceTransferSuccessVisible,
       applySourceTransferCompleted,
       dismissSourceTransferSuccess,
-      completeTargetTransferRedemption,
       clearLocalActiveSubscription,
       dismissManualGiftClientState,
       pendingTransfer,
@@ -2285,7 +2157,6 @@ export function OsmaniAppProvider({ children }) {
       showActivationSuccess,
       dismissActivationSuccess,
       applyInstantSubscriptionState,
-      isWithinInstantUnlockGrace,
       requireUpdateBeforeChannelPlayback: settings.requireUpdateBeforeChannelPlayback,
       phoneNumberGateEnabled: settings.phoneNumberGateEnabled !== false,
       channelUpdateGateVisible,
@@ -2317,7 +2188,6 @@ export function OsmaniAppProvider({ children }) {
       sourceTransferSuccessVisible,
       applySourceTransferCompleted,
       dismissSourceTransferSuccess,
-      completeTargetTransferRedemption,
       clearLocalActiveSubscription,
       dismissManualGiftClientState,
       pendingTransfer,
@@ -2353,7 +2223,6 @@ export function OsmaniAppProvider({ children }) {
       presentChannelUpdateGate,
       bindPresentChannelUpdateGate,
       dismissChannelUpdateGate,
-      isWithinInstantUnlockGrace,
     ],
   );
 

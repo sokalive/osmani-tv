@@ -20,7 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { getDeviceIdentity } from '../lib/deviceIdentity';
-import { initiateTransfer, redeemTransfer } from '../api/subscription';
+import { getTransferStatus, initiateTransfer, redeemTransfer } from '../api/subscription';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { subscriptionTransferSseRole } from '../lib/subscriptionSseGuard';
 import { formatTransferRequestUserMessage } from '../lib/transferRequestErrors';
@@ -123,7 +123,6 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     markSourceTransferSession,
     clearSourceTransferSession,
     applySourceTransferCompleted,
-    completeTargetTransferRedemption,
   } = useOsmaniApp();
 
   const [step, setStep] = useState(STEPS.INTRO);
@@ -201,8 +200,19 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
   const isRedeemCodeValid = /^\d{6}$/.test(redeemCode);
 
   /**
-   * SOURCE-device bridge: close code modal when confirmation is required
-   * (forward-compatible confirmation mode only).
+   * SOURCE-device bridge.
+   *
+   * The global context owns `TransferConfirmModal`, but this native
+   * `<Modal>` can visually cover it on Android. While the GENERATED step
+   * is showing the 6-digit code we MUST close this modal as soon as we
+   * have ANY signal that the target device has confirmed — we let the
+   * global approval modal take over. We also force-set the global
+   * `pendingTransfer` context so the approve/reject popup absolutely
+   * shows even if the SSE event was missed by the consumer entirely.
+   *
+   * Permissive matching: while we are in GENERATED with our own code, any
+   * source-targeted transfer event is treated as belonging to us — this
+   * device is the only one in this state.
    */
   useEffect(() => {
     if (!visible || step !== STEPS.GENERATED || !generatedCode) return undefined;
@@ -277,7 +287,42 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     };
   }, [visible, step, generatedCode, close, triggerPendingTransfer]);
 
-  /** Source device: clear subscription immediately when transfer completes (SSE). */
+  /**
+   * SOURCE verify poll while code is displayed. VPS activates immediately on
+   * target confirm — SSE may be missed; bounded verify detects source inactive.
+   */
+  useEffect(() => {
+    if (!visible || step !== STEPS.GENERATED || !generatedCode) return undefined;
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 30;
+    const tick = async () => {
+      if (cancelled || attempts >= MAX_ATTEMPTS) return;
+      attempts += 1;
+      try {
+        const r = await reverifySubscription?.('transfer-source-poll');
+        if (cancelled) return;
+        if (r && r.active !== true) {
+          console.log('[transfer-ui]', 'source inactive via poll', { attempts });
+          await applySourceTransferCompleted?.('poll:source_inactive', { showSuccessModal: true });
+          close();
+          return;
+        }
+      } catch (e) {
+        console.log('[transfer-ui]', 'source_poll_error', e?.message ?? e);
+      }
+      if (!cancelled && attempts < MAX_ATTEMPTS) {
+        setTimeout(tick, 6000);
+      }
+    };
+    const timer = setTimeout(tick, 4000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [visible, step, generatedCode, reverifySubscription, applySourceTransferCompleted, close]);
+
+  /** Source device: clear subscription immediately when transfer completes. */
   useEffect(() => {
     if (!visible || step !== STEPS.GENERATED) return undefined;
     const offCompleted = subscribeRealtimeEvent('transfer_completed', (payload) => {
@@ -329,6 +374,54 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     close();
   }, [visible, pendingTransfer, step, close]);
 
+  /**
+   * Polling fallback. SSE may fail silently (network, proxy, sleep).
+   * While the GENERATED step is showing the code, poll the backend every
+   * 2 seconds for a `pending_confirmation` state. The polling helper
+   * gracefully tolerates missing endpoints (multi-URL probe with 404
+   * fallback), so this becomes a no-op until the backend exposes a
+   * status route — but the moment one exists, the source device flips
+   * into the approval state without waiting for SSE.
+   */
+  useEffect(() => {
+    if (!visible) return undefined;
+    if (step !== STEPS.GENERATED) return undefined;
+    if (!generatedCode) return undefined;
+    let cancelled = false;
+    let timer = null;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const r = await getTransferStatus(generatedCode);
+        if (cancelled) return;
+        if (r?.pending === true || r?.status === 'pending_confirmation') {
+          console.log('[transfer-ui]', 'pending transfer detected', {
+            source: 'poll',
+            url: r?.url ?? null,
+            generatedCode,
+          });
+          const payload = (r?.raw && typeof r.raw === 'object') ? r.raw : { code: generatedCode };
+          try {
+            triggerPendingTransfer?.({ ...payload, code: payload.code || generatedCode }, 'poll');
+          } catch {}
+          console.log('[transfer-ui]', 'closing code modal', { source: 'poll' });
+          console.log('[transfer-ui]', 'opening confirm modal', { source: 'poll' });
+          close();
+          return;
+        }
+      } catch (e) {
+        console.log('[transfer-ui]', 'poll_error', e?.message ?? e);
+      }
+      if (cancelled) return;
+      timer = setTimeout(tick, 4000);
+    };
+    timer = setTimeout(tick, 2000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [visible, step, generatedCode, close, triggerPendingTransfer]);
+
   const handleGenerate = useCallback(async () => {
     if (!isPhoneValid) {
       setError('Weka namba sahihi ya simu.');
@@ -372,20 +465,16 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     try {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
       const r = await redeemTransfer(redeemCode, deviceId, deviceFingerprint);
+      // Pending mode: backend is waiting for SOURCE device to approve.
+      // Switch to the WAITING step and listen for SSE outcome events.
       if (r?.status === 'pending') {
         setWaitingCode(String(r.code ?? redeemCode));
         setStep(STEPS.WAITING);
         return;
       }
-      if (r?.active === true || r?.status === 'approved') {
-        const verified =
-          r?.active === true && (r?.expiresAt || r?.planName)
-            ? r
-            : await reverifySubscription?.('transfer-redeem');
-        if (verified?.active === true) {
-          await completeTargetTransferRedemption?.(verified, 'transfer-redeem');
-        }
-        close();
+      if (r?.active === true) {
+        setStep(STEPS.REDEEMED);
+        await reverifySubscription?.('transfer-redeem');
         return;
       }
       setError('Code haijafanikiwa. Hakikisha umeingiza code sahihi.');
@@ -394,13 +483,7 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
     } finally {
       setBusy(false);
     }
-  }, [
-    isRedeemCodeValid,
-    redeemCode,
-    reverifySubscription,
-    completeTargetTransferRedemption,
-    close,
-  ]);
+  }, [isRedeemCodeValid, redeemCode, reverifySubscription]);
 
   /**
    * TARGET-device SSE bridge. Active only while the modal is on the
@@ -422,23 +505,17 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       if (!matches(payload)) return;
       console.log('[TRANSFER_APPROVED]', 'target_redeem', payload);
       try {
-        const verified = await reverifySubscription?.('transfer_approved');
-        if (verified?.active === true) {
-          await completeTargetTransferRedemption?.(verified, 'transfer_approved');
-          close();
-        }
+        await reverifySubscription?.('transfer_approved');
       } catch {}
+      setStep(STEPS.REDEEMED);
     });
     const offCompleted = subscribeRealtimeEvent('transfer_completed', async (payload) => {
       if (!matches(payload)) return;
       console.log('[TRANSFER_COMPLETED]', 'target_redeem', payload);
       try {
-        const verified = await reverifySubscription?.('transfer_completed');
-        if (verified?.active === true) {
-          await completeTargetTransferRedemption?.(verified, 'transfer_completed');
-          close();
-        }
+        await reverifySubscription?.('transfer_completed');
       } catch {}
+      setStep(STEPS.REDEEMED);
     });
     const offRejected = subscribeRealtimeEvent('transfer_rejected', (payload) => {
       if (!matches(payload)) return;
@@ -454,14 +531,36 @@ export default function HamishaKifurushiModal({ visible, onClose }) {
       if (!matches(payload)) return;
       console.log('[TRANSFER_PENDING]', 'target_redeem', payload);
     });
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 24;
+    const pollTick = async () => {
+      if (cancelled || attempts >= MAX_ATTEMPTS) return;
+      attempts += 1;
+      try {
+        const r = await reverifySubscription?.('transfer-target-poll');
+        if (cancelled) return;
+        if (r?.active === true) {
+          console.log('[transfer-ui]', 'target active via poll', { attempts });
+          setStep(STEPS.REDEEMED);
+          return;
+        }
+      } catch (e) {
+        console.log('[transfer-ui]', 'target_poll_error', e?.message ?? e);
+      }
+      if (!cancelled && attempts < MAX_ATTEMPTS) setTimeout(pollTick, 6000);
+    };
+    const pollTimer = setTimeout(pollTick, 5000);
 
     return () => {
+      cancelled = true;
+      clearTimeout(pollTimer);
       offApproved();
       offCompleted();
       offRejected();
       offPending();
     };
-  }, [visible, step, waitingCode, reverifySubscription, completeTargetTransferRedemption, close]);
+  }, [visible, step, waitingCode, reverifySubscription]);
 
   const copyGeneratedCode = useCallback(async () => {
     if (!generatedCode) return;

@@ -23,7 +23,6 @@ import OmbaKifurushiSection from '../components/OmbaKifurushiSection';
 import AccountUpdateSectionBoundary from '../components/AccountUpdateSectionBoundary';
 import HamishaKifurushiModal from '../components/HamishaKifurushiModal';
 import PremiumModal from '../components/PremiumModal';
-import ProfileAvatar from '../components/ProfileAvatar';
 import { redeemOfferCode, parseSubscriptionPayload } from '../api/subscription';
 import { useDeviceIntelligence } from '../context/DeviceIntelligenceContext';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
@@ -58,10 +57,6 @@ import {
 } from '../lib/paymentPlansCache';
 import { traceAccountDisplay } from '../lib/accountDisplayTrace';
 import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
-import {
-  beginSecureScreenExemption,
-  endSecureScreenExemption,
-} from '../lib/security/secureScreen';
 
 /** Extra scroll padding above pinned Update App footer */
 const ACCOUNT_SCROLL_EXTRA = 24;
@@ -141,7 +136,6 @@ export default function AkauntiYanguScreen() {
     refreshSubscription,
     showActivationSuccess,
     applyInstantSubscriptionState,
-    isWithinInstantUnlockGrace,
   } = useOsmaniApp();
   const { guardUsage: guardDeviceIntelligence } = useDeviceIntelligence();
 
@@ -211,18 +205,12 @@ export default function AkauntiYanguScreen() {
             ? subscriptionDetailsFromPlanSnapshot(cached.planSnapshot, cached.expiresAt)
             : null;
           if (!snap) return;
-          // Never overwrite sticky labels from disk when live verify already has values —
-          // stale planSnapshot (old package mapping) would show wrong Price/Duration.
-          if (!lastPackageLabelRef.current) {
-            const label = formatAccountPackagePriceLabel(snap, catalogPlans);
-            if (label) lastPackageLabelRef.current = label;
-          }
-          if (lastDurationDaysRef.current == null) {
-            const days = resolvePlanDurationDays(
-              buildAccountDisplayDetails(snap, cached?.expiresAt ?? null, catalogPlans),
-            );
-            if (days != null) lastDurationDaysRef.current = days;
-          }
+          const label = formatAccountPackagePriceLabel(snap, catalogPlans);
+          if (label) lastPackageLabelRef.current = label;
+          const days = resolvePlanDurationDays(
+            buildAccountDisplayDetails(snap, cached?.expiresAt ?? null, catalogPlans),
+          );
+          if (days != null) lastDurationDaysRef.current = days;
         } catch {
           // non-fatal
         }
@@ -281,7 +269,7 @@ export default function AkauntiYanguScreen() {
     return base;
   }, [displayDetails, canonicalExpiresAt, displayExpiresAt, catalogPlans, tickNowMs]);
 
-  // Card 1: Malipo / Kifurushi — package amount only (never plan name).
+  // Card 1: Malipo / Kifurushi — package name + amount; sticky when refresh omits fields.
   const paymentValue = useMemo(() => {
     if (!isSubscribed) return 'Hapana';
     const fresh = formatAccountPackagePriceLabel(displayDetails, catalogPlans);
@@ -354,24 +342,10 @@ export default function AkauntiYanguScreen() {
     return () => clearInterval(id);
   }, [cooldownEndMs]);
 
-  // Allow screenshots only while Akaunti Yangu is focused; restore FLAG_SECURE on blur.
-  useFocusEffect(
-    useCallback(() => {
-      void beginSecureScreenExemption();
-      return () => {
-        void endSecureScreenExemption();
-      };
-    }, []),
-  );
-
   useFocusEffect(
     useCallback(() => {
       setAccountUpdateSectionKey((k) => k + 1);
-      // Skip reverify during instant unlock grace — unlock already wrote canonical
-      // boxes; a lagging inactive verify would only add visible wait/flicker.
-      if (!isWithinInstantUnlockGrace?.()) {
-        void refreshSubscription();
-      }
+      void refreshSubscription();
       void syncCooldownFromStorage();
       void (async () => {
         const cached = getCachedPaymentPlansSync();
@@ -390,7 +364,7 @@ export default function AkauntiYanguScreen() {
           setDeviceIdFull('');
         }
       })();
-    }, [refreshSubscription, syncCooldownFromStorage, isWithinInstantUnlockGrace]),
+    }, [refreshSubscription, syncCooldownFromStorage]),
   );
 
   const handleCopyDeviceId = useCallback(async () => {
@@ -461,7 +435,9 @@ export default function AkauntiYanguScreen() {
           </Pressable>
           <View style={styles.headerMain}>
             <View style={styles.avatarWrap}>
-              <ProfileAvatar seed={deviceIdFull || deviceLabel} size={52} />
+              <View style={styles.avatarCircle}>
+                <Text style={styles.avatarInitial}>B</Text>
+              </View>
               <View style={styles.onlineDot} />
             </View>
             <View style={styles.headerTextCol}>
@@ -671,6 +647,19 @@ const styles = StyleSheet.create({
   },
   avatarWrap: {
     marginRight: 12,
+  },
+  avatarCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#2A2E37',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    color: COLORS.white,
+    fontSize: 22,
+    fontWeight: '700',
   },
   onlineDot: {
     position: 'absolute',

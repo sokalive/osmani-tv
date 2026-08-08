@@ -167,14 +167,7 @@ function pickPaymentSseOrderId(payload) {
  */
 export default function PremiumModal({ visible, onClose, onUnlockSuccess, channelName = 'Chaneli Uliyofungua' }) {
   const insets = useSafeAreaInsets();
-  const {
-    refreshSubscription,
-    unlockChannels,
-    availablePlans,
-    isSubscribed,
-    subscriptionExpiresAt,
-    subscriptionDetails,
-  } = useOsmaniApp();
+  const { refreshSubscription, unlockChannels, availablePlans, isSubscribed } = useOsmaniApp();
   /** Start allowed when context already knows inactive — never flash the verify-wait UI. */
   const [paymentEntryGate, setPaymentEntryGate] = useState(() =>
     isSubscribed === true ? 'checking' : 'allowed',
@@ -211,8 +204,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const countdownTimerRef = useRef(null);
   const sseRef = useRef(null);
   const doneRef = useRef(false);
-  /** True from Lipia→waiting through Hongera — blocks active-subscription overlay. */
-  const checkoutFlowRef = useRef(false);
   const payInFlightRef = useRef(false);
   const lipiaWatchdogRef = useRef(null);
   const identityPrefetchRef = useRef(null);
@@ -220,24 +211,18 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const pollStartedAtRef = useRef(0);
   const checkoutProviderRef = useRef('zenopay');
 
-  const animateStepChange = useCallback((nextStep) => {
-    // Hongera must appear instantly — no fade lag after payment confirm.
-    if (nextStep === 4) {
-      fadeAnim.setValue(1);
-      slideAnim.setValue(0);
-      return;
-    }
+  const animateStepChange = useCallback(() => {
     fadeAnim.setValue(0);
     slideAnim.setValue(12);
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 160,
+        duration: 240,
         useNativeDriver: true,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 160,
+        duration: 240,
         useNativeDriver: true,
       }),
     ]).start();
@@ -270,14 +255,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   }, []);
 
   const showPaymentEntryDialog = useCallback((kind) => {
-    // Never overlay "Kifurushi Kinaendelea" on an in-flight checkout or Hongera.
-    if (doneRef.current || checkoutFlowRef.current) {
-      console.log('[PremiumModal]', 'payment_entry_dialog_skipped', {
-        kind,
-        reason: 'checkout_in_flight_or_success',
-      });
-      return;
-    }
     const active = kind === 'active';
     setPaymentEntryGate(active ? 'blocked' : 'unavailable');
     setPhoneGuardTitle(
@@ -312,7 +289,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setPhoneGuardTitle('Taarifa');
     setPhoneGuardMessage('');
     setCloseAfterGuardDialog(false);
-    checkoutFlowRef.current = false;
     // Instant plans for inactive users. Active users hard-block without verify-wait UI.
     setPaymentEntryGate(isSubscribed === true ? 'blocked' : 'allowed');
     setPaymentProgressStep(1);
@@ -333,12 +309,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     if (!visible) return undefined;
     let cancelled = false;
 
-    // Mid-checkout / Hongera: isSubscribed flipping true after unlock must NOT
-    // replace Congratulations with "Kifurushi Kinaendelea".
-    if (doneRef.current || checkoutFlowRef.current || step >= 3) {
-      return undefined;
-    }
-
     // Hard block from live context — never open plans while THIS device is subscribed.
     if (isSubscribed === true) {
       console.log('[PremiumModal]', 'payment_entry_gate', {
@@ -354,7 +324,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setPaymentEntryGate('allowed');
     void refreshSubscription('payment-entry-gate')
       .then((result) => {
-        if (cancelled || doneRef.current || checkoutFlowRef.current || step >= 3) return;
+        if (cancelled) return;
         if (isSubscribed === true) {
           showPaymentEntryDialog('active');
           return;
@@ -379,21 +349,20 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     return () => {
       cancelled = true;
     };
-  }, [visible, refreshSubscription, showPaymentEntryDialog, isSubscribed, step]);
+  }, [visible, refreshSubscription, showPaymentEntryDialog, isSubscribed]);
 
   useEffect(() => {
     if (!visible) {
       clearTimers();
       closeSse();
       doneRef.current = false;
-      checkoutFlowRef.current = false;
       // Keep 'allowed' so the next open never flashes verify-wait UI for one frame.
       setPaymentEntryGate('allowed');
     }
   }, [visible, clearTimers, closeSse]);
 
   useEffect(() => {
-    animateStepChange(step);
+    animateStepChange();
   }, [step, animateStepChange]);
 
   useEffect(() => {
@@ -598,7 +567,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       closeSse();
       applyWaitingState(APP_WAITING_STATE.ACTIVE);
 
-      // Instant unlock + Hongera — never await probes/verify here (regression from cfeb1b4).
       const mergedExpires = latestExpiryIso(verified?.expiresAt, fetchExpires);
       const forUnlock = mergeCheckoutPlanIntoSubscription(
         {
@@ -634,59 +602,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         planName: forUnlock?.planName ?? selectedPlan?.name ?? null,
         expiresAt: forUnlock?.expiresAt ?? null,
       });
-      // Keep gate open so Hongera is not unmounted when context flips isSubscribed.
-      checkoutFlowRef.current = true;
-      setPaymentEntryGate('allowed');
-      setPhoneGuardVisible(false);
-      setCloseAfterGuardDialog(false);
       setStep(4);
-
-      // Non-blocking: backfill Hongera expiry from backend if SSE omitted it.
-      // Must NOT delay unlock or popup appearance (regression was awaiting this).
-      if (!mergedExpires && !verified?.expiresAt) {
-        void (async () => {
-          try {
-            const identity = await getDeviceIdentity();
-            for (let attempt = 0; attempt < 25; attempt++) {
-              const probed = await runPaymentActivationTick({
-                deviceId: identity.deviceId,
-                deviceFingerprint: identity.deviceFingerprint,
-                identity,
-                // Keep early attempts light; one fuller verify mid-loop if still missing.
-                light: attempt < 8 || attempt % 3 !== 0,
-              });
-              const expires =
-                probed?.subscription?.expiresAt != null
-                  ? String(probed.subscription.expiresAt)
-                  : null;
-              if (expires && probed?.subscription && isSubscriptionActive(probed.subscription)) {
-                setSuccessDetails((prev) =>
-                  buildPaymentSuccessDetails(
-                    {
-                      ...(prev ?? {}),
-                      ...probed.subscription,
-                      expiresAt: expires,
-                      expires_at: expires,
-                    },
-                    {
-                      name: selectedPlan?.name ?? null,
-                      price: selectedPlan?.price ?? null,
-                    },
-                  ),
-                );
-                console.log('[PremiumModal]', 'success_expiry_backfill', {
-                  attempt,
-                  expiresAt: expires,
-                });
-                return;
-              }
-              await new Promise((r) => setTimeout(r, 800));
-            }
-          } catch (e) {
-            console.log('[PremiumModal]', 'success_expiry_backfill_error', e?.message ?? e);
-          }
-        })();
-      }
+      // Context unlock already applied. Avoid an immediate shared reverify race that can
+      // briefly return inactive and re-lock channels before backend read-replicas catch up.
+      // FUNGUA CHANNEL refreshes entitlement once before navigating.
     },
     [
       clearTimers,
@@ -721,48 +640,20 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     onClose?.();
   }, [onClose]);
 
-  useEffect(() => {
-    if (step !== 4) return;
-    const canonicalExpires =
-      subscriptionExpiresAt ??
-      subscriptionDetails?.expiresAt ??
-      subscriptionDetails?.expires_at ??
-      null;
-    if (!canonicalExpires) return;
-    setSuccessDetails((prev) => {
-      if (!prev || prev.expiresAt === canonicalExpires) return prev;
-      return buildPaymentSuccessDetails(
-        {
-          ...prev,
-          expiresAt: canonicalExpires,
-          expires_at: canonicalExpires,
-        },
-        {
-          name: selectedPlan?.name ?? null,
-          price: selectedPlan?.price ?? null,
-        },
-      );
-    });
-  }, [step, subscriptionExpiresAt, subscriptionDetails, selectedPlan]);
-
   const handleOpenChannel = useCallback(() => {
-    const tappedAt = Date.now();
-    try {
+    void (async () => {
+      try {
+        await refreshSubscription('payment-fungua-channel');
+      } catch (e) {
+        console.log('[PremiumModal]', 'fungua_refresh_error', e?.message ?? e);
+      }
+      try {
+        onUnlockSuccess?.();
+      } catch (e) {
+        console.log('[PremiumModal]', 'onUnlockSuccess_error', e?.message ?? e);
+      }
       onClose?.();
-    } catch (e) {
-      console.log('[PremiumModal]', 'onClose_error', e?.message ?? e);
-    }
-    try {
-      onUnlockSuccess?.();
-      console.log('[PremiumModal]', 'fungua_navigate_now', {
-        elapsedMs: Date.now() - tappedAt,
-      });
-    } catch (e) {
-      console.log('[PremiumModal]', 'onUnlockSuccess_error', e?.message ?? e);
-    }
-    void refreshSubscription('payment-fungua-channel').catch((e) => {
-      console.log('[PremiumModal]', 'fungua_refresh_error', e?.message ?? e);
-    });
+    })();
   }, [onUnlockSuccess, onClose, refreshSubscription]);
 
   /**
@@ -896,61 +787,17 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
         if (reconcileGuardRef.current.isStale(gen)) return;
 
-        // Provider SUCCESS / activating: unlock Hongera immediately using checkout plan +
-        // payment-status hint. Do not wait for a subscription probe round-trip.
-        const paymentConfirmed =
-          waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
-          result.status === 'SUCCESS';
-
-        if (paymentConfirmed && !isPaymentEntitlementConfirmed(result)) {
-          const hint = subscriptionHintFromPaymentStatusRaw(result.raw);
-          const subscription = mergeCheckoutPlanIntoSubscription(
-            {
-              ...hint,
-              active: true,
-              isActive: true,
-              expiresAt: latestExpiryIso(hint.expiresAt, result.expiresAt),
-            },
-            selectedPlan,
-          );
-          setPaymentProgressStep(2);
-          applyWaitingState(APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING, {
-            paymentConfirmed: true,
-          });
-          await finalizePaymentSuccess(subscription, result.expiresAt);
-          console.log('[PremiumModal]', 'payment_activation_success', {
-            source: 'payment-status-success-instant',
-            waiting,
-            status: result.status ?? null,
-          });
-          // Background confirm — Hongera already shown.
-          void (async () => {
-            try {
-              const identity = await getDeviceIdentity();
-              await probeSubscriptionActivation(
-                identity.deviceId,
-                identity.deviceFingerprint,
-                identity,
-                { light: true },
-              );
-            } catch {
-              /* ignore */
-            }
-          })();
-          return;
-        }
-
+        // Trust payment-status entitlement BEFORE any subscription probe.
+        // Prior order awaited a multi-request probe first, delaying unlock by
+        // tens of seconds even when entitlement_active / ACTIVE was already set.
         if (isPaymentEntitlementConfirmed(result)) {
           const hint = subscriptionHintFromPaymentStatusRaw(result.raw);
-          const subscription = mergeCheckoutPlanIntoSubscription(
-            {
-              ...hint,
-              active: true,
-              isActive: true,
-              expiresAt: latestExpiryIso(hint.expiresAt, result.expiresAt),
-            },
-            selectedPlan,
-          );
+          const subscription = {
+            ...hint,
+            active: true,
+            isActive: true,
+            expiresAt: latestExpiryIso(hint.expiresAt, result.expiresAt),
+          };
           await finalizePaymentSuccess(subscription, result.expiresAt);
           console.log('[PremiumModal]', 'payment_activation_success', {
             source: 'payment-status-entitlement',
@@ -960,23 +807,31 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           return;
         }
 
+        const paymentConfirmed =
+          waiting === APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING ||
+          result.status === 'SUCCESS';
+
+        if (paymentConfirmed) {
+          setPaymentProgressStep(2);
+          applyWaitingState(APP_WAITING_STATE.PROVIDER_CONFIRMED_ACTIVATING, {
+            paymentConfirmed: true,
+          });
+        }
+
         const identity = await getDeviceIdentity();
         const { deviceId, deviceFingerprint } = identity;
         if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
 
-        // Fallback: parallel status GETs when payment not yet SUCCESS.
+        // After provider confirm: parallel status GETs only (no second full probe tick).
         const probed = await probeSubscriptionActivation(deviceId, deviceFingerprint, identity, {
-          light: false,
+          light: paymentConfirmed,
         });
         if (doneRef.current || reconcileGuardRef.current.isStale(gen)) return;
 
         if (probed.verified && isSubscriptionActive(probed.verified)) {
-          await finalizePaymentSuccess(
-            mergeCheckoutPlanIntoSubscription(probed.verified, selectedPlan),
-            probed.fetchExpires,
-          );
+          await finalizePaymentSuccess(probed.verified, probed.fetchExpires);
           console.log('[PremiumModal]', 'payment_activation_success', {
-            source: 'poll-probe',
+            source: paymentConfirmed ? 'poll-status-light' : 'poll-probe',
           });
           return;
         }
@@ -994,7 +849,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       handleFailed,
       handleTerminalConflict,
       finalizePaymentSuccess,
-      selectedPlan,
     ],
   );
 
@@ -1279,7 +1133,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
     // Instant next step FIRST — never await identity/network before UI advances.
     doneRef.current = false;
-    checkoutFlowRef.current = true;
     setOrderId(null);
     setRemainingSeconds(CREATE_ORDER_ORPHAN_WAIT_SEC);
     setPaymentProgressStep(1);
@@ -1753,9 +1606,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       </View>
                     )}
 
-                    {/* Waiting / Hongera / fail must not depend on paymentEntryGate —
-                        unlock sets isSubscribed and must not hide Congratulations. */}
-                    {step === 3 && (
+                    {paymentEntryGate === 'allowed' && step === 3 && (
                       <PaymentWaitingStep
                         selectedAmountDisplay={selectedAmountDisplay}
                         orderId={orderId}
@@ -1768,7 +1619,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       />
                     )}
 
-                    {step === 4 && (
+                    {paymentEntryGate === 'allowed' && step === 4 && (
                       <PaymentSuccessStep
                         details={successDetails}
                         onOpenChannel={handleOpenChannel}
@@ -1776,7 +1627,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       />
                     )}
 
-                    {step === 5 && (
+                    {paymentEntryGate === 'allowed' && step === 5 && (
                       <View style={styles.resultWrap}>
                         <View style={styles.failIconHalo}>
                           <View style={styles.failIconCircle}>
@@ -1822,7 +1673,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       </LinearGradient>
                     </Pressable>
                   ) : null}
-                  {step === 3 ? (
+                  {paymentEntryGate === 'allowed' && step === 3 ? (
                     <Pressable style={[styles.cancelBtn, styles.ctaDockBtn]} onPress={handleCancel}>
                       <Text style={styles.cancelBtnText}>GHAIRI</Text>
                     </Pressable>

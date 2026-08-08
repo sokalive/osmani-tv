@@ -36,20 +36,11 @@ if (hamisha.includes('clearSourceTransferSession?.()') && hamisha.includes('if (
 if (!hamisha.includes('isTransferAwaitingSourceApproval')) fail('Hamisha uses approval filter');
 else pass('Hamisha approval filter');
 
-if (!hamisha.includes('transfer-source-poll')) pass('no source verify poll loop');
-else fail('source poll loop must be removed');
+if (!hamisha.includes('transfer-source-poll')) fail('source bounded verify poll');
+else pass('source bounded verify poll');
 
-if (!hamisha.includes('transfer-target-poll')) pass('no target verify poll loop');
-else fail('target poll loop must be removed');
-
-if (!hamisha.includes('getTransferStatus')) pass('no transfer status poll');
-else fail('transfer status poll must be removed');
-
-if (!hamisha.includes('completeTargetTransferRedemption')) fail('Hamisha uses completeTargetTransferRedemption');
-else pass('Hamisha completeTargetTransferRedemption');
-
-if (!fs.existsSync(path.join(root, 'lib/transferNavigation.js'))) fail('transferNavigation module missing');
-else pass('transfer navigate home module');
+if (!hamisha.includes('transfer-target-poll')) fail('target bounded verify poll');
+else pass('target bounded verify poll');
 
 if (!ctx.includes('isTransferAwaitingSourceApproval')) fail('context uses approval filter');
 else pass('context approval filter');
