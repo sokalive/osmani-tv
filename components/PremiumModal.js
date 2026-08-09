@@ -382,9 +382,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           checkoutSessionRef.current === 'waiting' ||
           checkoutSessionRef.current === 'success' ||
           checkoutSessionRef.current === 'submitting' ||
-          step === 3 ||
-          step === 4 ||
-          step === 5
+          stepRef.current === 3 ||
+          stepRef.current === 4 ||
+          stepRef.current === 5
         ) {
           return;
         }
