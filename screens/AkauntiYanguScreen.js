@@ -393,16 +393,38 @@ export default function AkauntiYanguScreen() {
     setRedeemBusy(true);
     try {
       const { deviceId, deviceFingerprint } = await getDeviceIdentity();
+      const redeemStartedAt = Date.now();
       const r = await redeemOfferCode(deviceId, deviceFingerprint, raw);
       if (r.ok) {
-        const hint = parseSubscriptionPayload(r.raw, { active: true });
-        if (hint?.active === true) {
-          await applyInstantSubscriptionState(hint, 'offer-code-redeem');
-        }
-        const fresh = await refreshSubscription();
-        showActivationSuccess(fresh ?? hint, 'offer_code');
+        // Redeem HTTP OK is terminal SUCCESS — mirror Lipia payment SUCCESS.
+        // Never await shared reverify before Home/Hongera (Contabo verify lag).
+        const apiMs = Date.now() - redeemStartedAt;
+        const parsed = parseSubscriptionPayload(r.raw, {});
+        const hint = {
+          ...parsed,
+          active: true,
+          isActive: true,
+        };
+        console.log('[OFFER_CODE]', 'redeem_ok_instant_ux', {
+          api_ms: apiMs,
+          planName: hint.planName ?? null,
+          expiresAt: hint.expiresAt ?? null,
+        });
+        const applied = await applyInstantSubscriptionState(hint, 'offer-code-redeem');
+        const forSuccess = applied ?? hint;
+        showActivationSuccess(forSuccess, 'offer_code');
         setOfferCodeInput('');
         navigation.navigate('Home');
+        console.log('[OFFER_CODE]', 'home_hongera_shown', {
+          since_submit_ms: Date.now() - redeemStartedAt,
+          api_ms: apiMs,
+          planName: forSuccess?.planName ?? null,
+          expiresAt: forSuccess?.expiresAt ?? null,
+        });
+        // Deferred reconcile only — avoid immediate inactive race on read replicas.
+        setTimeout(() => {
+          void refreshSubscription('offer-code-redeem-bg').catch(() => {});
+        }, 2500);
         return;
       }
       if (r.locked) {

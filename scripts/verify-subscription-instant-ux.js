@@ -54,6 +54,24 @@ else pass('global activation success modal');
 if (!account.includes('showActivationSuccess')) fail('offer code shows activation success');
 else pass('offer code activation success');
 
+if (!account.includes("showActivationSuccess(forSuccess, 'offer_code')")) {
+  fail('offer code must show Hongera from redeem payload (not blocked verify)');
+} else {
+  pass('offer code Hongera from redeem success payload');
+}
+
+if (/await\s+refreshSubscription\s*\(/.test(account)) {
+  fail('offer code must not await refreshSubscription before Home/Hongera');
+} else {
+  pass('offer code does not await refreshSubscription before success UX');
+}
+
+if (!account.includes("refreshSubscription('offer-code-redeem-bg')")) {
+  fail('offer code must still reconcile in background after success UX');
+} else {
+  pass('offer code background reverify after Home/Hongera');
+}
+
 if (ctx.includes('payment_success') && ctx.includes("eventName !== 'payment_success'")) {
   pass('payment SSE skips duplicate global success modal');
 } else {
