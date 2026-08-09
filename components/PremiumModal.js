@@ -287,7 +287,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     if (payInFlightRef.current) return;
     const currentStep = stepRef.current;
     if (currentStep === 3 || currentStep === 4 || currentStep === 5) return;
-    if (checkoutSessionRef.current === 'waiting' || checkoutSessionRef.current === 'success') {
+    if (
+      checkoutSessionRef.current === 'waiting' ||
+      checkoutSessionRef.current === 'success' ||
+      checkoutSessionRef.current === 'submitting'
+    ) {
       return;
     }
     const active = kind === 'active';
@@ -1287,8 +1291,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         if (
           checkoutSessionRef.current === 'waiting' ||
           checkoutSessionRef.current === 'success' ||
+          checkoutSessionRef.current === 'submitting' ||
           stepRef.current === 3 ||
-          stepRef.current === 4
+          stepRef.current === 4 ||
+          stepRef.current === 5
         ) {
           console.log('[PremiumModal]', 'payment_submit_gate_ignored_after_checkout_start', {
             session: checkoutSessionRef.current,
