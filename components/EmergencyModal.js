@@ -3,7 +3,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const MESSAGE =
-  'Hitilafu imetokea. Timu yetu ya ufundi inaishughulikia. Tafadhali jaribu tena baadaye.';
+  'Habari Kuna Hitilafu Ime Tokea Kwenye Channel Hii Timu Yetu Ya Ufundi Ina Shulikia Tafadhali Jaribu Tena Baada Ya Dakika Chache';
 
 export default function EmergencyModal({
   visible,

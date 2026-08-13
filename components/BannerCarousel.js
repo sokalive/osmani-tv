@@ -352,7 +352,8 @@ function BannerCarousel({
     async (slide) => {
       if (!slide.redirectChannelId) return;
       if (maintenanceMode) return;
-      if (emergencyMode) {
+      // Emergency popup only for ACTIVE subscribers; unpaid keep Lipia / package gate.
+      if (emergencyMode && isSubscribed) {
         onEmergency?.();
         return;
       }
@@ -395,6 +396,7 @@ function BannerCarousel({
       freeMode,
       maintenanceMode,
       emergencyMode,
+      isSubscribed,
       navigation,
       onEmergency,
       onPremiumRequired,

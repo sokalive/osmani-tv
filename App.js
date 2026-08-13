@@ -1040,7 +1040,9 @@ function ChannelCatalogScreen({
         logChannelCardTap('tap_cancelled', { channelKey, reason: 'maintenance' });
         return;
       }
-      if (emergencyMode) {
+      // Emergency channel-error popup is for ACTIVE subscribers only.
+      // Unpaid users must keep the normal package/subscription (Lipia) gate.
+      if (emergencyMode && isSubscribed) {
         logChannelCardTap('tap_cancelled', { channelKey, reason: 'emergency' });
         requestEmergencyModal();
         return;
@@ -1050,6 +1052,7 @@ function ChannelCatalogScreen({
     [
       maintenanceMode,
       emergencyMode,
+      isSubscribed,
       navigateToChannel,
       requestEmergencyModal,
       premiumPlaybackReady,
@@ -1468,7 +1471,7 @@ function ChannelCatalogScreen({
  * Re-opens when admin toggles emergency on or user taps emergency banner/channel.
  */
 function GlobalEmergencyGate() {
-  const { emergencyMode, emergencyModalRequestVersion } = useOsmaniApp();
+  const { emergencyMode, emergencyModalRequestVersion, isSubscribed } = useOsmaniApp();
   const [dismissed, setDismissed] = useState(false);
   const prevEmergencyRef = useRef(false);
 
@@ -1483,7 +1486,8 @@ function GlobalEmergencyGate() {
     if (emergencyModalRequestVersion > 0) setDismissed(false);
   }, [emergencyModalRequestVersion]);
 
-  const visible = Boolean(emergencyMode) && !dismissed;
+  // Unpaid users must never see Emergency Mode popup (keep Lipia / package gate).
+  const visible = Boolean(emergencyMode) && Boolean(isSubscribed) && !dismissed;
   useRegisterBlockingSheet('global-emergency', visible);
 
   return <EmergencyModal visible={visible} onSawa={() => setDismissed(true)} />;
