@@ -36,8 +36,8 @@ for (const ev of requiredSse) {
   else pass(`SSE event registered: ${ev}`);
 }
 
-if (!account.includes('OmbaKifurushiSection')) fail('Account screen must render OmbaKifurushiSection');
-else pass('Account screen wires OmbaKifurushiSection');
+if (account.includes('OmbaKifurushiSection')) fail('Account screen must not render OmbaKifurushiSection');
+else pass('Account screen hides OmbaKifurushiSection');
 
 if (!account.includes('identity.deviceId')) fail('Account must show canonical deviceId');
 else pass('Account uses canonical deviceId');

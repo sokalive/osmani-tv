@@ -18,9 +18,6 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import UpdateAppSection from '../components/UpdateAppSection';
-import OmbaKifurushiSection from '../components/OmbaKifurushiSection';
-import AccountUpdateSectionBoundary from '../components/AccountUpdateSectionBoundary';
 import HamishaKifurushiModal from '../components/HamishaKifurushiModal';
 import PremiumModal from '../components/PremiumModal';
 import { redeemOfferCode, parseSubscriptionPayload } from '../api/subscription';
@@ -59,7 +56,7 @@ import { traceAccountDisplay } from '../lib/accountDisplayTrace';
 import { getScrollContentBottomPadding } from '../lib/tabBarLayout';
 import { setScreenshotPolicy } from '../lib/security/screenshotPolicy';
 
-/** Extra scroll padding above pinned Update App footer */
+/** Extra scroll padding above bottom tab bar */
 const ACCOUNT_SCROLL_EXTRA = 24;
 const COLORS = {
   background: '#0C0608',
@@ -129,8 +126,6 @@ export default function AkauntiYanguScreen() {
     }, []),
   );
   const [deviceIdFull, setDeviceIdFull] = useState('');
-  /** Bumps on each Account tab focus — remounts Update App section (post-OTA cache bust). */
-  const [accountUpdateSectionKey, setAccountUpdateSectionKey] = useState(0);
   /** Last good package label — survive sparse verify/cache refresh payloads. */
   const lastPackageLabelRef = useRef(null);
   /** Last good duration days — survive sparse verify/cache refresh payloads. */
@@ -355,7 +350,6 @@ export default function AkauntiYanguScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      setAccountUpdateSectionKey((k) => k + 1);
       void refreshSubscription();
       void syncCooldownFromStorage();
       void (async () => {
@@ -630,12 +624,6 @@ export default function AkauntiYanguScreen() {
             </LinearGradient>
           </Pressable>
         </View>
-
-        <AccountUpdateSectionBoundary key={accountUpdateSectionKey}>
-          <UpdateAppSection />
-        </AccountUpdateSectionBoundary>
-
-        <OmbaKifurushiSection />
       </ScrollView>
 
       <HamishaKifurushiModal

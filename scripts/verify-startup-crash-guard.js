@@ -50,8 +50,8 @@ for (const rel of requiredModules) {
 const account = read('screens/AkauntiYanguScreen.js');
 for (const rel of requiredModules.slice(0, 2)) {
   const base = path.basename(rel, '.js');
-  if (!account.includes(base)) fail(`AkauntiYangu must import ${base}`);
-  else pass(`AkauntiYangu imports ${base}`);
+  if (account.includes(base)) fail(`AkauntiYangu must not mount hidden section ${base}`);
+  else pass(`AkauntiYangu does not mount ${base}`);
 }
 
 const deviceProfile = read('api/deviceProfile.js');

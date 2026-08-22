@@ -29,8 +29,11 @@ require('./verify-account-app-update.js');
 const account = read('screens/AkauntiYanguScreen.js');
 const updateSection = read('components/UpdateAppSection.js');
 
-if (!account.includes('UpdateAppSection')) fail('AkauntiYangu mounts UpdateAppSection');
-else pass('UpdateAppSection in account scroll');
+if (account.includes('UpdateAppSection')) fail('AkauntiYangu must not mount UpdateAppSection');
+else pass('UpdateAppSection hidden from account scroll');
+
+if (account.includes('OmbaKifurushiSection')) fail('AkauntiYangu must not mount OmbaKifurushiSection');
+else pass('OmbaKifurushiSection hidden from account scroll');
 
 if (account.includes('updateFooter')) {
   fail('must not use pinned footer for update section');
@@ -60,14 +63,13 @@ else pass('transfer phone validation');
 
 console.log('\n--- Manual device verification (required) ---');
 console.log('| Runtime | Screen | versionCode | Expected | Actual |');
-console.log('| 1.6.0–1.8.2 | Akaunti Yangu (below offer code) | any | "Update App" + UPDATE APP in scroll | fill after test |');
-console.log('| 1.6.0–1.8.2 | Akaunti Yangu tap UPDATE APP | < latest | APK download starts | fill after test |');
-console.log('| 1.6.0–1.8.2 | Akaunti Yangu tap UPDATE APP | 24 | already-latest Swahili alert | fill after test |');
+console.log('| 1.6.0–1.8.2 | Akaunti Yangu scroll | any | Update App + Omba Kifurushi absent | fill after test |');
+console.log('| 1.6.0–1.8.2 | Akaunti Yangu | any | Device ID, COPY, offer code, THIBITISHA CODE present | fill after test |');
 console.log('| any | Phone A after transfer approve | — | ACTIVE clears instantly | fill after test |');
 console.log('\nSteps:');
 console.log('1. Force-close app twice so OTA reloads.');
-console.log('2. Open Akaunti Yangu → scroll past offer code — Update App appears directly below.');
-console.log('3. Logcat: [ACCOUNT_UPDATE] rendered');
+console.log('2. Open Akaunti Yangu → scroll full length — Update App and Omba Kifurushi must not appear.');
+console.log('3. Confirm THIBITISHA CODE section ends the scroll (no blank gap below).');
 console.log('4. Transfer A→B, approve on A — logcat [SUBSCRIPTION_CLEAR_LOCAL]');
 
 if (failed > 0) {

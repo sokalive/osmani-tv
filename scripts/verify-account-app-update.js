@@ -18,8 +18,11 @@ const account = fs.readFileSync(path.join(root, 'screens/AkauntiYanguScreen.js')
 const updateLib = fs.readFileSync(path.join(root, 'lib/accountAppUpdate.js'), 'utf8');
 const updateSection = fs.readFileSync(path.join(root, 'components/AccountUpdateSection.js'), 'utf8');
 
-if (!account.includes('AccountUpdateSection')) fail('account mounts AccountUpdateSection');
-else pass('account mounts AccountUpdateSection');
+if (account.includes('AccountUpdateSection')) fail('account must not mount AccountUpdateSection');
+else pass('account hides AccountUpdateSection');
+
+if (account.includes('UpdateAppSection')) fail('account must not mount UpdateAppSection');
+else pass('account hides UpdateAppSection');
 
 if (!updateSection.includes('runAccountAppUpdate')) fail('AccountUpdateSection uses runAccountAppUpdate');
 else pass('AccountUpdateSection handler');
