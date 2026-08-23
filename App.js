@@ -339,6 +339,7 @@ function ChannelCatalogScreen({
     subscriptionDetails,
     subscriptionVersion,
     verifySubscriptionBeforePlay,
+    clearLocalActiveSubscription,
     requestEmergencyModal,
     trialWatchSettings,
     awaitPremiumAccessSnapshot,
@@ -949,6 +950,9 @@ function ChannelCatalogScreen({
           setPremiumPendingChannel(ch);
           touchPremiumAccessIntent();
         },
+        onSubscriptionDeniedByServer: (reason) => {
+          void clearLocalActiveSubscription(`server-authorize:${reason || 'denied'}`);
+        },
         security,
         Alert,
       });
@@ -961,6 +965,7 @@ function ChannelCatalogScreen({
       awaitEntitlementForTap,
       hydrateSubscriptionFromCache,
       verifySubscriptionBeforePlay,
+      clearLocalActiveSubscription,
       navigation,
       security,
       openPremiumModal,

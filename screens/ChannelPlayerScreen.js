@@ -24,6 +24,7 @@ import { reportUserCenterEvent } from '../api/userCenterSync';
 import { resolveAnalyticsChannelId } from '../lib/analyticsChannelId';
 import { clearActiveChannel, setActiveChannel } from '../lib/presenceTracker';
 import { subscriptionTransferSseRole } from '../lib/subscriptionSseGuard';
+import { authorizePremiumPlayback } from '../api/playbackAuthorize';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { setChannelPlaybackActive } from '../lib/otaSessionGate';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
@@ -37,6 +38,10 @@ import {
   resolveHlsPlaybackManifestUrl,
   shouldUseDirectHlsSegments,
 } from '../lib/hlsPlayback';
+import { attachStreamEntitlementParams } from '../lib/playbackEntitlementClient';
+import { getDeviceIdentity } from '../lib/deviceIdentity';
+import { getFreshPlaybackGrant, setPlaybackGrantSession } from '../lib/playbackGrantSession';
+import { withTimeout } from '../lib/asyncTimeout';
 import { devLog } from '../lib/devLog';
 import { STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
@@ -170,6 +175,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     isSubscribed,
     gateForPlayback,
     reverifySubscription,
+    clearLocalActiveSubscription,
     emergencyMode,
     subscriptionDetails,
     subscriptionExpiresAt,
@@ -189,6 +195,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     channel?.id ?? channel?.channel_id ?? channel?.name ?? '',
   ).trim();
   const routeTrialBootstrap = route?.params?.trialWatchBootstrap ?? null;
+  const routePlaybackAuthorized = route?.params?.playbackAuthorized === true;
   const viaTrialPlayback = shouldRunTrialWatchOnChannel({
     channel,
     isSubscribed,
@@ -201,16 +208,56 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     routeTrialBootstrap.remainingMs > 0
       ? routeTrialBootstrap
       : null;
+  // Premium never trusts local isSubscribed alone — wait for server authorize unless free/instruction.
   const [accessChecked, setAccessChecked] = useState(
-    () => !channelIsPremium || freeMode || viaTrialPlayback || isSubscribed,
+    () => !channelIsPremium || freeMode || isInstructionVideo,
   );
   const [accessAllowed, setAccessAllowed] = useState(
-    () => !channelIsPremium || freeMode || viaTrialPlayback || isSubscribed,
+    () => !channelIsPremium || freeMode || isInstructionVideo,
   );
+  const [streamDeviceId, setStreamDeviceId] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const id = await getDeviceIdentity();
+        if (!cancelled) setStreamDeviceId(String(id?.deviceId ?? '').trim());
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const grant = route?.params?.playbackGrant;
+    if (typeof grant === 'string' && grant.trim()) {
+      setPlaybackGrantSession({
+        grant: grant.trim(),
+        channelId: channelPlaybackKey,
+        deviceId: streamDeviceId || undefined,
+        ttlSec: 180,
+      });
+    }
+  }, [route?.params?.playbackGrant, channelPlaybackKey, streamDeviceId]);
+
+  const entitlementParams = useMemo(() => {
+    const fresh = getFreshPlaybackGrant({ channelId: channelPlaybackKey });
+    return {
+      deviceId: streamDeviceId || fresh?.deviceId || '',
+      grant: fresh?.grant || (typeof route?.params?.playbackGrant === 'string' ? route.params.playbackGrant : ''),
+    };
+  }, [streamDeviceId, channelPlaybackKey, route?.params?.playbackGrant, accessAllowed]);
 
   const streams = isInstructionVideo
     ? [pickInstructionVideoUrl(channel)].filter(Boolean)
-    : [channel?.url, channel?.backupStream1, channel?.backupStream2].filter(Boolean);
+    : [channel?.url, channel?.backupStream1, channel?.backupStream2]
+        .filter(Boolean)
+        .map((u) => attachStreamEntitlementParams(String(u), entitlementParams));
+
 
   const [currentUrlIndex, setCurrentUrlIndex] = useState(0);
   const [instructionPlaybackUri, setInstructionPlaybackUri] = useState('');
@@ -277,23 +324,26 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   /** HLS manifest for native Exo / hls.js (direct, proxy, or auto with fallback). */
   const hlsManifestUrl = useMemo(() => {
     if (!uri || !isHlsManifest) return '';
+    let resolved = '';
     if (isDirectHls) {
-      return resolveDirectHlsManifestUrl(uri);
+      resolved = resolveDirectHlsManifestUrl(uri);
+    } else {
+      resolved = resolveHlsPlaybackManifestUrl(
+        uri,
+        {
+          referer: channel?.referer,
+          origin: channel?.origin,
+          userAgent: channel?.userAgent,
+        },
+        {
+          deliveryMode: channel?.streamDeliveryMode,
+          directStreamUrl: channel?.directStreamUrl,
+          proxyFallbackUrl: channel?.proxyFallbackUrl,
+          forceProxy: hlsForceProxy,
+        },
+      );
     }
-    return resolveHlsPlaybackManifestUrl(
-      uri,
-      {
-        referer: channel?.referer,
-        origin: channel?.origin,
-        userAgent: channel?.userAgent,
-      },
-      {
-        deliveryMode: channel?.streamDeliveryMode,
-        directStreamUrl: channel?.directStreamUrl,
-        proxyFallbackUrl: channel?.proxyFallbackUrl,
-        forceProxy: hlsForceProxy,
-      },
-    );
+    return attachStreamEntitlementParams(resolved, entitlementParams);
   }, [
     isHlsManifest,
     isDirectHls,
@@ -305,6 +355,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     channel?.directStreamUrl,
     channel?.proxyFallbackUrl,
     hlsForceProxy,
+    entitlementParams,
   ]);
 
   const useDirectHlsSegments = useMemo(() => {
@@ -707,10 +758,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   }, [channelPlaybackKey, viaTrialPlayback, routeTrialBootstrap, navigation]);
 
   /**
-   * Hard pre-play gate: APP -> BACKEND VERIFY -> PLAY.
-   *
-   * Runs once per channel session. Catalog/SSE signed-URL rotation must NOT
-   * re-trigger this gate (that was causing "Inathibitisha kifurushi…" flashes).
+   * Hard pre-play gate: APP -> SERVER AUTHORIZE (+ security) -> PLAY.
+   * Local isSubscribed / fake premium flags never grant premium playback alone.
    */
   useEffect(() => {
     if (!channel) return undefined;
@@ -722,43 +771,116 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       premiumGateSessionRef.current = { channelKey, granted: true };
       return undefined;
     }
-    if (viaTrialPlayback) {
+
+    let cancelled = false;
+
+    const denyAndExit = (label, reason) => {
+      if (cancelled) return;
+      console.log('[player][gate]', label, { channel: channel?.name, reason });
+      setAccessChecked(true);
+      setAccessAllowed(false);
+      premiumGateSessionRef.current = { channelKey, granted: false };
+      if (exitPlayerRef.current) {
+        void exitPlayerRef.current(label);
+      } else {
+        try {
+          navigation.goBack();
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+
+    // Optimistic allow only when navigation already completed authorize with a URL.
+    if (routePlaybackAuthorized && String(channel?.url ?? '').trim()) {
       setAccessChecked(true);
       setAccessAllowed(true);
       premiumGateSessionRef.current = { channelKey, granted: true };
-      return undefined;
-    }
-
-    if (isSubscribed) {
-      setAccessChecked(true);
-      setAccessAllowed(true);
-      premiumGateSessionRef.current = { channelKey, granted: true };
-      void gateForPlayback('player-mount');
-      return undefined;
-    }
-
-    // Known inactive — never flash "Inathibitisha kifurushi…". Exit immediately;
-    // payment modal is opened by the channel-tap path without waiting on verify.
-    setAccessChecked(true);
-    setAccessAllowed(false);
-    premiumGateSessionRef.current = { channelKey, granted: false };
-    console.log('[player][gate]', 'denied_inactive_instant', { channel: channel?.name });
-    if (exitPlayerRef.current) {
-      void exitPlayerRef.current('gate_denied');
     } else {
-      try {
-        navigation.goBack();
-      } catch {}
+      setAccessChecked(false);
+      setAccessAllowed(false);
     }
-    return undefined;
+
+    void (async () => {
+      try {
+        const auth = await withTimeout(
+          authorizePremiumPlayback({ channelId: channelKey }),
+          10_000,
+          'player-authorize',
+        );
+        if (cancelled) return;
+
+        if (auth?.securityDeny) {
+          denyAndExit('gate_security_policy_denied', auth.reason);
+          return;
+        }
+
+        if (!auth?.allowed) {
+          if (auth?.subscriptionDeny) {
+            try {
+              await clearLocalActiveSubscription?.(`player-authorize:${auth.reason}`);
+            } catch {
+              /* ignore */
+            }
+          }
+          denyAndExit('gate_entitlement_denied', auth?.reason);
+          return;
+        }
+
+        if (auth.channel && typeof auth.channel === 'object') {
+          const built = buildPlayerChannelFromRow(auth.channel, 0, false);
+          setLiveChannel((prev) => ({
+            ...(prev && typeof prev === 'object' ? prev : {}),
+            ...built,
+            id: prev?.id ?? built.id,
+            channel_id: prev?.channel_id ?? built.channel_id,
+            name: prev?.name ?? built.name,
+            accessType: 'premium',
+            accessPremium: true,
+            accessDenied: false,
+            playback_authorized: true,
+          }));
+        }
+
+        if (!String(auth.channel?.playbackUrl || auth.channel?.url || channel?.url || '').trim()) {
+          denyAndExit('gate_authorize_empty_url', auth.reason);
+          return;
+        }
+
+        setAccessChecked(true);
+        setAccessAllowed(true);
+        premiumGateSessionRef.current = { channelKey, granted: true };
+        void gateForPlayback('player-mount-bg');
+        console.log('[player][gate]', 'server_authorized', {
+          channel: channel?.name,
+          reason: auth.reason,
+          hasGrant: Boolean(auth.grant),
+        });
+      } catch (err) {
+        if (cancelled) return;
+        // If navigation already authorized and we have a URL, keep playback;
+        // otherwise fail closed.
+        if (routePlaybackAuthorized && String(channel?.url ?? '').trim()) {
+          console.log('[player][gate]', 'authorize_refresh_failed_keep_session', String(err?.message ?? err));
+          setAccessChecked(true);
+          setAccessAllowed(true);
+          return;
+        }
+        denyAndExit('gate_authorize_error', String(err?.message ?? err));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     channel?.id,
     channel?.channel_id,
     channelIsPremium,
     freeMode,
-    viaTrialPlayback,
-    isSubscribed,
+    routePlaybackAuthorized,
     gateForPlayback,
+    clearLocalActiveSubscription,
     navigation,
   ]);
 
