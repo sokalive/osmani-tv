@@ -14,9 +14,10 @@ import {
 import { loadPersistedSecurityReportSnapshot } from '../lib/lastSecurityReportSnapshot';
 import { parseServerIntelAccess } from '../lib/serverIntelAccess';
 import { SECURITY_BLOCK_MESSAGE } from '../lib/security/constants';
-import { resolveEnforcement } from '../lib/security/riskEngine';
+import { resolveEnforcement, tierFromScore } from '../lib/security/riskEngine';
 import { logSecurityEnforcement } from '../lib/securityEnforcementLog';
 import { runRuntimeSecurityScan } from '../lib/security/runtimeScan';
+import { deriveVerificationState } from '../lib/security/verificationState';
 
 const SecurityContext = createContext(null);
 
@@ -42,6 +43,13 @@ export function SecurityProvider({ children }) {
   const [serverPlaybackAllowed, setServerPlaybackAllowed] = useState(null);
   const [serverSecurityBlocked, setServerSecurityBlocked] = useState(null);
   const [serverSmartMonitorEnabled, setServerSmartMonitorEnabled] = useState(false);
+  const [trustState, setTrustState] = useState(null);
+  const [verificationFresh, setVerificationFresh] = useState(null);
+  const [challengeValid, setChallengeValid] = useState(null);
+  const [everSevere, setEverSevere] = useState(false);
+  const [serverCalculatedScore, setServerCalculatedScore] = useState(null);
+  const [lastReportOk, setLastReportOk] = useState(null);
+  const [lastErrorCode, setLastErrorCode] = useState(null);
   const scanRunning = useRef(false);
   const intelAccessVersion = useSyncExternalStore(
     subscribeDeviceIntelligenceAccess,
@@ -78,6 +86,26 @@ export function SecurityProvider({ children }) {
     } else if (report.smartMonitorEnabled === false || report.blocked === true) {
       setServerSmartMonitorEnabled(false);
     }
+    if (typeof report.trustState === 'string' && report.trustState.trim()) {
+      setTrustState(report.trustState.trim().toLowerCase());
+    }
+    if (report.verificationFresh === true || report.verificationFresh === false) {
+      setVerificationFresh(report.verificationFresh);
+    }
+    if (report.challengeValid === true || report.challengeValid === false) {
+      setChallengeValid(report.challengeValid);
+    }
+    if (report.everSevere === true) {
+      setEverSevere(true);
+    } else if (report.everSevere === false && report.ok === true) {
+      // Only clear everSevere when server explicitly returns false on a successful report.
+      setEverSevere(false);
+    }
+    if (typeof report.serverCalculatedScore === 'number' && Number.isFinite(report.serverCalculatedScore)) {
+      setServerCalculatedScore(report.serverCalculatedScore);
+      setScore(report.serverCalculatedScore);
+      setTier(tierFromScore(report.serverCalculatedScore));
+    }
   }, []);
 
   const applyHydratedPolicy = useCallback((cached) => {
@@ -90,12 +118,26 @@ export function SecurityProvider({ children }) {
     if (typeof cached.enforcement === 'string' && cached.enforcement.trim()) {
       setServerEnforcement(cached.enforcement.trim().toLowerCase());
     }
+    if (typeof cached.trustState === 'string') setTrustState(cached.trustState);
+    if (cached.verificationFresh === true || cached.verificationFresh === false) {
+      setVerificationFresh(cached.verificationFresh);
+    }
+    if (cached.challengeValid === true || cached.challengeValid === false) {
+      setChallengeValid(cached.challengeValid);
+    }
+    if (cached.everSevere === true) setEverSevere(true);
+    if (typeof cached.serverCalculatedScore === 'number') {
+      setServerCalculatedScore(cached.serverCalculatedScore);
+      setScore(cached.serverCalculatedScore);
+      setTier(tierFromScore(cached.serverCalculatedScore));
+    }
   }, []);
 
   const refresh = useCallback(async () => {
     if (scanRunning.current) return;
     scanRunning.current = true;
     const detected_at = new Date().toISOString();
+    setLastErrorCode(null);
     try {
       const scan = await runRuntimeSecurityScan();
 
@@ -106,9 +148,16 @@ export function SecurityProvider({ children }) {
         detected_at,
       });
       applyServerReport(report);
+      setLastReportOk(report?.ok === true);
+      if (report?.ok !== true) {
+        setLastErrorCode(report?.errorCode ?? 'report_failed');
+      }
 
-      setScore(scan.score);
-      setTier(scan.tier);
+      // Prefer server score; fall back to local scan score for display only.
+      if (!(typeof report?.serverCalculatedScore === 'number')) {
+        setScore(scan.score);
+        setTier(scan.tier);
+      }
       setSignals(scan.signals);
       setDetails(scan.details);
       setLoading(false);
@@ -119,6 +168,10 @@ export function SecurityProvider({ children }) {
         isDeviceIntelligenceSmartMonitorEnabled() ||
         intel.smartMonitorEnabled === true;
 
+      // Successful reports are authoritative for everSevere; failures keep prior latch.
+      const ever =
+        report.ok === true ? report.everSevere === true : everSevere === true || report.everSevere === true;
+
       const blockPlayback = resolveEnforcement({
         signals: scan.signals,
         mode,
@@ -127,6 +180,10 @@ export function SecurityProvider({ children }) {
         serverSecurityBlocked: report.securityBlocked ?? null,
         smartMonitorEnabled: smartMonitor,
         intelAccessOpen: intel.serverIntelOpen,
+        everSevere: ever,
+        verificationFresh: report.verificationFresh ?? null,
+        trustState: report.trustState ?? null,
+        verifying: false,
       });
 
       logSecurityEnforcement({
@@ -145,18 +202,23 @@ export function SecurityProvider({ children }) {
         serverEnforcement: report.enforcement ?? null,
         enforcementReason: blockPlayback.enforcementReason,
         enforcementTrigger: blockPlayback.enforcementTrigger,
+        everSevere: ever,
+        trustState: report.trustState ?? null,
+        verificationFresh: report.verificationFresh ?? null,
       });
 
       runDeviceAccessVerification({ tag: 'security-refresh' });
     } catch (err) {
-      if (__DEV__) {
+      if (__DEV__ || process.env.EXPO_PUBLIC_SECURITY_STARTUP_LOGS === '1') {
         console.log('[security] scan failed:', String(err));
       }
+      setLastReportOk(false);
+      setLastErrorCode('scan_failed');
       setLoading(false);
     } finally {
       scanRunning.current = false;
     }
-  }, [applyServerReport, mode]);
+  }, [applyServerReport, mode, everSevere]);
 
   useEffect(() => {
     registerSecurityAccessRefresh(refresh);
@@ -190,6 +252,10 @@ export function SecurityProvider({ children }) {
       smartMonitorEnabled:
         serverSmartMonitorEnabled || isDeviceIntelligenceSmartMonitorEnabled() || intel.smartMonitorEnabled,
       intelAccessOpen: intel.serverIntelOpen,
+      everSevere,
+      verificationFresh,
+      trustState,
+      verifying: loading,
     });
   }, [
     signals,
@@ -200,7 +266,39 @@ export function SecurityProvider({ children }) {
     serverSecurityBlocked,
     serverSmartMonitorEnabled,
     intelAccessVersion,
+    everSevere,
+    verificationFresh,
+    trustState,
+    loading,
   ]);
+
+  const verificationState = useMemo(
+    () =>
+      deriveVerificationState({
+        loading,
+        reportOk: lastReportOk,
+        trustState,
+        verificationFresh,
+        challengeValid,
+        everSevere,
+        serverPlaybackAllowed,
+        serverSecurityBlocked,
+        blockPlayback: enforcement.blockPlayback,
+        errorCode: lastErrorCode,
+      }),
+    [
+      loading,
+      lastReportOk,
+      trustState,
+      verificationFresh,
+      challengeValid,
+      everSevere,
+      serverPlaybackAllowed,
+      serverSecurityBlocked,
+      enforcement.blockPlayback,
+      lastErrorCode,
+    ],
+  );
 
   const value = useMemo(
     () => ({
@@ -213,6 +311,13 @@ export function SecurityProvider({ children }) {
       serverEnforcement,
       serverPlaybackAllowed,
       serverSecurityBlocked,
+      trustState,
+      verificationFresh,
+      challengeValid,
+      everSevere,
+      serverCalculatedScore,
+      verificationState,
+      lastErrorCode,
       ...enforcement,
       refresh,
     }),
@@ -226,6 +331,13 @@ export function SecurityProvider({ children }) {
       serverEnforcement,
       serverPlaybackAllowed,
       serverSecurityBlocked,
+      trustState,
+      verificationFresh,
+      challengeValid,
+      everSevere,
+      serverCalculatedScore,
+      verificationState,
+      lastErrorCode,
       enforcement,
       refresh,
     ],
@@ -247,6 +359,8 @@ export function useSecurity() {
       blockPlayback: false,
       limitedPlayback: false,
       serverPlaybackAllowed: null,
+      verificationState: 'unknown',
+      everSevere: false,
       refresh: async () => {},
     };
   }
@@ -254,9 +368,19 @@ export function useSecurity() {
 }
 
 export function usePlaybackSecurityGate() {
-  const { canPlay, blockPlayback, tier, score } = useSecurity();
+  const { canPlay, blockPlayback, tier, score, verificationState, everSevere, serverPlaybackAllowed } =
+    useSecurity();
 
-  if (blockPlayback || canPlay === false) {
+  /**
+   * Protected playback must not proceed as "safe" when verification is unknown
+   * after a severe history, or when server has denied.
+   */
+  const denyUnknownSevere =
+    everSevere === true &&
+    serverPlaybackAllowed !== true &&
+    (verificationState === 'unknown' || verificationState === 'verifying' || verificationState === 'degraded');
+
+  if (blockPlayback || canPlay === false || denyUnknownSevere) {
     return {
       allowed: false,
       message: SECURITY_BLOCK_MESSAGE,
@@ -284,6 +408,23 @@ export function assertPlaybackAllowed(security) {
       allowed: false,
       enforcementReason: security.enforcementReason ?? 'local_threat',
       enforcementTrigger: security.enforcementTrigger ?? null,
+      tag: 'playback-gate',
+    });
+    return { ok: false, message: SECURITY_BLOCK_MESSAGE };
+  }
+  if (
+    security.everSevere === true &&
+    security.serverPlaybackAllowed !== true &&
+    (security.verificationState === 'unknown' ||
+      security.verificationState === 'verifying' ||
+      security.verificationState === 'degraded' ||
+      security.verificationState === 'blocked' ||
+      security.verificationState === 'suspicious')
+  ) {
+    logSecurityEnforcement({
+      allowed: false,
+      enforcementReason: 'ever_severe_stale',
+      enforcementTrigger: 'ever_severe',
       tag: 'playback-gate',
     });
     return { ok: false, message: SECURITY_BLOCK_MESSAGE };
