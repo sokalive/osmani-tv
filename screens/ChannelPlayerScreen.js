@@ -805,7 +805,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       try {
         const auth = await withTimeout(
           authorizePremiumPlayback({ channelId: channelKey }),
-          10_000,
+          20_000,
           'player-authorize',
         );
         if (cancelled) return;
