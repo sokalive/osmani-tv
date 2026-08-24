@@ -1,13 +1,8 @@
 import { getCachedBanners, getCachedChannels, invalidateCatalogCache } from './lib/catalogCache';
 import { DEFAULT_API_URL, getApiBaseUrl, resolveApiBaseUrl } from './lib/apiBaseUrl';
 import { fetchAdminApiJson } from './lib/catalogApiFetch';
-import { getDeviceIdentity } from './lib/deviceIdentity';
 import { rewriteMediaUrlsInJson } from './lib/mediaDelivery';
 import { enrichBannersForViewer } from './lib/bannerViewerSerializer';
-import {
-  deviceIdentityHeaders,
-  sanitizeCatalogChannelForClient,
-} from './lib/playbackEntitlementClient';
 
 export { invalidateCatalogCache, getApiBaseUrl, resolveApiBaseUrl };
 
@@ -25,23 +20,14 @@ export function getLegacyBaseUrlSnapshot() {
 }
 
 async function fetchChannelsFromNetwork(opts = {}) {
-  const identity = await getDeviceIdentity();
-  const deviceId = String(identity?.deviceId ?? '').trim();
-  const path = deviceId
-    ? `/api/channels?device_id=${encodeURIComponent(deviceId)}`
-    : '/api/channels';
-  const body = await fetchAdminApiJson(path, {
+  const body = await fetchAdminApiJson('/api/channels', {
     tag: 'catalog-channels',
-    headers: deviceIdentityHeaders(deviceId),
     ...(opts.force || opts.cacheBust ? { cacheBust: true } : {}),
   });
   if (!Array.isArray(body)) {
     throw new Error('Could not load channels (invalid response)');
   }
-  const sanitized = body.map((row) =>
-    row && typeof row === 'object' ? sanitizeCatalogChannelForClient(row) : row,
-  );
-  return rewriteMediaUrlsInJson(sanitized);
+  return rewriteMediaUrlsInJson(body);
 }
 
 async function fetchBannersFromNetwork() {
