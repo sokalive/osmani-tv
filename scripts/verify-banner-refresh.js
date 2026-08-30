@@ -46,10 +46,19 @@ for (const ev of [
   'banner_updated',
   'banner_changed',
   'catalog_refresh',
+  'config.banners_changed',
 ]) {
   if (!ADMIN_SOFT_REFRESH_SSE_EVENTS.includes(ev)) fail(`missing banner SSE alias: ${ev}`);
   else pass(`banner SSE alias registered: ${ev}`);
 }
+
+const reconcile = read('lib/subscriptionReconcile.js');
+if (!reconcile.includes("'config.banners_changed'")) fail('config.banners_changed must be immediate catalog');
+else pass('config.banners_changed immediate catalog');
+
+const api = read('api.js');
+if (!api.includes('cacheBust: true')) fail('banners API must support cacheBust');
+else pass('banners API cacheBust');
 
 if (!events.includes('banner_created') || !events.includes('banner_deleted')) {
   fail('banner create/delete SSE aliases missing');

@@ -37,8 +37,9 @@ import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 import { startSubscriptionDeviceStream } from '../lib/subscriptionDeviceStream';
 import {
-  CHANNEL_ACCESS_IMMEDIATE_SSE_EVENTS,
+  CATALOG_IMMEDIATE_SSE_EVENTS,
   isAuthoritativeReconcileReason,
+  PAYMENT_PLANS_SSE_EVENTS,
 } from '../lib/subscriptionReconcile';
 import {
   devicesShareIdentity,
@@ -1531,6 +1532,13 @@ export function OsmaniAppProvider({ children }) {
   useEffect(() => {
     const offSyncReconnect = subscribeRealtimeEvent('__sync_stream_connected', () => {
       void reverifySubscription('sse:sync_stream_connected');
+      invalidateCatalogCache();
+      void refresh({
+        showGlobalLoading: false,
+        preserveDataOnError: true,
+        skipSettingsFromHttp: true,
+        forceNetwork: true,
+      });
     });
     const offDeviceStream = startSubscriptionDeviceStream((reason, payload) => {
       const eventName = String(reason).replace(/^subscription-stream:/, '');
@@ -1843,8 +1851,11 @@ export function OsmaniAppProvider({ children }) {
           setSettings((prev) => ({ ...prev, ...patch }));
           console.log('[SETTINGS_SYNC]', ev, patch);
         }
+        if (PAYMENT_PLANS_SSE_EVENTS.has(ev)) {
+          void refreshPaymentPlansCache({ reason: `sse:${ev}` });
+        }
         const patched = applyChannelCatalogRealtime(ev, payload, 'sse');
-        if (CHANNEL_ACCESS_IMMEDIATE_SSE_EVENTS.has(ev) || patched) {
+        if (CATALOG_IMMEDIATE_SSE_EVENTS.has(ev) || patched) {
           invalidateCatalogCache();
           void refresh({
             showGlobalLoading: false,
@@ -1852,8 +1863,7 @@ export function OsmaniAppProvider({ children }) {
             skipSettingsFromHttp: true,
             forceNetwork: true,
           });
-        }
-        if (!patched) {
+        } else {
           scheduleAdminDrivenSoftSync(`sse:${ev}`);
         }
       }),

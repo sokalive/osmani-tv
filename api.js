@@ -30,8 +30,11 @@ async function fetchChannelsFromNetwork(opts = {}) {
   return rewriteMediaUrlsInJson(body);
 }
 
-async function fetchBannersFromNetwork() {
-  const body = await fetchAdminApiJson('/api/banners', { tag: 'catalog-banners' });
+async function fetchBannersFromNetwork(opts = {}) {
+  const body = await fetchAdminApiJson('/api/banners', {
+    tag: 'catalog-banners',
+    ...(opts.force || opts.cacheBust ? { cacheBust: true } : {}),
+  });
   if (!Array.isArray(body)) {
     throw new Error('Could not load banners (invalid response)');
   }
@@ -49,7 +52,7 @@ export async function getChannels(opts = {}) {
  * @param {{ force?: boolean }} [opts] — pass force: true after pull-to-refresh
  */
 export async function getBanners(opts = {}) {
-  return getCachedBanners(() => fetchBannersFromNetwork(), opts);
+  return getCachedBanners(() => fetchBannersFromNetwork(opts), opts);
 }
 
 export async function getWhatsappSettings() {

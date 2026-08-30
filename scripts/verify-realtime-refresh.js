@@ -63,13 +63,45 @@ if (!ctx.includes("scheduleAdminDrivenSoftSync('app_resume')")) {
   fail('context must soft-sync on app resume');
 } else pass('context app resume soft sync');
 
-const requiredCatalog = ['channels_changed', 'banners_changed', 'plans_changed'];
+const requiredCatalog = ['channels_changed', 'banners_changed', 'plans_changed', 'config.channels_changed', 'config.banners_changed'];
 for (const ev of requiredCatalog) {
   if (!ADMIN_SOFT_REFRESH_SSE_EVENTS.includes(ev)) fail(`missing catalog SSE event: ${ev}`);
   else pass(`catalog SSE event registered: ${ev}`);
 }
 
-const requiredModes = ['app_modes_changed', 'config_changed'];
+const reconcile = read('lib/subscriptionReconcile.js');
+if (!reconcile.includes('CATALOG_IMMEDIATE_SSE_EVENTS')) fail('CATALOG_IMMEDIATE_SSE_EVENTS missing');
+else pass('CATALOG_IMMEDIATE_SSE_EVENTS defined');
+
+if (!reconcile.includes("'config.banners_changed'")) fail('config.banners_changed not immediate');
+else pass('config.banners_changed in immediate catalog set');
+
+if (!reconcile.includes('PAYMENT_PLANS_SSE_EVENTS')) fail('PAYMENT_PLANS_SSE_EVENTS missing');
+else pass('PAYMENT_PLANS_SSE_EVENTS defined');
+
+const api = read('api.js');
+if (!api.includes('fetchBannersFromNetwork(opts')) fail('banners fetch must accept force/cacheBust opts');
+else pass('banners fetch cache-bust on force');
+
+if (!ctx.includes('CATALOG_IMMEDIATE_SSE_EVENTS.has(ev)')) {
+  fail('context must use CATALOG_IMMEDIATE_SSE_EVENTS for immediate refresh');
+} else pass('context immediate catalog SSE handler');
+
+if (ctx.includes('CHANNEL_ACCESS_IMMEDIATE_SSE_EVENTS.has(ev)') && ctx.includes('scheduleAdminDrivenSoftSync')) {
+  const block = ctx.slice(ctx.indexOf('offCatalogAliases'), ctx.indexOf('offCatalogAliases') + 1200);
+  if (block.includes('CHANNEL_ACCESS_IMMEDIATE_SSE_EVENTS.has(ev)') && block.includes('scheduleAdminDrivenSoftSync(`sse:${ev}`)')) {
+    fail('immediate catalog events must not also schedule debounced soft sync');
+  }
+}
+pass('no double-refresh on immediate catalog events');
+
+if (!ctx.includes("__sync_stream_connected', () => {") || !ctx.includes('forceNetwork: true')) {
+  const reconnectBlock = ctx.slice(ctx.indexOf('__sync_stream_connected'), ctx.indexOf('__sync_stream_connected') + 400);
+  if (!reconnectBlock.includes('forceNetwork: true')) fail('SSE reconnect must forceNetwork catalog refresh');
+  else pass('SSE reconnect catalog refresh');
+} else pass('SSE reconnect catalog refresh');
+
+const requiredModes = ['app_modes_changed', 'config_changed', 'app_modes', 'trial_watch_settings'];
 for (const ev of requiredModes) {
   if (!ADMIN_RUNTIME_MODE_SSE_EVENTS.includes(ev)) fail(`missing runtime mode SSE event: ${ev}`);
   else pass(`runtime mode SSE event registered: ${ev}`);
