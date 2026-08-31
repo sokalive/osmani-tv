@@ -23,7 +23,10 @@ import { PING_MS, pingLiveSession, startLiveSession, stopLiveSession } from '../
 import { reportUserCenterEvent } from '../api/userCenterSync';
 import { resolveAnalyticsChannelId } from '../lib/analyticsChannelId';
 import { clearActiveChannel, setActiveChannel } from '../lib/presenceTracker';
-import { subscriptionTransferSseRole } from '../lib/subscriptionSseGuard';
+import {
+  isConfirmedSubscriptionLoss,
+  subscriptionTransferSseRole,
+} from '../lib/subscriptionSseGuard';
 import { useOsmaniApp } from '../context/OsmaniAppContext';
 import { setChannelPlaybackActive } from '../lib/otaSessionGate';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
@@ -769,9 +772,17 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       void (async () => {
         const role = await subscriptionTransferSseRole(payload, label);
         if (role === 'none' || role === 'other') return;
+        const r = await reverifySubscription(`player-${label}`);
+        if (!isConfirmedSubscriptionLoss(r)) {
+          console.log('[player][gate]', `skip_kill:${label}`, {
+            role,
+            resolveSource: r?.resolveSource ?? null,
+            retryable: r?.retryable === true,
+          });
+          return;
+        }
         console.log('[player][gate]', `kill:${label}`, { role });
         setAccessAllowed(false);
-        void reverifySubscription(`player-${label}`);
         if (exitPlayerRef.current) {
           void exitPlayerRef.current(`gate_${label}`);
         } else {
@@ -1649,7 +1660,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       if (hardWallClockExpiryDoneRef.current) return;
       void (async () => {
         const r = await reverifySubscription('player-expiry-sync');
-        if (r?.active !== false) return;
+        if (!isConfirmedSubscriptionLoss(r)) return;
         if (!premiumGateSessionRef.current.granted) return;
         premiumGateSessionRef.current.granted = false;
         setAccessChecked(true);

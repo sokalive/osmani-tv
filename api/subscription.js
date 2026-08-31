@@ -35,8 +35,22 @@ function apiRoot() {
 
 /** @param {unknown} result */
 export function isSubscriptionTransportFailure(result) {
-  if (!result?.error) return false;
+  if (!result) return false;
+  if (result.retryable === true) return true;
+  const raw = result.raw;
+  if (result.active == null && isPlainObject(raw) && (raw.retryable === true || raw.data?.retryable === true)) {
+    return true;
+  }
+  if (!result.error) return false;
   const err = result.error;
+  const errLower = String(err).toLowerCase();
+  if (
+    errLower.includes('pool_saturated') ||
+    errLower.includes('pool_acquire_timeout') ||
+    errLower.includes('query_timeout')
+  ) {
+    return true;
+  }
   return isNetworkTransportError(err) || isTransientServerError(err);
 }
 
@@ -828,8 +842,10 @@ function normalizeVerifyResponse(body, fallback = {}) {
     data?.status ??
     subRoot?.status ??
     (inactiveReason && !active ? inactiveReason : null);
+  const retryable = body.retryable === true || data?.retryable === true;
   return {
     active,
+    retryable,
     status: status != null ? String(status) : null,
     expiresAt: pickExpiresAt(body),
     startedAt: pickStartedAt(body),
