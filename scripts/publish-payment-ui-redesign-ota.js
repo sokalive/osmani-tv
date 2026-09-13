@@ -3,7 +3,9 @@
 
 /**
  * Publish payment-flow red UI redesign + catalog freshness OTA for Version 24.
- * Targets production channel + runtime 1.8.2 only (versionCode 24).
+ * Targets runtime 1.8.2 (versionCode 24) on both:
+ * - production (Play / production-channel binaries)
+ * - preview (landing-page OSMAN-TV.apk from osman-tv-landing.vercel.app)
  * Usage: node scripts/publish-payment-ui-redesign-ota.js
  */
 
@@ -12,6 +14,8 @@ const fs = require('fs');
 const path = require('path');
 
 const RUNTIMES = ['1.8.2'];
+/** Landing APK is channel `preview`; Play builds typically use `production`. */
+const CHANNELS = ['production', 'preview'];
 const NPX = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const logPath = path.join(__dirname, '..', 'ota-publish-payment-ui-redesign.log');
 const groups = [];
@@ -25,54 +29,60 @@ function appendLog(text) {
 fs.writeFileSync(logPath, `[publish-payment-ui-redesign-ota] started ${new Date().toISOString()}\n`);
 
 for (const runtime of RUNTIMES) {
-  const msg = `fix(payment-ui): red payment flow match references + faster catalog sync runtime ${runtime}`;
-  console.log(`\n=== OTA runtime ${runtime} ===`);
-  appendLog(`\n=== OTA runtime ${runtime} ===`);
+  for (const channel of CHANNELS) {
+    const msg =
+      channel === 'preview'
+        ? `fix(payment-ui): red payment flow for Version 24 landing APK preview channel`
+        : `fix(payment-ui): red payment flow match references + faster catalog sync runtime ${runtime}`;
+    console.log(`\n=== OTA runtime ${runtime} channel ${channel} ===`);
+    appendLog(`\n=== OTA runtime ${runtime} channel ${channel} ===`);
 
-  const quotedMsg = msg.replace(/"/g, '');
-  const cmd =
-    `${NPX} eas-cli update --channel production --environment production ` +
-    `--message "${quotedMsg}" --non-interactive`;
-  const result = spawnSync(cmd, {
-    stdio: 'pipe',
-    shell: true,
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      CI: '1',
-      EAS_SKIP_AUTO_FINGERPRINT: '1',
-      OTA_RUNTIME_TARGET: runtime,
-      EXPO_PUBLIC_API_URL: 'https://api.osmanitv.com',
-      EXPO_PUBLIC_MEDIA_CDN_BASE: 'https://osmanitv.b-cdn.net',
-    },
-  });
+    const quotedMsg = msg.replace(/"/g, '');
+    const cmd =
+      `${NPX} eas-cli update --channel ${channel} --environment production ` +
+      `--message "${quotedMsg}" --non-interactive`;
+    const result = spawnSync(cmd, {
+      stdio: 'pipe',
+      shell: true,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CI: '1',
+        EAS_SKIP_AUTO_FINGERPRINT: '1',
+        OTA_RUNTIME_TARGET: runtime,
+        EXPO_PUBLIC_API_URL: 'https://api.osmanitv.com',
+        EXPO_PUBLIC_MEDIA_CDN_BASE: 'https://osmanitv.b-cdn.net',
+      },
+    });
 
-  const out = `${result.stdout || ''}${result.stderr || ''}`;
-  process.stdout.write(out);
-  appendLog(out);
+    const out = `${result.stdout || ''}${result.stderr || ''}`;
+    process.stdout.write(out);
+    appendLog(out);
 
-  if (result.status !== 0) {
-    console.error(`FAILED runtime ${runtime} exit ${result.status}`);
-    appendLog(`FAILED exit ${result.status}`);
-    process.exit(result.status ?? 1);
+    if (result.status !== 0) {
+      console.error(`FAILED runtime ${runtime} channel ${channel} exit ${result.status}`);
+      appendLog(`FAILED exit ${result.status}`);
+      process.exit(result.status ?? 1);
+    }
+
+    const groupMatch =
+      out.match(/Update group ID\s+([a-f0-9-]{36})/i) ||
+      out.match(/group[=:\s]+([a-f0-9-]{36})/i);
+    const androidMatch = out.match(/Android update ID\s+([a-f0-9-]{36})/i);
+
+    groups.push({
+      runtime,
+      channel,
+      groupId: groupMatch ? groupMatch[1] : null,
+      androidUpdateId: androidMatch ? androidMatch[1] : null,
+    });
   }
-
-  const groupMatch =
-    out.match(/Update group ID\s+([a-f0-9-]{36})/i) ||
-    out.match(/group[=:\s]+([a-f0-9-]{36})/i);
-  const androidMatch = out.match(/Android update ID\s+([a-f0-9-]{36})/i);
-
-  groups.push({
-    runtime,
-    groupId: groupMatch ? groupMatch[1] : null,
-    androidUpdateId: androidMatch ? androidMatch[1] : null,
-  });
 }
 
 const summary = {
   timestamp: new Date().toISOString(),
   commit: null,
-  channel: 'production',
+  channels: CHANNELS,
   versionCodeTarget: 24,
   groups,
 };
