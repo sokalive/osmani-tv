@@ -30,34 +30,41 @@ const waiting = read('components/PaymentWaitingStep.js');
 if (!waiting.includes('Inasubiri Uthibitisho wa Malipo')) fail('waiting title');
 else pass('waiting title');
 
-if (!waiting.includes('yanayoonekana kwenye simu yako')) fail('USSD/PIN popup wording');
+if (!waiting.includes('thibitisha malipo kwenye simu yako')) fail('USSD/PIN popup wording');
 else pass('USSD/PIN popup wording');
 
 if (waiting.includes('Tumetuma ombi la malipo') || waiting.includes('ujumbe wa malipo uliotumwa')) {
   fail('must not refer to SMS/message sent');
 } else pass('no SMS/message wording');
 
-if (!waiting.includes('Thibitisha malipo kwa PIN yako')) fail('short Muhimu tip 1');
-else pass('short Muhimu tip 1');
+if (!waiting.includes('Thibitisha malipo kwa PIN yako')) fail('PIN footer hint');
+else pass('PIN footer hint');
 
-if (!waiting.includes('Usibonyeze GHAIRI kabla malipo hayajakamilika')) fail('short GHAIRI tip');
-else pass('short GHAIRI tip');
+if (!waiting.includes('Jinsi ya kuthibitisha malipo')) fail('how-to verify card');
+else pass('how-to verify card');
 
 if (waiting.includes('warningCard')) fail('long warning card removed');
 else pass('long warning card removed');
 
-if (!modal.includes('scrollEnabled={step !== 3 && step !== 4}')) {
-  fail('step 3/4 scroll disabled');
-} else pass('step 3/4 scroll disabled');
-
-if (!waiting.includes('Hatua za Malipo')) fail('progress steps card');
-else pass('progress steps card');
+if (!modal.includes('scrollEnabled={step !== 4}')) {
+  fail('step 4 scroll disabled; step 3 must remain scrollable for PIN UI');
+} else pass('step 3 scrollable / step 4 scroll disabled');
 
 if (!waiting.includes('Ombi Limetumwa')) fail('progress step 1 label');
 else pass('progress step 1 label');
 
+if (!waiting.includes('DottedCountdownRing') && !waiting.includes('Muda unaokadiriwa')) {
+  fail('countdown presentation');
+} else pass('countdown presentation');
+
 if (!modal.includes('PaymentWaitingStep')) fail('PremiumModal uses PaymentWaitingStep');
 else pass('PremiumModal uses PaymentWaitingStep');
+
+if (!modal.includes('paymentFlowTheme') && !modal.includes('PAYMENT')) fail('payment theme tokens');
+else pass('payment theme tokens');
+
+if (!modal.includes('LIPIA SASA')) fail('step-1 CTA matches reference');
+else pass('step-1 CTA matches reference');
 
 if (!modal.includes('identityPrefetchRef')) fail('identity prefetch ref');
 else pass('identity prefetch ref');

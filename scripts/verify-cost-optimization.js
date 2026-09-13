@@ -18,9 +18,11 @@ function assert(cond, msg) {
 
 const ctx = read('context/OsmaniAppContext.jsx');
 assert(ctx.includes('SETTINGS_POLL_MS = 10000'), 'settings poll should be 10s');
-assert(ctx.includes('LIVE_SYNC_BASE_MS = 30000'), 'catalog sync should be 30s');
+assert(ctx.includes('LIVE_SYNC_BASE_MS = 10000'), 'catalog sync safety net should be 10s (not 30s)');
 assert(ctx.includes('invalidateCatalogCache'), 'context should invalidate cache on force refresh');
 assert(ctx.includes("AppState.currentState !== 'active'"), 'settings poll should skip background');
+assert(ctx.includes("subscribeRealtimeEvent('*'") || ctx.includes('subscribeRealtimeEvent("*"'), 'catch-all SSE catalog listener required');
+assert(ctx.includes('sseFrameLooksLikeCatalogChange'), 'catalog SSE classifier required');
 
 const catalog = read('lib/catalogCache.js');
 assert(catalog.includes('CHANNELS_TTL_MS'), 'catalog cache TTL defined');

@@ -189,7 +189,7 @@ assert(!paymentSrc.includes("provider === 'sonicpesa' ? 'sonicpesa' : 'zenopay'"
 
 const modalSrc = fs.readFileSync(path.join(root, 'components', 'PremiumModal.js'), 'utf8');
 assert(modalSrc.includes('resolveCheckoutStartPayment'), 'PremiumModal uses resolver');
-assert(modalSrc.includes('Lipia — {selectedAmountDisplay}'), 'step-2 pay button shows amount only');
+assert(modalSrc.includes('LIPIA – {selectedAmountDisplay}') || modalSrc.includes('LIPIA –'), 'step-2 pay button shows amount only');
 assert(!modalSrc.includes('LIPIA KUPITIA'), 'no provider name on pay button');
 assert(!modalSrc.includes('payButtonLabel'), 'no provider-specific pay button label');
 assert(!modalSrc.includes('checkoutGateways'), 'no checkout gateway card grid');

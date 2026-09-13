@@ -8,6 +8,7 @@ import {
   Easing,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -18,7 +19,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import EventSource from 'react-native-sse';
 import {
@@ -86,21 +86,53 @@ import {
   PAYMENT_ENTRY_VERIFY_ERROR_MESSAGE,
   PAYMENT_ENTRY_VERIFY_ERROR_TITLE,
 } from '../lib/paymentEntryGuard';
+import { PAYMENT } from '../lib/paymentFlowTheme';
+import { getWhatsappSettingsForViewer } from '../api/whatsappSettings';
 
-const ACCENT = '#FACC15';
-const ACCENT_GRADIENT = ['#FFE066', '#F5C518', '#A87410'];
-const ACCENT_GLOW = 'rgba(250, 204, 21, 0.55)';
-const SHEET_BG = '#0F1115';
-const CARD_BG = '#1E222B';
-const CARD_BG_ACTIVE = '#2A2F3A';
-const TEXT_MUTED = '#9CA3AF';
+const ACCENT = PAYMENT.accent;
+const ACCENT_GRADIENT = [PAYMENT.accentBright, PAYMENT.accent, '#B00000'];
+const ACCENT_GLOW = PAYMENT.accentGlow;
+const SHEET_BG = PAYMENT.sheetBg;
+const CARD_BG = PAYMENT.cardBg;
+const CARD_BG_ACTIVE = PAYMENT.cardBgElevated;
+const TEXT_MUTED = PAYMENT.textMuted;
 
 const NETWORK_COLORS = {
-  Tigo: '#1F8FFF',
-  'M-Pesa': '#22C55E',
-  Airtel: '#EF4444',
-  HaloPesa: '#F59E0B',
+  Tigo: PAYMENT.network.Tigo,
+  'M-Pesa': PAYMENT.network['M-Pesa'],
+  Airtel: PAYMENT.network.Airtel,
+  HaloPesa: PAYMENT.network.HaloPesa,
 };
+
+/** Brand shield mark used on package + phone steps (reference images). */
+function PaymentBrandMark() {
+  return (
+    <View style={styles.brandHaloWrap}>
+      <View style={styles.brandGlow} />
+      <View style={styles.brandShield}>
+        <Ionicons name="play" size={22} color="#FFFFFF" style={{ marginLeft: 3 }} />
+      </View>
+      <View style={styles.brandDotsLeft} pointerEvents="none">
+        {[0, 1, 2].map((r) => (
+          <View key={`L${r}`} style={styles.brandDotsRow}>
+            {[0, 1, 2].map((c) => (
+              <View key={`L${r}${c}`} style={styles.brandDot} />
+            ))}
+          </View>
+        ))}
+      </View>
+      <View style={styles.brandDotsRight} pointerEvents="none">
+        {[0, 1, 2].map((r) => (
+          <View key={`R${r}`} style={styles.brandDotsRow}>
+            {[0, 1, 2].map((c) => (
+              <View key={`R${r}${c}`} style={styles.brandDot} />
+            ))}
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 const WINDOW_HEIGHT = Dimensions.get('window').height;
 const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
@@ -197,6 +229,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [successDetails, setSuccessDetails] = useState(null);
   const [providers, setProviders] = useState(FALLBACK_NETWORKS);
   const [logoErrors, setLogoErrors] = useState({});
+  /** Visual-only MNO highlight (reference UI) — not sent to create-order. */
+  const [selectedNetworkId, setSelectedNetworkId] = useState(null);
   /** null until backend (or safe verified cache) resolves — never invent zenopay. */
   const [checkoutProvider, setCheckoutProvider] = useState(null);
   /** loading | ready | error */
@@ -1521,6 +1555,25 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     }
   };
 
+  const handlePaymentSupport = useCallback(() => {
+    void (async () => {
+      try {
+        const settings = await getWhatsappSettingsForViewer();
+        const url = String(settings?.url ?? settings?.whatsappUrl ?? '').trim();
+        if (url) {
+          const can = await Linking.canOpenURL(url);
+          if (can) {
+            await Linking.openURL(url);
+            return;
+          }
+        }
+      } catch {
+        /* fall through */
+      }
+      Alert.alert('Msaada', 'Wasiliana nasi kupitia WhatsApp kwenye skrini ya Home.');
+    })();
+  }, []);
+
   const goStep2 = () => {
     if (!selectedPlan) {
       Alert.alert('', 'Hakuna mpango wa kulipa');
@@ -1554,11 +1607,13 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           <View
             style={[
               styles.sheet,
-              step === 4
-                ? { height: successSheetHeight, maxHeight: successSheetHeight }
-                : compactResultStep
-                  ? { height: compactSheetHeight, maxHeight: compactSheetHeight }
-                  : { height: MODAL_MAX_HEIGHT, maxHeight: MODAL_MAX_HEIGHT },
+              step === 3
+                ? styles.sheetWaitingFull
+                : step === 4
+                  ? { height: successSheetHeight, maxHeight: successSheetHeight }
+                  : compactResultStep
+                    ? { height: compactSheetHeight, maxHeight: compactSheetHeight }
+                    : { height: MODAL_MAX_HEIGHT, maxHeight: MODAL_MAX_HEIGHT },
             ]}
           >
             <SafeAreaView
@@ -1566,10 +1621,20 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
               style={step === 2 ? [styles.sheetSafe, styles.sheetSafeCompactBottom] : styles.sheetSafe}
             >
               <View style={styles.sheetBody}>
+                {paymentEntryGate === 'allowed' && step !== 3 && step !== 4 ? (
+                  <Pressable
+                    style={styles.closeX}
+                    onPress={handleCancel}
+                    hitSlop={12}
+                    accessibilityLabel="Funga"
+                  >
+                    <Ionicons name="close" size={22} color="#FFFFFF" />
+                  </Pressable>
+                ) : null}
                 <ScrollView
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
-                  scrollEnabled={step !== 3 && step !== 4}
+                  scrollEnabled={step !== 4}
                   style={styles.modalScroll}
                   contentContainerStyle={
                     step === 2
@@ -1582,7 +1647,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                   }
                   bounces={false}
                 >
-                  <View style={styles.handleBar} />
                   <Animated.View
                     style={[
                       {
@@ -1596,15 +1660,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
                     {paymentEntryGate === 'allowed' && step === 1 && (
                       <View>
-                        <View style={styles.crownHaloWrap}>
-                          <View style={styles.crownGlow} />
-                          <View style={styles.crownCircle}>
-                            <Ionicons name="diamond" size={26} color="#0F172A" />
-                          </View>
-                        </View>
+                        <PaymentBrandMark />
                         <Text style={styles.titleCentered}>Karibu Osman TV</Text>
                         <Text style={styles.subtitleCentered} numberOfLines={2}>
-                          {channelName} ni channel ya premium
+                          Chaneli Uliyofungua ni channel ya premium
                         </Text>
                         {plansLoading ? (
                           <ActivityIndicator size="large" color={ACCENT} style={styles.plansSpinner} />
@@ -1622,15 +1681,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                                 onPress={() => setSelectedPlan(plan)}
                                 style={[styles.planRow, selected && styles.planRowSelected]}
                               >
-                                {selected ? (
-                                  <LinearGradient
-                                    colors={['rgba(250,204,21,0.14)', 'rgba(250,204,21,0.02)']}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 1, y: 1 }}
-                                    style={StyleSheet.absoluteFill}
-                                    pointerEvents="none"
-                                  />
-                                ) : null}
                                 <View style={[styles.radioOuter, selected && styles.radioOuterOn]}>
                                   {selected ? <View style={styles.radioInner} /> : null}
                                 </View>
@@ -1638,7 +1688,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                                   <Text style={styles.planLabel}>{plan.name}</Text>
                                   <Text style={styles.planMeta}>{formatPlanDuration(plan.duration)}</Text>
                                 </View>
-                                <Text style={styles.planPriceRight}>
+                                <Text
+                                  style={[
+                                    styles.planPriceRight,
+                                    selected ? styles.planPriceSelected : styles.planPriceIdle,
+                                  ]}
+                                >
                                   TSh {formatPriceTz(plan.price)}
                                 </Text>
                               </Pressable>
@@ -1648,12 +1703,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         <View style={styles.benefitsList}>
                           {[
                             'Ukilipia Una Tazama Channel zote',
-                            'Channel Zote Ni HD & 4K Streaming',
-                            'Hakuna Kuganda kwa Channel',
                             'Channel Zipo Live Muda Wote',
                           ].map((line) => (
                             <View key={line} style={styles.benefitRow}>
-                              <Ionicons name="checkmark-circle" size={18} color={ACCENT} />
+                              <View style={styles.benefitCheck}>
+                                <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                              </View>
                               <Text style={styles.benefitText}>{line}</Text>
                             </View>
                           ))}
@@ -1664,12 +1719,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                     {paymentEntryGate === 'allowed' && step === 2 && (
                       <View style={styles.step2OuterPadding}>
                         <View style={styles.step2TopSection}>
-                          <View style={styles.titleRow}>
-                            <View style={styles.titleIconCircle}>
-                              <Ionicons name="phone-portrait" size={14} color="#0F172A" />
-                            </View>
-                            <Text style={[styles.title, styles.step2GapClear]}>Weka Namba ya Simu</Text>
-                          </View>
+                          <PaymentBrandMark />
+                          <Text style={[styles.titleCentered, styles.step2Title]}>Weka Namba ya Simu</Text>
                           <Text style={styles.subtitleNetworks}>Tigo, M-Pesa, Airtel, HaloPesa</Text>
                           <View style={[styles.inputWrap, styles.step2GapClear]}>
                             <Ionicons
@@ -1688,7 +1739,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                               onChangeText={setPhoneNumber}
                             />
                           </View>
-                          <Text style={[styles.networksLabel, styles.step2GapClear]}>Mitandao inayokubaliwa</Text>
                           {checkoutProviderStatus === 'error' && !checkoutProvider ? (
                             <View style={[styles.checkoutBadge, styles.step2GapClear]}>
                               <Text style={styles.checkoutBadgeText}>
@@ -1702,33 +1752,37 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                               const initial = (n.name || '').slice(0, 1).toUpperCase();
                               const failed = !!logoErrors[n.id];
                               const showLogo = !!n.logoUrl && !failed;
+                              const selected = selectedNetworkId === n.id;
                               return (
-                                <View key={n.id} style={styles.networkCardOuter}>
-                                  <View
-                                    style={[
-                                      styles.networkCard,
-                                      !showLogo && { backgroundColor: tint, borderColor: tint },
-                                    ]}
-                                  >
-                                    {showLogo ? (
-                                      <Image
-                                        source={{ uri: n.logoUrl }}
-                                        style={styles.networkLogoFill}
-                                        resizeMode="cover"
-                                        onError={() =>
-                                          setLogoErrors((prev) =>
-                                            prev[n.id] ? prev : { ...prev, [n.id]: true },
-                                          )
-                                        }
-                                      />
-                                    ) : (
+                                <Pressable
+                                  key={n.id}
+                                  onPress={() => setSelectedNetworkId(n.id)}
+                                  style={[
+                                    styles.networkCard,
+                                    { backgroundColor: tint, borderColor: selected ? '#FFFFFF' : tint },
+                                    selected && styles.networkCardSelected,
+                                  ]}
+                                >
+                                  {showLogo ? (
+                                    <Image
+                                      source={{ uri: n.logoUrl }}
+                                      style={styles.networkLogoFill}
+                                      resizeMode="cover"
+                                      onError={() =>
+                                        setLogoErrors((prev) =>
+                                          prev[n.id] ? prev : { ...prev, [n.id]: true },
+                                        )
+                                      }
+                                    />
+                                  ) : (
+                                    <>
                                       <Text style={styles.networkInitialFillText}>{initial}</Text>
-                                    )}
-                                  </View>
-                                  <Text style={styles.networkCardText} numberOfLines={1}>
-                                    {n.name}
-                                  </Text>
-                                </View>
+                                      <Text style={styles.networkNameOnCard} numberOfLines={1}>
+                                        {n.name}
+                                      </Text>
+                                    </>
+                                  )}
+                                </Pressable>
                               );
                             })}
                           </View>
@@ -1737,19 +1791,12 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         <View style={styles.step2BottomSection}>
                           {checkoutProviderStatus === 'error' && !checkoutProvider ? (
                             <Pressable
-                              style={[styles.ctaWrap, styles.ctaDockBtn]}
+                              style={[styles.ctaSolid, styles.ctaDockBtn]}
                               onPress={() => {
                                 void reloadCheckoutConfig({ allowCache: true });
                               }}
                             >
-                              <LinearGradient
-                                colors={ACCENT_GRADIENT}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.ctaGradient}
-                              >
-                                <Text style={styles.ctaText}>JARIBU TENA</Text>
-                              </LinearGradient>
+                              <Text style={styles.ctaText}>JARIBU TENA</Text>
                             </Pressable>
                           ) : (
                             <Pressable
@@ -1760,7 +1807,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                                 checkoutProviderStatus === 'loading'
                               }
                               style={[
-                                styles.ctaWrap,
+                                styles.ctaSolid,
                                 styles.ctaDockBtn,
                                 (!isPhoneValid ||
                                   submitting ||
@@ -1770,18 +1817,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                               ]}
                               onPress={handleStep2Pay}
                             >
-                              <LinearGradient
-                                colors={ACCENT_GRADIENT}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.ctaGradient}
-                              >
-                                {submitting ? (
-                                  <ActivityIndicator color="#111827" />
-                                ) : (
-                                  <Text style={styles.ctaText}>Lipia — {selectedAmountDisplay}</Text>
-                                )}
-                              </LinearGradient>
+                              {submitting ? (
+                                <ActivityIndicator color="#FFFFFF" />
+                              ) : (
+                                <Text style={styles.ctaText}>LIPIA – {selectedAmountDisplay}</Text>
+                              )}
                             </Pressable>
                           )}
                         </View>
@@ -1796,6 +1836,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         paymentProgressStep={paymentProgressStep}
                         appWaitingState={appWaitingState}
                         ringSpin={ringSpin}
+                        checkoutProvider={checkoutProvider}
+                        totalWaitSeconds={CREATE_ORDER_WAIT_SEC}
+                        onSupportPress={handlePaymentSupport}
                       />
                     )}
 
@@ -1816,15 +1859,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         </View>
                         <Text style={styles.failTitle}>Malipo hayajakamilika</Text>
                         <Text style={styles.failBody}>{failureReason}</Text>
-                        <Pressable style={[styles.ctaWrap, styles.resultCta]} onPress={handleRetry}>
-                          <LinearGradient
-                            colors={ACCENT_GRADIENT}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.ctaGradient}
-                          >
-                            <Text style={styles.ctaText}>JARIBU TENA</Text>
-                          </LinearGradient>
+                        <Pressable style={[styles.ctaSolid, styles.resultCta]} onPress={handleRetry}>
+                          <Text style={styles.ctaText}>JARIBU TENA</Text>
                         </Pressable>
                         <Pressable style={[styles.cancelBtn, styles.resultSecondary]} onPress={handleCancel}>
                           <Text style={styles.cancelBtnText}>FUNGA</Text>
@@ -1839,23 +1875,16 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                 >
                   {paymentEntryGate === 'allowed' && step === 1 ? (
                     <Pressable
-                      style={[styles.ctaWrap, styles.ctaDockBtn, (!selectedPlan || plansLoading) && styles.ctaDisabled]}
+                      style={[styles.ctaSolid, styles.ctaDockBtn, (!selectedPlan || plansLoading) && styles.ctaDisabled]}
                       disabled={!selectedPlan || plansLoading}
                       onPress={goStep2}
                     >
-                      <LinearGradient
-                        colors={ACCENT_GRADIENT}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.ctaGradient}
-                      >
-                        <Text style={styles.ctaText}>Lipia — {selectedAmountDisplay}</Text>
-                      </LinearGradient>
+                      <Text style={styles.ctaText}>LIPIA SASA – {selectedAmountDisplay}</Text>
                     </Pressable>
                   ) : null}
                   {paymentEntryGate === 'allowed' && step === 3 ? (
-                    <Pressable style={[styles.cancelBtn, styles.ctaDockBtn]} onPress={handleCancel}>
-                      <Text style={styles.cancelBtnText}>GHAIRI</Text>
+                    <Pressable style={[styles.cancelBtnSolid, styles.ctaDockBtn]} onPress={handleCancel}>
+                      <Text style={styles.cancelBtnTextSolid}>GHAIRI</Text>
                     </Pressable>
                   ) : null}
                 </View>
@@ -1888,7 +1917,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: PAYMENT.overlay,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -1904,17 +1933,94 @@ const styles = StyleSheet.create({
     width: '100%',
     overflow: 'hidden',
     backgroundColor: SHEET_BG,
-    borderRadius: 22,
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(250,204,21,0.18)',
+    borderRadius: PAYMENT.sheetRadius,
+    paddingHorizontal: 18,
+    paddingVertical: 18,
+    borderWidth: 1.5,
+    borderColor: PAYMENT.sheetBorder,
     alignSelf: 'center',
     elevation: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.45,
-    shadowRadius: 22,
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+  },
+  sheetWaitingFull: {
+    height: Math.round(WINDOW_HEIGHT * 0.96),
+    maxHeight: Math.round(WINDOW_HEIGHT * 0.96),
+    backgroundColor: '#000000',
+    borderRadius: 18,
+    borderWidth: 0,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 8,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  closeX: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    zIndex: 8,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandHaloWrap: {
+    alignSelf: 'center',
+    width: 96,
+    height: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    marginTop: 8,
+  },
+  brandGlow: {
+    position: 'absolute',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: PAYMENT.accentSoft,
+  },
+  brandShield: {
+    width: 58,
+    height: 64,
+    borderRadius: 14,
+    borderWidth: 2.5,
+    borderColor: ACCENT,
+    backgroundColor: '#0A0A0A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.75,
+    shadowRadius: 14,
+    elevation: 10,
+    transform: [{ rotate: '0deg' }],
+  },
+  brandDotsLeft: {
+    position: 'absolute',
+    left: 0,
+    top: 8,
+    gap: 3,
+  },
+  brandDotsRight: {
+    position: 'absolute',
+    right: 0,
+    top: 8,
+    gap: 3,
+  },
+  brandDotsRow: {
+    flexDirection: 'row',
+    gap: 3,
+  },
+  brandDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: ACCENT,
+    opacity: 0.85,
   },
   sheetSafe: {
     flex: 1,
@@ -1935,7 +2041,7 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   modalScrollContentStep3: {
-    paddingBottom: 88,
+    paddingBottom: 100,
     flexGrow: 1,
     justifyContent: 'flex-start',
   },
@@ -1993,7 +2099,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(250,204,21,0.30)',
+    backgroundColor: 'rgba(225,6,0,0.30)',
     marginBottom: 12,
   },
   titleRow: {
@@ -2043,7 +2149,7 @@ const styles = StyleSheet.create({
     width: 76,
     height: 76,
     borderRadius: 38,
-    backgroundColor: 'rgba(250,204,21,0.16)',
+    backgroundColor: PAYMENT.accentSoft,
   },
   crownCircle: {
     width: 56,
@@ -2068,8 +2174,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     marginBottom: 6,
   },
+  step2Title: {
+    fontSize: 22,
+    marginBottom: 4,
+  },
   subtitleCentered: {
-    color: TEXT_MUTED,
+    color: PAYMENT.textSecondary,
     fontSize: 13,
     textAlign: 'center',
     marginBottom: 18,
@@ -2091,8 +2201,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  benefitCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   benefitText: {
-    color: '#E5E7EB',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '500',
     letterSpacing: 0.2,
@@ -2100,9 +2218,10 @@ const styles = StyleSheet.create({
   },
   subtitleNetworks: {
     color: TEXT_MUTED,
-    fontSize: 12,
+    fontSize: 13,
+    textAlign: 'center',
     marginTop: -2,
-    marginBottom: 4,
+    marginBottom: 12,
     letterSpacing: 0.2,
   },
   plansSpinner: {
@@ -2125,21 +2244,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 16,
     paddingHorizontal: 16,
-    borderRadius: 16,
+    borderRadius: PAYMENT.planRadius,
     marginBottom: 10,
-    backgroundColor: '#161A22',
+    backgroundColor: PAYMENT.cardBg,
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: PAYMENT.planBorder,
     overflow: 'hidden',
     position: 'relative',
   },
   planRowSelected: {
-    borderColor: ACCENT,
-    backgroundColor: '#1B1F28',
+    borderColor: PAYMENT.planBorderSelected,
+    backgroundColor: '#1A1214',
     shadowColor: ACCENT,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.40,
-    shadowRadius: 14,
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
     elevation: 8,
   },
   planBadge: {
@@ -2164,14 +2283,14 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     borderWidth: 2,
-    borderColor: '#4B5563',
+    borderColor: '#FFFFFF',
     marginRight: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   radioOuterOn: {
     borderColor: ACCENT,
-    backgroundColor: 'rgba(250,204,21,0.10)',
+    backgroundColor: 'transparent',
   },
   radioInner: {
     width: 12,
@@ -2204,11 +2323,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   planPriceRight: {
-    color: ACCENT,
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.3,
     marginLeft: 12,
+  },
+  planPriceSelected: {
+    color: PAYMENT.planPriceSelected,
+  },
+  planPriceIdle: {
+    color: PAYMENT.planPrice,
   },
   cta: {
     backgroundColor: ACCENT,
@@ -2225,8 +2349,8 @@ const styles = StyleSheet.create({
   },
   ctaWrap: {
     width: '100%',
-    minHeight: 58,
-    borderRadius: 18,
+    minHeight: PAYMENT.ctaMinHeight,
+    borderRadius: PAYMENT.ctaRadius,
     alignSelf: 'stretch',
     marginTop: 20,
     marginBottom: 20,
@@ -2237,21 +2361,40 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.55,
     shadowRadius: 18,
   },
+  ctaSolid: {
+    width: '100%',
+    minHeight: PAYMENT.ctaMinHeight,
+    borderRadius: PAYMENT.ctaRadius,
+    alignSelf: 'stretch',
+    marginTop: 12,
+    marginBottom: 12,
+    backgroundColor: PAYMENT.ctaBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    elevation: 10,
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+  },
   ctaGradient: {
     flex: 1,
-    minHeight: 58,
+    minHeight: PAYMENT.ctaMinHeight,
     paddingVertical: 17,
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 18,
+    borderRadius: PAYMENT.ctaRadius,
   },
   ctaText: {
-    color: '#111827',
-    fontSize: 17,
+    color: PAYMENT.ctaText,
+    fontSize: 16,
     fontWeight: '800',
     textAlign: 'center',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   input: {
     backgroundColor: '#1A1F28',
@@ -2267,13 +2410,13 @@ const styles = StyleSheet.create({
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1F28',
+    backgroundColor: PAYMENT.inputBg,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 4,
     marginBottom: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(250,204,21,0.18)',
+    borderWidth: 1.5,
+    borderColor: PAYMENT.inputBorder,
   },
   inputIcon: {
     marginRight: 10,
@@ -2301,9 +2444,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
-    backgroundColor: 'rgba(8,145,178,0.12)',
+    backgroundColor: 'rgba(225,6,0,0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(8,145,178,0.35)',
+    borderColor: 'rgba(225,6,0,0.35)',
     marginBottom: 10,
   },
   checkoutBadgeLogo: {
@@ -2324,7 +2467,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   checkoutBadgeText: {
-    color: '#E0F2FE',
+    color: '#FEE2E2',
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.2,
@@ -2361,37 +2504,50 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   networkCardOuter: {
     width: '48%',
     marginBottom: 12,
   },
   networkCard: {
-    width: '100%',
-    height: 84,
+    width: '48%',
+    height: 92,
     borderRadius: 14,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
-    backgroundColor: '#1F242E',
+    borderWidth: 2,
+    marginBottom: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
+    elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.22,
     shadowRadius: 4,
+    gap: 4,
+  },
+  networkCardSelected: {
+    borderWidth: 2.5,
+    shadowColor: '#FFFFFF',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
   },
   networkLogoFill: {
     width: '100%',
     height: '100%',
   },
   networkInitialFillText: {
-    color: '#0F172A',
-    fontSize: 32,
+    color: '#FFFFFF',
+    fontSize: 28,
     fontWeight: '900',
     letterSpacing: 0.5,
+  },
+  networkNameOnCard: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   networkCardText: {
     marginTop: 8,
@@ -2400,6 +2556,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     letterSpacing: 0.3,
+  },
+  cancelBtnSolid: {
+    width: '100%',
+    minHeight: PAYMENT.ctaMinHeight,
+    borderRadius: PAYMENT.ctaRadius,
+    backgroundColor: PAYMENT.ctaBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+  },
+  cancelBtnTextSolid: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
   step3Wrap: {
     alignItems: 'center',

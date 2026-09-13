@@ -108,10 +108,62 @@ const defaultSettings = {
 };
 /** SSE names that carry free / emergency / maintenance — must not share the catalog debouncer. */
 const RUNTIME_MODE_SSE_NAMES = Object.freeze(['app_settings_changed', ...ADMIN_RUNTIME_MODE_SSE_EVENTS]);
-const LIVE_SYNC_BASE_MS = 30000;
+/** SSE is primary; foreground catalog poll is a safety net when SSE misses admin frames. */
+const LIVE_SYNC_BASE_MS = 10000;
 const LIVE_SYNC_MAX_MS = 120000;
 /** Admin flags poll while foreground; SSE is primary — conservative interval for cost. */
 const SETTINGS_POLL_MS = 10000;
+
+/**
+ * True when an SSE frame name/payload likely means admin catalog/commerce data changed.
+ * Used by the catch-all `*` bus so unlabeled / unknown admin events still refresh.
+ */
+function sseFrameLooksLikeCatalogChange(eventName, payload) {
+  const name = String(eventName ?? '')
+    .trim()
+    .toLowerCase();
+  if (
+    name.includes('channel') ||
+    name.includes('catalog') ||
+    name.includes('banner') ||
+    name.includes('plan') ||
+    name.includes('payment_provider') ||
+    name.includes('access_type') ||
+    name === 'sync' ||
+    name === 'message' ||
+    name.startsWith('config.')
+  ) {
+    if (name === 'message' || name === '*') {
+      /* inspect payload below */
+    } else {
+      return true;
+    }
+  }
+  if (!payload || typeof payload !== 'object') return false;
+  const o = /** @type {Record<string, unknown>} */ (payload);
+  const nested =
+    (o.payload && typeof o.payload === 'object' ? o.payload : null) ||
+    (o.data && typeof o.data === 'object' ? o.data : null) ||
+    o;
+  const n = /** @type {Record<string, unknown>} */ (nested);
+  if (Array.isArray(n.channels) || Array.isArray(n.banners) || Array.isArray(n.plans)) return true;
+  if (n.accessType != null || n.access_type != null || n.accessPremium != null || n.access_premium != null) {
+    return true;
+  }
+  if (n.channel_id != null || n.channelId != null) return true;
+  const declared = String(o.event ?? o.type ?? n.event ?? n.type ?? '')
+    .trim()
+    .toLowerCase();
+  if (
+    declared.includes('channel') ||
+    declared.includes('catalog') ||
+    declared.includes('banner') ||
+    declared.includes('plan')
+  ) {
+    return true;
+  }
+  return false;
+}
 
 function isLikelyOfflineError(errorLike) {
   if (isTransientServerError(errorLike)) return false;
@@ -1868,6 +1920,29 @@ export function OsmaniAppProvider({ children }) {
         }
       }),
     );
+    /** Catch-all: unlabeled `message` frames + unknown admin event names still refresh catalog. */
+    const offCatchAllCatalog = subscribeRealtimeEvent('*', (envelope) => {
+      const name = String(envelope?.name ?? '').trim();
+      if (!name || name.startsWith('__')) return;
+      if (ADMIN_SOFT_REFRESH_SSE_EVENTS.includes(name)) return;
+      if (RUNTIME_MODE_SSE_NAMES.includes(name)) return;
+      if (SUBSCRIPTION_WAKE_SSE_EVENTS.includes(name)) return;
+      if (USER_CENTER_SSE_EVENTS.includes(name)) return;
+      if (!sseFrameLooksLikeCatalogChange(name, envelope?.payload)) return;
+      console.log('[CATALOG_SYNC]', 'catch_all_sse', name);
+      const patched = applyChannelCatalogRealtime(name, envelope?.payload, 'sse:*');
+      if (patched) {
+        invalidateCatalogCache();
+        void refresh({
+          showGlobalLoading: false,
+          preserveDataOnError: true,
+          skipSettingsFromHttp: true,
+          forceNetwork: true,
+        });
+      } else {
+        scheduleAdminDrivenSoftSync(`sse:*:${name}`);
+      }
+    });
     return () => {
       offSyncReconnect();
       offDeviceStream();
@@ -1882,6 +1957,7 @@ export function OsmaniAppProvider({ children }) {
       offRejected();
       offRuntimeModes.forEach((off) => off());
       offCatalogAliases.forEach((off) => off());
+      offCatchAllCatalog();
     };
   }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway, tryInstantApplyFromSse, showActivationSuccess, applyChannelCatalogRealtime]);
 
