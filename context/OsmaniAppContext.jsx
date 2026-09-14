@@ -629,6 +629,7 @@ export function OsmaniAppProvider({ children }) {
               resolveSource: r.resolveSource ?? null,
               hadActive: isSubscribedRef.current,
             });
+            lastBootResolveRef.current = effectiveResult;
             return effectiveResult;
           }
           if (verifyKey !== lastVerifyKeyRef.current) return r;
@@ -642,6 +643,8 @@ export function OsmaniAppProvider({ children }) {
             authoritativeInactive,
           });
         }
+        // Keep snapshot lastResolveSource current for mid-session ERROR_UNKNOWN (not boot-only).
+        lastBootResolveRef.current = effectiveResult;
         isSubscribedRef.current = active;
         if (active) {
           authoritativeInactiveRef.current = false;
@@ -816,20 +819,28 @@ export function OsmaniAppProvider({ children }) {
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'error_preserved_cache', {
               error: e?.message ?? e,
             });
-            return {
+            const preserved = {
               active: true,
               expiresAt: cached.expiresAt ?? null,
               transportPreserved: true,
+              resolveSource: 'transport:error',
+              error: String(e?.message ?? e),
             };
+            lastBootResolveRef.current = preserved;
+            return preserved;
           }
           if (isSubscribedRef.current) {
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'error_preserved_active_state', {
               error: e?.message ?? e,
             });
-            return {
+            const preserved = {
               active: true,
               transportPreserved: true,
+              resolveSource: 'transport:error',
+              error: String(e?.message ?? e),
             };
+            lastBootResolveRef.current = preserved;
+            return preserved;
           }
           isSubscribedRef.current = false;
           setIsSubscribed(false);
@@ -839,8 +850,21 @@ export function OsmaniAppProvider({ children }) {
           if (!isNetworkTransportError(e) && !isTransientServerError(e)) {
             await clearSubscriptionCache(`verify-error:${reason}`);
           }
+          const failResult = {
+            active: false,
+            expiresAt: null,
+            error: String(e?.message ?? e),
+            resolveSource: 'transport:error',
+          };
+          lastBootResolveRef.current = failResult;
+          return failResult;
         }
-        return { active: false, expiresAt: null, error: String(e?.message ?? e) };
+        return {
+          active: false,
+          expiresAt: null,
+          error: String(e?.message ?? e),
+          resolveSource: 'transport:error',
+        };
       } finally {
         verifyInFlightRef.current = false;
       }

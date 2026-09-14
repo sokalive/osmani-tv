@@ -59,6 +59,14 @@ if (!screen.includes('premiumGateSessionRef')) {
   fail('premiumGateSessionRef prevents re-gate during playback');
 } else pass('premiumGateSessionRef prevents re-gate during playback');
 
+if (!screen.includes('sticky_session_preserved')) {
+  fail('sticky session must survive isSubscribed flips mid-playback');
+} else pass('sticky session preserve on isSubscribed flip');
+
+if (screen.includes("runPlaybackTeardown('expiry_wallclock')")) {
+  fail('wall-clock must not hard-teardown mid-watch');
+} else pass('wall-clock does not hard-teardown');
+
 if (!screen.includes("logPlayerInterrupt('native_stall_recovery'")) {
   fail('native silent stall recovery');
 } else pass('native silent stall recovery');

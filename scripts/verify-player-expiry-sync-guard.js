@@ -130,6 +130,14 @@ if (!player.includes('isConfirmedSubscriptionLoss(r)')) {
   fail('player-expiry-sync must use isConfirmedSubscriptionLoss');
 } else pass('player-expiry-sync uses isConfirmedSubscriptionLoss');
 
+if (player.includes("runPlaybackTeardown('expiry_wallclock')")) {
+  fail('wall-clock must not hard-teardown (deferred expiry)');
+} else pass('wall-clock deferred (no hard teardown)');
+
+if (!player.includes('sticky_session_preserved')) {
+  fail('sticky session must preserve granted channelKey authorization');
+} else pass('sticky session preserve present');
+
 if (!player.includes('isConfirmedSubscriptionLoss')) {
   fail('ChannelPlayerScreen must import isConfirmedSubscriptionLoss');
 } else pass('ChannelPlayerScreen imports isConfirmedSubscriptionLoss');

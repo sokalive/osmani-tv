@@ -714,6 +714,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
    *
    * Runs once per channel session. Catalog/SSE signed-URL rotation must NOT
    * re-trigger this gate (that was causing "Inathibitisha kifurushi…" flashes).
+   *
+   * Sticky session: once granted for this channelKey, do not re-deny when
+   * isSubscribed flips from transport noise / optimistic SSE clears.
+   * Authoritative revoke/transfer/expiry-sync still kill via dedicated handlers.
    */
   useEffect(() => {
     if (!channel) return undefined;
@@ -732,6 +736,16 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return undefined;
     }
 
+    if (
+      premiumGateSessionRef.current.granted &&
+      premiumGateSessionRef.current.channelKey === channelKey
+    ) {
+      setAccessChecked(true);
+      setAccessAllowed(true);
+      console.log('[player][gate]', 'sticky_session_preserved', { channel: channel?.name });
+      return undefined;
+    }
+
     if (isSubscribed) {
       setAccessChecked(true);
       setAccessAllowed(true);
@@ -740,8 +754,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       return undefined;
     }
 
-    // Known inactive — never flash "Inathibitisha kifurushi…". Exit immediately;
-    // payment modal is opened by the channel-tap path without waiting on verify.
+    // Known inactive on NEW entry — never flash "Inathibitisha kifurushi…".
+    // Payment modal is opened by the channel-tap path without waiting on verify.
     setAccessChecked(true);
     setAccessAllowed(false);
     premiumGateSessionRef.current = { channelKey, granted: false };
@@ -1518,43 +1532,26 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const TEN_MIN_MS = 10 * 60 * 1000;
   const ONE_MIN_MS = 60 * 1000;
 
+  /**
+   * Deferred wall-clock expiry: finish the current playback session.
+   * Do NOT tear down mid-watch solely because local/server-anchored clock crossed expiresAt.
+   * Silent reconcile; next premium entry re-gates. Authoritative revoke still uses SSE /
+   * player-expiry-sync confirmed-loss paths.
+   */
   const performHardExpiryShutdown = useCallback(async () => {
     if (hardWallClockExpiryDoneRef.current) return;
     hardWallClockExpiryDoneRef.current = true;
-    logPlayerTeardown('expiry_wallclock_start');
-    clearHideTimer();
+    logPlayerTeardown('expiry_wallclock_deferred');
     setExpiryOverlay({ visible: false, minuteCeil: 0, secondCeil: 0, critical: false });
-    setPickerKind(null);
-    pickerKindRef.current = null;
-    setIsBuffering(false);
-    setIsPlaying(false);
-
-    const shouldNavigate =
-      playerLifecycleRef.current.mounted && playerLifecycleRef.current.focused;
-    await runPlaybackTeardown('expiry_wallclock');
-
-    if (!shouldNavigate) {
-      logPlayerTeardown('expiry_wallclock_skip_nav', 'inactive');
-      return;
-    }
-
+    console.log('[player][expiry]', 'deferred_keep_session', {
+      channel: channel?.name ?? null,
+    });
     try {
-      await reverifySubscription('player-expiry-wallclock');
+      await reverifySubscription('player-expiry-wallclock-deferred');
     } catch (e) {
-      console.log('[player][expiry] reverify_after_shutdown', e?.message ?? e);
+      console.log('[player][expiry] deferred_reverify', e?.message ?? e);
     }
-
-    allowNavigationRemoveRef.current = true;
-    try {
-      navigation.navigate('MainTabs', { screen: 'Home' });
-    } catch {
-      try {
-        navigation.goBack();
-      } catch {
-        /* ignore */
-      }
-    }
-  }, [clearHideTimer, navigation, reverifySubscription, runPlaybackTeardown]);
+  }, [channel?.name, reverifySubscription]);
 
   const stopTrialPlayback = useCallback(async () => {
     trialPlaybackEndedRef.current = true;
