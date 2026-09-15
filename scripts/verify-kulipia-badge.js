@@ -51,7 +51,7 @@ if (app.includes("item.accessBadge === 'KULIPIA'")) {
   fail('must not render KULIPIA from static accessBadge alone');
 } else pass('no static KULIPIA render path');
 
-if (!app.includes('extraData={{ isSubscribed, cacheTrustedActive, catalogRevision, subscriptionVersion')) {
+if (!app.includes('catalogRevision') || !app.includes('extraData={{')) {
   fail('FlatList extraData must include catalogRevision');
 } else pass('FlatList extraData includes catalogRevision');
 

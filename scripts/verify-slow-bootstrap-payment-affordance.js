@@ -91,7 +91,20 @@ const {
   function mayShowPaymentAffordance(input) {
     if (!input?.isPremium || input?.freeMode) return false;
     if (input?.isSubscribed === true || input?.cacheTrustedActive === true) return false;
-    return true;
+    const phase =
+      input?.entitlementPhase ??
+      deriveEntitlementPhase({
+        isSubscribed: input?.isSubscribed === true,
+        cacheTrustedActive: input?.cacheTrustedActive === true,
+        authoritativeInactiveConfirmed: input?.authoritativeInactiveConfirmed === true,
+        subscriptionSyncLoaded: input?.subscriptionSyncLoaded === true,
+      });
+    if (phase === 'ACTIVE' || phase === 'STALE_ACTIVE') return false;
+    if (phase === 'INACTIVE' || phase === 'EXPIRED') return true;
+    if (phase === 'ERROR_UNKNOWN') return false;
+    if (phase === 'CHECKING') return input?.subscriptionCacheHydrateAttempted === true;
+    if (input?.subscriptionSyncLoaded === true) return true;
+    return input?.subscriptionCacheHydrateAttempted === true;
   }
   function mayOpenPaymentOnExplicitTap(snapshot) {
     const s = snapshot ?? {};
@@ -104,8 +117,28 @@ const {
   return { mayShowPaymentAffordance, mayOpenPaymentOnExplicitTap, hasTrustedActiveEntitlement };
 })();
 
-sim('KULIPIA during CHECKING unpaid', () => {
-  return mayShowPaymentAffordance({ isPremium: true, freeMode: false, isSubscribed: false }) === true;
+sim('KULIPIA during CHECKING unpaid after hydrate', () => {
+  return (
+    mayShowPaymentAffordance({
+      isPremium: true,
+      freeMode: false,
+      isSubscribed: false,
+      entitlementPhase: 'CHECKING',
+      subscriptionCacheHydrateAttempted: true,
+    }) === true
+  );
+});
+
+sim('no KULIPIA during CHECKING before hydrate (active race)', () => {
+  return (
+    mayShowPaymentAffordance({
+      isPremium: true,
+      freeMode: false,
+      isSubscribed: false,
+      entitlementPhase: 'CHECKING',
+      subscriptionCacheHydrateAttempted: false,
+    }) === false
+  );
 });
 
 sim('no KULIPIA when subscribed', () => {

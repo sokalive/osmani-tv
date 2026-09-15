@@ -240,9 +240,28 @@ function findServerHealthForChannel(serverHealth, name) {
   return serverHealth.channels.find((row) => String(row?.name ?? '').trim().toLowerCase() === wanted) || null;
 }
 
-function ChannelAccessBadge({ item, freeMode, isSubscribed, cacheTrustedActive, styles: s }) {
+function ChannelAccessBadge({
+  item,
+  freeMode,
+  isSubscribed,
+  cacheTrustedActive,
+  entitlementPhase,
+  subscriptionSyncLoaded,
+  subscriptionCacheHydrateAttempted,
+  styles: s,
+}) {
   if (item.isPremium) {
-    if (!shouldShowKulipiaBadge({ isPremium: true, freeMode, isSubscribed, cacheTrustedActive })) {
+    if (
+      !shouldShowKulipiaBadge({
+        isPremium: true,
+        freeMode,
+        isSubscribed,
+        cacheTrustedActive,
+        entitlementPhase,
+        subscriptionSyncLoaded,
+        subscriptionCacheHydrateAttempted,
+      })
+    ) {
       return null;
     }
     return (
@@ -348,6 +367,7 @@ function ChannelCatalogScreen({
     getPremiumAccessSnapshot,
     subscriptionSyncLoaded,
     subscriptionRecoveryComplete,
+    subscriptionCacheHydrateAttempted,
     trialWatchSettingsLoaded,
     premiumPlaybackReady,
     requireUpdateBeforeChannelPlayback,
@@ -387,10 +407,18 @@ function ChannelCatalogScreen({
   const [bannerVisibilityClock, setBannerVisibilityClock] = useState(() => Date.now());
   const wasOfflineRef = useRef(false);
 
-  const cacheTrustedActive = useMemo(
-    () => getPremiumAccessSnapshot().cacheTrustedActive === true,
-    [getPremiumAccessSnapshot, isSubscribed, subscriptionVersion, subscriptionSyncLoaded],
+  const accessSnapshot = useMemo(
+    () => getPremiumAccessSnapshot(),
+    [
+      getPremiumAccessSnapshot,
+      isSubscribed,
+      subscriptionVersion,
+      subscriptionSyncLoaded,
+      subscriptionCacheHydrateAttempted,
+    ],
   );
+  const cacheTrustedActive = accessSnapshot.cacheTrustedActive === true;
+  const entitlementPhase = accessSnapshot.entitlementPhase ?? null;
 
   /** Once per mount: log real API shape + derived section (production-safe diagnostic). */
   const catalogShapeLoggedRef = useRef(false);
@@ -1114,6 +1142,9 @@ function ChannelCatalogScreen({
               freeMode={freeMode}
               isSubscribed={isSubscribed}
               cacheTrustedActive={cacheTrustedActive}
+              entitlementPhase={entitlementPhase}
+              subscriptionSyncLoaded={subscriptionSyncLoaded}
+              subscriptionCacheHydrateAttempted={subscriptionCacheHydrateAttempted}
               styles={styles}
             />
           </View>
@@ -1133,7 +1164,16 @@ function ChannelCatalogScreen({
         </View>
       </Pressable>
     ),
-    [handleCardPress, freeMode, isSubscribed, cacheTrustedActive, catalogRevision],
+    [
+      handleCardPress,
+      freeMode,
+      isSubscribed,
+      cacheTrustedActive,
+      entitlementPhase,
+      subscriptionSyncLoaded,
+      subscriptionCacheHydrateAttempted,
+      catalogRevision,
+    ],
   );
 
   const renderHighlightCard = useCallback(
@@ -1175,6 +1215,9 @@ function ChannelCatalogScreen({
               freeMode={freeMode}
               isSubscribed={isSubscribed}
               cacheTrustedActive={cacheTrustedActive}
+              entitlementPhase={entitlementPhase}
+              subscriptionSyncLoaded={subscriptionSyncLoaded}
+              subscriptionCacheHydrateAttempted={subscriptionCacheHydrateAttempted}
               styles={styles}
             />
           </View>
@@ -1194,7 +1237,16 @@ function ChannelCatalogScreen({
         </View>
       </Pressable>
     ),
-    [handleCardPress, freeMode, isSubscribed, cacheTrustedActive, catalogRevision],
+    [
+      handleCardPress,
+      freeMode,
+      isSubscribed,
+      cacheTrustedActive,
+      entitlementPhase,
+      subscriptionSyncLoaded,
+      subscriptionCacheHydrateAttempted,
+      catalogRevision,
+    ],
   );
 
   const listHeader = useMemo(
@@ -1390,7 +1442,16 @@ function ChannelCatalogScreen({
       <FlatList
         key={String(refreshKey)}
         data={displayChannels}
-        extraData={{ isSubscribed, cacheTrustedActive, catalogRevision, subscriptionVersion, maintenanceMode }}
+        extraData={{
+          isSubscribed,
+          cacheTrustedActive,
+          entitlementPhase,
+          subscriptionSyncLoaded,
+          subscriptionCacheHydrateAttempted,
+          catalogRevision,
+          subscriptionVersion,
+          maintenanceMode,
+        }}
         renderItem={renderCard}
         keyExtractor={(item) => item.id}
         numColumns={2}

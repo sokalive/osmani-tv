@@ -285,6 +285,9 @@ export function OsmaniAppProvider({ children }) {
   const authoritativeInactiveRef = useRef(false);
   /** Same-device unexpired cache trusted while server reconcile in flight. */
   const cacheTrustedActiveRef = useRef(false);
+  /** First AsyncStorage hydrate finished (active or empty) — gates KULIPIA during CHECKING. */
+  const [subscriptionCacheHydrateAttempted, setSubscriptionCacheHydrateAttempted] = useState(false);
+  const subscriptionCacheHydrateAttemptedRef = useRef(false);
   /** Last cold-start resolve result for gate diagnostics. */
   const lastBootResolveRef = useRef(null);
   /** Prevents duplicate Hongera popups for the same grant within a session. */
@@ -303,35 +306,53 @@ export function OsmaniAppProvider({ children }) {
    * runs in background and may revoke only on confirmed inactive.
    */
   const hydrateSubscriptionFromCache = useCallback(async (reason = 'cache-hydrate') => {
-    if (authoritativeInactiveRef.current) {
-      console.log('[SUBSCRIPTION_CACHE]', reason, 'skipped_hydrate_authoritative_inactive');
-      return false;
-    }
-    if (sourceTransferClearLockUntilRef.current > Date.now()) {
-      console.log('[SUBSCRIPTION_CACHE]', reason, 'skipped_hydrate_after_source_transfer');
-      return false;
-    }
-    const { cached } = await readHydratableSubscriptionCache();
-    if (!cached?.active || !shouldHydrateSubscriptionCache(cached)) return false;
-    isSubscribedRef.current = true;
-    authoritativeInactiveRef.current = false;
-    cacheTrustedActiveRef.current = true;
-    setIsSubscribed(true);
-    setSubscriptionExpiresAt(cached.expiresAt ?? null);
-    setSubscriptionDetails((prev) =>
-      mergeSubscriptionDetails(
-        prev,
-        enrichSubscriptionDetailsForDisplay(
-          subscriptionDetailsFromCache(cached),
-          getCachedPaymentPlansSync() ?? [],
+    const markAttempted = () => {
+      if (!subscriptionCacheHydrateAttemptedRef.current) {
+        subscriptionCacheHydrateAttemptedRef.current = true;
+        setSubscriptionCacheHydrateAttempted(true);
+      }
+    };
+    try {
+      if (authoritativeInactiveRef.current) {
+        console.log('[SUBSCRIPTION_CACHE]', reason, 'skipped_hydrate_authoritative_inactive');
+        markAttempted();
+        return false;
+      }
+      if (sourceTransferClearLockUntilRef.current > Date.now()) {
+        console.log('[SUBSCRIPTION_CACHE]', reason, 'skipped_hydrate_after_source_transfer');
+        markAttempted();
+        return false;
+      }
+      const { cached } = await readHydratableSubscriptionCache();
+      if (!cached?.active || !shouldHydrateSubscriptionCache(cached)) {
+        markAttempted();
+        return false;
+      }
+      isSubscribedRef.current = true;
+      authoritativeInactiveRef.current = false;
+      cacheTrustedActiveRef.current = true;
+      setIsSubscribed(true);
+      setSubscriptionExpiresAt(cached.expiresAt ?? null);
+      setSubscriptionDetails((prev) =>
+        mergeSubscriptionDetails(
+          prev,
+          enrichSubscriptionDetailsForDisplay(
+            subscriptionDetailsFromCache(cached),
+            getCachedPaymentPlansSync() ?? [],
+          ),
         ),
-      ),
-    );
-    setSubscriptionVersion((v) => v + 1);
-    console.log('[SUBSCRIPTION_CACHE]', reason, 'hydrated_active', {
-      expiresAt: cached.expiresAt ?? null,
-    });
-    return true;
+      );
+      setSubscriptionVersion((v) => v + 1);
+      console.log('[SUBSCRIPTION_CACHE]', reason, 'hydrated_active', {
+        expiresAt: cached.expiresAt ?? null,
+      });
+      markAttempted();
+      return true;
+    } catch (e) {
+      console.log('[SUBSCRIPTION_CACHE]', reason, 'hydrate_error', e?.message ?? e);
+      markAttempted();
+      return false;
+    }
   }, []);
 
   /**
@@ -513,7 +534,7 @@ export function OsmaniAppProvider({ children }) {
           }
         }
 
-        if (!active && !authoritativeInactive && !authoritativeReconcile && isSubscriptionTransportFailure(r)) {
+        if (!active && !authoritativeInactive && isSubscriptionTransportFailure(r)) {
           if (transferLockActive) {
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'skipped_transport_cache_after_source_transfer');
           } else {
@@ -530,6 +551,19 @@ export function OsmaniAppProvider({ children }) {
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'transport_preserved_cache', {
               expiresAt,
               error: r.error,
+              authoritativeReconcile,
+            });
+          } else if (isSubscribedRef.current || cacheTrustedActiveRef.current) {
+            active = true;
+            effectiveResult = {
+              ...r,
+              active: true,
+              expiresAt: r.expiresAt ?? null,
+              transportPreserved: true,
+            };
+            console.log('[SUBSCRIPTION_VERIFY]', reason, 'transport_preserved_memory', {
+              resolveSource: r.resolveSource ?? null,
+              authoritativeReconcile,
             });
           }
           }
@@ -615,22 +649,29 @@ export function OsmaniAppProvider({ children }) {
         if (
           verifyKey !== lastVerifyKeyRef.current ||
           (active === false &&
-            r.resolveSource !== 'inactive' &&
+            !authoritativeInactive &&
             !transferLockActive &&
-            !authoritativeReconcile)
+            (isSubscribedRef.current || cacheTrustedActiveRef.current))
         ) {
           if (
             active === false &&
-            r.resolveSource !== 'inactive' &&
+            !authoritativeInactive &&
             !transferLockActive &&
-            !authoritativeReconcile
+            (isSubscribedRef.current || cacheTrustedActiveRef.current)
           ) {
             console.log('[SUBSCRIPTION_VERIFY]', reason, 'preserved_subscribed_state', {
               resolveSource: r.resolveSource ?? null,
               hadActive: isSubscribedRef.current,
+              cacheTrusted: cacheTrustedActiveRef.current,
+              authoritativeReconcile,
             });
-            lastBootResolveRef.current = effectiveResult;
-            return effectiveResult;
+            const preserved = {
+              ...effectiveResult,
+              active: true,
+              transportPreserved: true,
+            };
+            lastBootResolveRef.current = preserved;
+            return preserved;
           }
           if (verifyKey !== lastVerifyKeyRef.current) return r;
         }
@@ -645,27 +686,42 @@ export function OsmaniAppProvider({ children }) {
         }
         // Keep snapshot lastResolveSource current for mid-session ERROR_UNKNOWN (not boot-only).
         lastBootResolveRef.current = effectiveResult;
-        isSubscribedRef.current = active;
-        if (active) {
+        // Never clear known-active UI without authoritative inactive evidence.
+        if (authoritativeInactive) {
+          isSubscribedRef.current = false;
+        } else if (active) {
+          isSubscribedRef.current = true;
           authoritativeInactiveRef.current = false;
           if (effectiveResult.transportPreserved === true || effectiveResult.pendingPreserved === true) {
             cacheTrustedActiveRef.current = true;
           } else {
             cacheTrustedActiveRef.current = false;
           }
-        } else if (!authoritativeInactive) {
+        } else if (!isSubscribedRef.current && !cacheTrustedActiveRef.current) {
           authoritativeInactiveRef.current = false;
+        } else {
+          // Ambiguous inactive without authoritative evidence — keep prior active.
+          active = true;
+          effectiveResult = { ...effectiveResult, active: true, transportPreserved: true };
+          lastBootResolveRef.current = effectiveResult;
+          console.log('[SUBSCRIPTION_VERIFY]', reason, 'refused_clear_without_authoritative_inactive', {
+            resolveSource: r.resolveSource ?? null,
+          });
         }
         const serverTimeFetchedAt = Date.now();
-        setIsSubscribed(active);
-        setSubscriptionExpiresAt(active ? expiresAt : null);
+        setIsSubscribed(isSubscribedRef.current);
+        setSubscriptionExpiresAt((prev) => {
+          if (!isSubscribedRef.current) return null;
+          if (expiresAt != null && String(expiresAt).trim() !== '') return expiresAt;
+          return prev;
+        });
         console.log(
           '[SUBSCRIPTION_STATE]',
           JSON.stringify({
             phase: reason,
-            isSubscribed: active,
-            subscriptionStatus: active ? 'ACTIVE' : 'INACTIVE',
-            expiresAt: active ? expiresAt : null,
+            isSubscribed: isSubscribedRef.current,
+            subscriptionStatus: isSubscribedRef.current ? 'ACTIVE' : 'INACTIVE',
+            expiresAt: isSubscribedRef.current ? expiresAt : null,
             remainingSeconds: effectiveResult.remainingSeconds ?? effectiveResult.remaining_seconds ?? null,
             remainingDays: effectiveResult.remainingDays ?? effectiveResult.remaining_days ?? null,
             resolveSource: r.resolveSource ?? null,
@@ -714,7 +770,9 @@ export function OsmaniAppProvider({ children }) {
         const detailsPayload = rawDetailsPayload;
         let mergedDetails = null;
         setSubscriptionDetails((prev) => {
-          if (!active) return null;
+          if (authoritativeInactive) return null;
+          if (!isSubscribedRef.current) return prev;
+          if (!detailsPayload) return prev;
           mergedDetails = mergeSubscriptionDetails(prev, detailsPayload);
           return mergedDetails;
         });
@@ -1491,13 +1549,19 @@ export function OsmaniAppProvider({ children }) {
         trialWatchSettings: trialWatchSettingsRef.current,
         authoritativeInactiveConfirmed: authoritativeInactiveRef.current,
         cacheTrustedActive:
-          cacheTrustedActiveRef.current && isSubscribedRef.current && !authoritativeInactiveRef.current,
+          cacheTrustedActiveRef.current && !authoritativeInactiveRef.current,
+        subscriptionCacheHydrateAttempted: subscriptionCacheHydrateAttemptedRef.current,
         lastResolveSource: lastBootResolveRef.current?.resolveSource ?? null,
         subscriptionExpiresAt: subscriptionExpiresAt,
       };
       return { ...base, entitlementPhase: deriveEntitlementPhase(base) };
     },
-    [subscriptionSyncLoaded, trialWatchSettingsLoaded, subscriptionExpiresAt],
+    [
+      subscriptionSyncLoaded,
+      trialWatchSettingsLoaded,
+      subscriptionExpiresAt,
+      subscriptionCacheHydrateAttempted,
+    ],
   );
 
   const awaitPremiumAccessSnapshot = useCallback(async () => {
@@ -1663,17 +1727,12 @@ export function OsmaniAppProvider({ children }) {
           } catch {
             /* ignore */
           }
-          if (role === 'device' || role === 'source') {
-            isSubscribedRef.current = false;
-            setIsSubscribed(false);
-            setSubscriptionExpiresAt(null);
-            setSubscriptionDetails(null);
-            setSubscriptionVersion((v) => v + 1);
-            console.log('[SUBSCRIPTION_REVOKED]', 'optimistic_clear', {
-              at: Date.now(),
-              role,
-            });
-          }
+          // Do NOT optimistic-clear isSubscribed — that flashes KULIPIA before verify.
+          // Authoritative inactive from reverify (below) is the only clear path.
+          console.log('[SUBSCRIPTION_REVOKED]', 'awaiting_authoritative_verify', {
+            at: Date.now(),
+            role,
+          });
         }
 
         const r = await reverifySubscription('sse:subscription_revoked');
@@ -2054,6 +2113,8 @@ export function OsmaniAppProvider({ children }) {
   /** Drop local active subscription immediately — cache, refs, and UI gates. */
   const clearLocalActiveSubscription = useCallback(async (reason = 'manual') => {
     isSubscribedRef.current = false;
+    cacheTrustedActiveRef.current = false;
+    authoritativeInactiveRef.current = true;
     setIsSubscribed(false);
     setSubscriptionExpiresAt(null);
     setSubscriptionDetails(null);
@@ -2226,6 +2287,7 @@ export function OsmaniAppProvider({ children }) {
       subscriptionDetails,
       availablePlans,
       subscriptionVersion,
+      subscriptionCacheHydrateAttempted,
       // canonical names
       reverifySubscription,
       gateForPlayback,
@@ -2292,6 +2354,7 @@ export function OsmaniAppProvider({ children }) {
       subscriptionDetails,
       availablePlans,
       subscriptionVersion,
+      subscriptionCacheHydrateAttempted,
       reverifySubscription,
       gateForPlayback,
       unlockChannels,
