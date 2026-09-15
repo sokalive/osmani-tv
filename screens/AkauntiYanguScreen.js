@@ -229,7 +229,7 @@ export default function AkauntiYanguScreen() {
     [subscriptionDetails, subscriptionExpiresAt],
   );
 
-  // Box 4 display expiry — agrees with Admin plan remaining/duration (presentation only).
+  // Box 4 — authoritative backend expires_at only (never invent today+duration).
   const displayExpiresAt = useMemo(
     () =>
       resolveAccountDisplayExpiresAt(

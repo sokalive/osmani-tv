@@ -46,8 +46,16 @@ if (!account.includes('formatSubscriptionExpiryDate(displayExpiresAt')) {
 } else pass('Box 4 uses date-only expiry formatter');
 
 if (!account.includes('resolveAccountDisplayExpiresAt')) {
-  fail('Box 4 uses Admin-plan-aligned display expiry');
-} else pass('Box 4 uses Admin-plan-aligned display expiry');
+  fail('Box 4 uses resolveAccountDisplayExpiresAt (backend expires_at passthrough)');
+} else pass('Box 4 uses resolveAccountDisplayExpiresAt');
+
+if (!display.includes('expires_beyond_package_duration')) {
+  fail('Box 4 must log anomaly when expires_at exceeds package window');
+} else pass('Box 4 anomaly trace for far expires_at');
+
+if (display.includes('Date.UTC(y, m, d + remainingDays')) {
+  fail('Box 4 must not invent expiry from today+remainingDays');
+} else pass('Box 4 does not invent today+remainingDays expiry');
 
 if (!account.includes('resolveAccountRemainingDays')) fail('Account uses bounded real remaining days');
 else pass('Account uses bounded real remaining days');

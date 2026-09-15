@@ -64,8 +64,8 @@ if (!guard.includes('kifaa hiki pekee')) fail('multi-device soft message require
 else pass('multi-device soft message present');
 
 if (!account.includes('resolveAccountDisplayExpiresAt')) {
-  fail('Account Box 4 must use plan-aligned display expiry');
-} else pass('Account Box 4 uses plan-aligned display expiry');
+  fail('Account Box 4 must use backend expires_at display helper');
+} else pass('Account Box 4 uses backend expires_at display helper');
 
 if (!context.includes('skipped_hydrate_authoritative_inactive')) {
   fail('cache hydrate must skip after authoritative inactive');

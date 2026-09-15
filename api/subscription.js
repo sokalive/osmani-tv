@@ -460,24 +460,20 @@ function pickDurationFromPlansCatalog(body) {
   return null;
 }
 
-/** Canonical package duration from active subscription plan_id/name + plans catalog. */
+/**
+ * Canonical package duration for the active entitlement.
+ * Prefer historical entitlement duration fields so a later catalog change cannot
+ * rewrite an older purchase. Catalog fill only when entitlement duration is absent.
+ */
 function pickPlanDurationDays(body) {
   if (!isPlainObject(body)) return null;
-
-  const catalogDays = pickDurationFromPlansCatalog(body);
-  if (catalogDays != null) return catalogDays;
 
   const nestedSub = pickDataSubscription(body);
   const subRoot = isPlainObject(body.subscription) ? body.subscription : null;
   const data = isPlainObject(body.data) ? body.data : null;
   const plan = pickPlan(body);
 
-  return pickNumber(
-    plan?.duration_days,
-    plan?.durationDays,
-    plan?.days,
-    plan?.plan_duration_days,
-    plan?.planDurationDays,
+  const entitlementDays = pickNumber(
     nestedSub?.plan_duration_days,
     nestedSub?.planDurationDays,
     nestedSub?.duration_days,
@@ -492,7 +488,15 @@ function pickPlanDurationDays(body) {
     data?.durationDays,
     body.duration_days,
     body.durationDays,
+    plan?.duration_days,
+    plan?.durationDays,
+    plan?.days,
+    plan?.plan_duration_days,
+    plan?.planDurationDays,
   );
+  if (entitlementDays != null && entitlementDays > 0) return entitlementDays;
+
+  return pickDurationFromPlansCatalog(body);
 }
 
 function pickAmount(body) {

@@ -45,9 +45,9 @@ const stacked = enrichCanonicalSubscriptionTiming({
 });
 
 const displayDays = resolveDisplayDurationDays(stacked);
-if (displayDays !== 21) {
-  fail(`stacked weekly display days expected 21, got ${displayDays}`);
-} else pass('stacked weekly shows 21-day period not catalog 7');
+if (displayDays !== 7) {
+  fail(`stacked weekly Muda wa Kifurushi must stay package 7, got ${displayDays}`);
+} else pass('stacked weekly Muda wa Kifurushi locked to package 7 (not span 21)');
 
 const progress = computeSubscriptionProgress({
   startedAt: stacked.startedAt,
@@ -126,7 +126,7 @@ const api = fs.readFileSync(path.join(root, 'api', 'subscription.js'), 'utf8');
 if (!api.includes('pickRemainingSeconds')) fail('api must parse remaining_seconds');
 else pass('api parses remaining_seconds');
 
-// Custom admin expiry: 7-day package, 20-day backend period
+// Custom admin expiry: 7-day package, far backend expires_at — package duration stays 7
 const adminLong = enrichCanonicalSubscriptionTiming({
   active: true,
   expiresAt: '2026-07-17T10:00:00.000Z',
@@ -134,11 +134,11 @@ const adminLong = enrichCanonicalSubscriptionTiming({
   planDurationDays: 7,
   remainingSeconds: 20 * 86400,
 });
-if (resolveDisplayDurationDays(adminLong) !== 20) {
-  fail(`admin 20d on 7d package expected 20, got ${resolveDisplayDurationDays(adminLong)}`);
-} else pass('admin extended expiry uses backend span not catalog');
+if (resolveDisplayDurationDays(adminLong) !== 7) {
+  fail(`admin far expiry on 7d package: Muda wa Kifurushi expected 7, got ${resolveDisplayDurationDays(adminLong)}`);
+} else pass('admin far expiry keeps package duration 7 (span not shown as Muda wa Kifurushi)');
 
-// Custom admin expiry: 30-day package, 3-day backend period
+// Custom admin expiry: 30-day package, short remaining — package duration stays 30
 const adminShort = enrichCanonicalSubscriptionTiming({
   active: true,
   expiresAt: '2026-06-30T10:00:00.000Z',
@@ -146,9 +146,9 @@ const adminShort = enrichCanonicalSubscriptionTiming({
   planDurationDays: 30,
   remainingSeconds: 3 * 86400,
 });
-if (resolveDisplayDurationDays(adminShort) !== 3) {
-  fail(`admin 3d on 30d package expected 3, got ${resolveDisplayDurationDays(adminShort)}`);
-} else pass('admin shortened expiry uses backend span not catalog');
+if (resolveDisplayDurationDays(adminShort) !== 30) {
+  fail(`admin short remaining on 30d package: Muda wa Kifurushi expected 30, got ${resolveDisplayDurationDays(adminShort)}`);
+} else pass('admin short remaining keeps package duration 30');
 
 const shortProgress = computeSubscriptionProgress({
   startedAt: adminShort.startedAt,

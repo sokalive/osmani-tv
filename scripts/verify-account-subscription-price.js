@@ -151,14 +151,16 @@ function pickDurationFromPlansCatalog(body) {
 }
 
 function pickPlanDurationDays(body) {
-  const catalog = pickDurationFromPlansCatalog(body);
-  if (catalog != null) return catalog;
-  const plan = isPlainObject(body.plan) ? body.plan : null;
-  return pickNumber(
-    pickDurationFromPlanRow(plan),
+  const nested = isPlainObject(body.subscription) ? body.subscription : null;
+  const entitlement = pickNumber(
+    nested?.plan_duration_days,
+    nested?.planDurationDays,
     body.plan_duration_days,
     body.planDurationDays,
+    pickDurationFromPlanRow(isPlainObject(body.plan) ? body.plan : null),
   );
+  if (entitlement != null) return entitlement;
+  return pickDurationFromPlansCatalog(body);
 }
 
 const STALE_WIKI_PLAN = {
@@ -193,12 +195,33 @@ for (const pkg of PACKAGES) {
   const duration = pickPlanDurationDays({
     plan_id: pkg.id,
     plan_name: pkg.name,
-    plan_duration_days: 7,
+    plan_duration_days: pkg.durationDays,
     plan: STALE_WIKI_PLAN,
     plans: CATALOG,
   });
-  assert.strictEqual(duration, pkg.durationDays, `${pkg.name} catalog duration beats stale plan`);
-  console.log('PASS: catalog duration', pkg.name, '=>', duration);
+  assert.strictEqual(duration, pkg.durationDays, `${pkg.name} entitlement duration wins`);
+  console.log('PASS: entitlement duration', pkg.name, '=>', duration);
+
+  const durationCatalogFill = pickPlanDurationDays({
+    plan_id: pkg.id,
+    plan_name: pkg.name,
+    plans: CATALOG,
+  });
+  assert.strictEqual(
+    durationCatalogFill,
+    pkg.durationDays,
+    `${pkg.name} catalog fills missing entitlement duration`,
+  );
+  console.log('PASS: catalog duration fill', pkg.name, '=>', durationCatalogFill);
+
+  const historicalPreserved = pickPlanDurationDays({
+    plan_id: pkg.id,
+    plan_name: pkg.name,
+    plan_duration_days: 121,
+    plans: CATALOG,
+  });
+  assert.strictEqual(historicalPreserved, 121, `${pkg.name} historical entitlement not shortened by catalog`);
+  console.log('PASS: historical entitlement preserved for', pkg.name, '=>', historicalPreserved);
 
   const stalePrice = pickAmount({
     active: true,
