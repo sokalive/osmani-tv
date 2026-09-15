@@ -1722,7 +1722,9 @@ export async function getTransferStatus(code) {
 }
 
 /* -----------------------------------------------------------------
- * Local cache (UI hint only — never used for trust decisions).
+ * Local cache — soft-trust bootstrap hint for same-device hydrate.
+ * Backend verify remains authoritative; hydrate may set STALE_ACTIVE
+ * until verify confirms or clears. Never resurrects temporally expired rows.
  * ----------------------------------------------------------------- */
 
 export async function readSubscriptionCache() {

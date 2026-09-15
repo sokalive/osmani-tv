@@ -34,6 +34,13 @@ else pass('backend inactive detect');
 if (!boot.includes('purgeUnreliableSubscriptionCache')) fail('purge helper');
 else pass('purge unreliable cache helper');
 
+if (!boot.includes('readSubscriptionCache')) fail('purge must read raw subscription cache');
+else pass('purge reads raw subscription cache');
+
+if (!boot.includes('boot-expired-purge') && !boot.includes('isStaleActiveSubscriptionCache')) {
+  fail('purge must clear temporally expired active cache');
+} else pass('purge clears expired active cache');
+
 const ctx = fs.readFileSync(path.join(root, 'context', 'OsmaniAppContext.jsx'), 'utf8');
 const api = fs.readFileSync(path.join(root, 'api', 'subscription.js'), 'utf8');
 const identity = fs.readFileSync(path.join(root, 'lib', 'deviceIdentity.js'), 'utf8');

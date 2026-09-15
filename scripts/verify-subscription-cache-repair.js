@@ -28,6 +28,15 @@ const stale = { active: true, expiresAt: past, planSnapshot: { expiresAt: past }
 if (!isStaleActiveSubscriptionCache(stale, now)) fail('past expiry without remaining_seconds is stale');
 else pass('detect stale active cache');
 
+const staleLeftoverRem = {
+  active: true,
+  expiresAt: past,
+  planSnapshot: { expiresAt: past, remaining_seconds: 3600 },
+};
+if (!isStaleActiveSubscriptionCache(staleLeftoverRem, now)) {
+  fail('past expiresAt must be stale even with leftover remaining_seconds');
+} else pass('past expiresAt wins over leftover remaining_seconds');
+
 const fresh = {
   active: true,
   expiresAt: future,
@@ -35,6 +44,14 @@ const fresh = {
 };
 if (isStaleActiveSubscriptionCache(fresh, now)) fail('fresh remaining_seconds must not be stale');
 else pass('fresh cache with remaining_seconds is not stale');
+
+const zeroRem = {
+  active: true,
+  expiresAt: future,
+  planSnapshot: { remaining_seconds: 0 },
+};
+if (!isStaleActiveSubscriptionCache(zeroRem, now)) fail('remaining_seconds <= 0 must be stale');
+else pass('zero remaining_seconds is stale');
 
 if (shouldHydrateSubscriptionCache(stale, now)) fail('must not hydrate stale cache');
 else pass('skip hydrate for stale cache');

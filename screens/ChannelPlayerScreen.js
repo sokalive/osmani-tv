@@ -24,6 +24,7 @@ import { reportUserCenterEvent } from '../api/userCenterSync';
 import { resolveAnalyticsChannelId } from '../lib/analyticsChannelId';
 import { clearActiveChannel, setActiveChannel } from '../lib/presenceTracker';
 import {
+  extractExplicitInactiveReason,
   isConfirmedSubscriptionLoss,
   subscriptionTransferSseRole,
 } from '../lib/subscriptionSseGuard';
@@ -796,6 +797,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
           return;
         }
         console.log('[player][gate]', `kill:${label}`, { role });
+        premiumGateSessionRef.current.granted = false;
+        setAccessChecked(true);
         setAccessAllowed(false);
         if (exitPlayerRef.current) {
           void exitPlayerRef.current(`gate_${label}`);
@@ -813,6 +816,51 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       offCompleted();
     };
   }, [channelIsPremium, navigation, reverifySubscription]);
+
+  // When shared entitlement flips inactive mid-session, reconcile without waiting for the 120s tick.
+  // Transport/ERROR_UNKNOWN must not clear sticky; confirmed revoke/transfer (and expiry before
+  // deferred wall-clock) still terminate. Pure post-wall-clock expiry stays deferred.
+  useEffect(() => {
+    if (!channelIsPremium || freeMode || !accessAllowed || isSubscribed) return undefined;
+    if (!premiumGateSessionRef.current.granted) return undefined;
+    let cancelled = false;
+    void (async () => {
+      const r = await reverifySubscription('player-sticky-inactive-reconcile');
+      if (cancelled) return;
+      if (!isConfirmedSubscriptionLoss(r)) return;
+      if (hardWallClockExpiryDoneRef.current) {
+        const reason = String(extractExplicitInactiveReason(r) ?? '').toLowerCase();
+        if (reason === 'expired' || reason === '' || reason === 'null') {
+          console.log('[player][gate]', 'sticky_inactive_deferred_keep_session', {
+            inactiveReason: reason || null,
+          });
+          return;
+        }
+      }
+      if (!premiumGateSessionRef.current.granted) return;
+      premiumGateSessionRef.current.granted = false;
+      setAccessChecked(true);
+      setAccessAllowed(false);
+      console.log('[player][gate]', 'kill:sticky_inactive_reconcile');
+      if (exitPlayerRef.current) {
+        void exitPlayerRef.current('gate_sticky_inactive');
+      } else {
+        try {
+          navigation.goBack();
+        } catch {}
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    channelIsPremium,
+    freeMode,
+    accessAllowed,
+    isSubscribed,
+    navigation,
+    reverifySubscription,
+  ]);
 
   // Admin emergency: stop all playback surfaces, portrait, then leave player so global Emergency modal shows.
   useEffect(() => {
@@ -1652,13 +1700,22 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   ]);
 
   useEffect(() => {
-    if (!channelIsPremium || freeMode || !accessAllowed || !isSubscribed) return undefined;
+    if (!channelIsPremium || freeMode || !accessAllowed) return undefined;
     const id = setInterval(() => {
-      if (hardWallClockExpiryDoneRef.current) return;
       void (async () => {
+        if (!premiumGateSessionRef.current.granted) return;
         const r = await reverifySubscription('player-expiry-sync');
         if (!isConfirmedSubscriptionLoss(r)) return;
-        if (!premiumGateSessionRef.current.granted) return;
+        // Deferred wall-clock: keep current session on pure expiry; still honor revoke/transfer.
+        if (hardWallClockExpiryDoneRef.current) {
+          const reason = String(extractExplicitInactiveReason(r) ?? '').toLowerCase();
+          if (reason === 'expired' || reason === '' || reason === 'null') {
+            console.log('[player][gate]', 'expiry_sync_deferred_keep_session', {
+              inactiveReason: reason || null,
+            });
+            return;
+          }
+        }
         premiumGateSessionRef.current.granted = false;
         setAccessChecked(true);
         setAccessAllowed(false);
@@ -1668,7 +1725,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       })();
     }, 120 * 1000);
     return () => clearInterval(id);
-  }, [channelIsPremium, freeMode, accessAllowed, isSubscribed, reverifySubscription]);
+  }, [channelIsPremium, freeMode, accessAllowed, reverifySubscription]);
 
   useEffect(() => {
     if (!accessAllowed || !uri) return undefined;
