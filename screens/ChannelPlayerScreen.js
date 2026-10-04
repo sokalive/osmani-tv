@@ -41,6 +41,12 @@ import {
   resolveHlsPlaybackManifestUrl,
   shouldUseDirectHlsSegments,
 } from '../lib/hlsPlayback';
+import {
+  guardExoManifestAgainstCleartext,
+  isCleartextHttpUrl,
+  isStreamProxyPlaybackUrl,
+} from '../lib/exoPlaybackBridge';
+import { isStreamProxyUrl } from '../lib/mediaDelivery';
 import { devLog } from '../lib/devLog';
 import { STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
@@ -294,8 +300,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       {
         deliveryMode: channel?.streamDeliveryMode,
         directStreamUrl: channel?.directStreamUrl,
-        proxyFallbackUrl: channel?.proxyFallbackUrl,
+        proxyFallbackUrl: channel?.proxyFallbackUrl || channel?.playbackUrl,
         forceProxy: hlsForceProxy,
+        playerType: normalizedPlayerType,
       },
     );
   }, [
@@ -308,7 +315,9 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     channel?.streamDeliveryMode,
     channel?.directStreamUrl,
     channel?.proxyFallbackUrl,
+    channel?.playbackUrl,
     hlsForceProxy,
+    normalizedPlayerType,
   ]);
 
   const useDirectHlsSegments = useMemo(() => {
@@ -351,16 +360,36 @@ export default function ChannelPlayerScreen({ route, navigation }) {
    */
   const nativeVideoSource = useMemo(() => {
     if (!useNativePlayer || !uri) return null;
+    const proxyGuard =
+      channel?.proxyFallbackUrl || channel?.playbackUrl || channel?.playback_url || '';
     if (looksLikeHlsPlaybackUri(uri)) {
-      const u = hlsManifestUrl || uri;
+      const rawManifest = hlsManifestUrl || uri;
+      const u =
+        normalizedPlayerType === 'exo'
+          ? guardExoManifestAgainstCleartext(rawManifest, proxyGuard)
+          : rawManifest;
       return {
         uri: u,
         overrideFileExtensionAndroid: 'm3u8',
       };
     }
     if (isInstructionVideo) return { uri };
-    return { uri, headers };
-  }, [useNativePlayer, uri, hlsManifestUrl, headers, isInstructionVideo]);
+    const guarded =
+      normalizedPlayerType === 'exo'
+        ? guardExoManifestAgainstCleartext(uri, proxyGuard)
+        : uri;
+    return { uri: guarded, headers };
+  }, [
+    useNativePlayer,
+    uri,
+    hlsManifestUrl,
+    headers,
+    isInstructionVideo,
+    normalizedPlayerType,
+    channel?.proxyFallbackUrl,
+    channel?.playbackUrl,
+    channel?.playback_url,
+  ]);
 
   const hlsWebViewSource = useMemo(() => {
     if (!useHlsWebView || !hlsManifestUrl) return null;
@@ -666,6 +695,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!uri) return;
+    const exoUri = nativeVideoSource?.uri || hlsManifestUrl || uri;
     logPlaybackDiagnostics('route', {
       route: playbackRoute,
       api_playerType: normalizedPlayerType,
@@ -681,6 +711,18 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         embedWebViewSource?.headers && Object.keys(embedWebViewSource.headers).length,
       ),
     });
+    if (normalizedPlayerType === 'exo' && useNativePlayer) {
+      console.log('[EXO_PLAYBACK_BRIDGE]', {
+        playerType: 'exo',
+        playbackUrl: channel?.playbackUrl || channel?.playback_url || null,
+        proxyFallbackUrl: channel?.proxyFallbackUrl || null,
+        finalExoUri: exoUri,
+        isStreamProxy: isStreamProxyUrl(exoUri) || isStreamProxyPlaybackUrl(exoUri),
+        isCleartextHttp: isCleartextHttpUrl(exoUri),
+        playback_source: channel?.playbackSource || channel?.playback_source || null,
+        streamDeliveryMode: channel?.streamDeliveryMode ?? null,
+      });
+    }
   }, [
     uri,
     normalizedPlayerType,
@@ -688,10 +730,16 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     hlsManifestUrl,
     hlsForceProxy,
     channel?.streamDeliveryMode,
+    channel?.playbackUrl,
+    channel?.playback_url,
+    channel?.proxyFallbackUrl,
+    channel?.playbackSource,
+    channel?.playback_source,
     useDirectHlsSegments,
     useNativePlayer,
     embedWebViewSource?.headers,
     embedTargetUri,
+    nativeVideoSource?.uri,
   ]);
 
   // Keep local channel snapshot in sync when route params change.
