@@ -405,6 +405,10 @@ async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
   return {
     order_id: orderId,
     expiresInSeconds: Number.isFinite(expiresInSeconds) ? expiresInSeconds : undefined,
+    pin_wait_allowed: body.pin_wait_allowed,
+    provider_initiation: body.provider_initiation ?? body.providerInitiation ?? null,
+    provider_order_id: body.provider_order_id ?? body.providerOrderId ?? null,
+    checkout_phase: body.checkout_phase ?? body.checkoutPhase ?? null,
   };
 }
 

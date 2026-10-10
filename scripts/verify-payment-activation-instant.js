@@ -37,12 +37,14 @@ let computePollIntervalMs;
 let APP_WAITING_STATE;
 let shouldAcceptWaitingStateUpdate;
 let isPrematureFailedPaymentStatus;
+let sonicpesaPinCountdownAllowed;
 try {
   ({
     computePollIntervalMs,
     APP_WAITING_STATE,
     shouldAcceptWaitingStateUpdate,
     isPrematureFailedPaymentStatus,
+    sonicpesaPinCountdownAllowed,
   } = requireCjs('../lib/paymentWaitingState.js'));
 } catch (e) {
   fail(`paymentWaitingState require: ${e.message}`);
@@ -213,6 +215,43 @@ if (
 ) {
   fail('FAILED with provider_order_id must not be premature');
 } else pass('real FAILED with provider txn is terminal');
+
+if (
+  isPrematureFailedPaymentStatus(
+    {
+      status: 'FAILED',
+      appWaitingState: 'FAILED',
+      retryable: true,
+      raw: { provider_initiation: 'rejected_retryable', checkout_phase: 'retryable_rejection' },
+    },
+    1000,
+  )
+) {
+  fail('HTTP 429 rejection must not keep the PIN countdown');
+} else pass('retryable 429 rejection is not a PIN wait');
+
+if (!waiting.includes('sonicpesaPinCountdownAllowed')) fail('pin countdown helper missing');
+else pass('pin countdown helper present');
+if (!modal.includes('sonicpesaPinCountdownAllowed(created)')) fail('PremiumModal must gate SonicPesa PIN countdown');
+else pass('PremiumModal gates SonicPesa PIN countdown');
+
+if (typeof sonicpesaPinCountdownAllowed === 'function') {
+  if (sonicpesaPinCountdownAllowed({ provider_initiation: 'pending', order_id: 'osm_sp_x' })) {
+    fail('pending initiation must not open PIN countdown');
+  } else pass('pending initiation does not open PIN countdown');
+  if (
+    !sonicpesaPinCountdownAllowed({
+      pin_wait_allowed: true,
+      provider_initiation: 'accepted',
+      provider_order_id: 'sp_ok',
+    })
+  ) {
+    fail('accepted provider reference must open PIN countdown');
+  } else pass('accepted provider reference opens PIN countdown');
+  if (sonicpesaPinCountdownAllowed({ pin_wait_allowed: false, provider_initiation: 'rejected_retryable' })) {
+    fail('429 result must not open PIN countdown');
+  } else pass('429 result does not open PIN countdown');
+}
 
 if (process.exitCode) process.exit(1);
 console.log('\n[verify-payment-activation-instant] ok');

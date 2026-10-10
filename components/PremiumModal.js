@@ -33,6 +33,7 @@ import {
   isPaymentCreateOrderTimeout,
   PhoneSubscriptionConflictError,
   DeviceSubscriptionConflictError,
+  CheckoutPaymentError,
 } from '../lib/paymentCheckoutErrors';
 import {
   readCachedCheckoutProvider,
@@ -76,6 +77,7 @@ import {
   computePollIntervalMs,
   isPrematureFailedPaymentStatus,
   isTerminalWaitingState,
+  sonicpesaPinCountdownAllowed,
   mapWaitingStateToProgressStep,
   PaymentReconcileGuard,
 } from '../lib/paymentWaitingState';
@@ -1406,11 +1408,22 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         planId: selectedPlan.id,
         deviceId: String(deviceId).slice(0, 8),
       });
-      const { order_id: oid, expiresInSeconds } = await startPayment(payPayload);
+      const created = await startPayment(payPayload);
       if (doneRef.current) return;
+      const oid = created?.order_id;
+      const expiresInSeconds = created?.expiresInSeconds;
       const orderIdValue = oid != null ? String(oid).trim() : '';
       if (!orderIdValue) {
         throw new Error('Missing order_id from server');
+      }
+      if (activeProvider === 'sonicpesa' && !sonicpesaPinCountdownAllowed(created)) {
+        throw new CheckoutPaymentError(
+          'Malipo hayajaanzishwa. Subiri kidogo kisha ujaribu tena.',
+          {
+            provider: 'sonicpesa',
+            backendReason: String(created?.provider_initiation || created?.checkout_phase || 'pin_wait_not_allowed'),
+          },
+        );
       }
       // Real order only — enter waiting / STK confirmation UI now.
       checkoutSessionRef.current = 'waiting';
