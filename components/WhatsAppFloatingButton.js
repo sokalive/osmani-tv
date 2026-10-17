@@ -3,6 +3,7 @@ import { Linking, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getWhatsappSettings } from '../api';
+import { unwrapSettingsEvent } from '../lib/popupSettingsNormalize';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 
 const DEFAULT_SETTINGS = {
@@ -31,30 +32,53 @@ export default function WhatsAppFloatingButton() {
 
   useEffect(() => {
     let cancelled = false;
-    const load = () => getWhatsappSettings()
-      .then((payload) => {
-        if (!cancelled) applySettings(payload);
-      })
-      .catch((e) => {
-        console.log('[WHATSAPP_UPDATE]', 'fetch_failed', e?.message ?? e);
-      });
-    load();
+    let generation = 0;
+
+    const load = (force) => {
+      const token = generation + 1;
+      generation = token;
+      const run = async () => {
+        let lastError = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          if (cancelled || token !== generation) return;
+          try {
+            const payload = await getWhatsappSettings({ force: force === true });
+            if (cancelled || token !== generation) return;
+            applySettings(payload);
+            return;
+          } catch (e) {
+            lastError = e;
+            if (attempt < 2) {
+              await new Promise((resolve) => setTimeout(resolve, 400 * 2 ** attempt));
+            }
+          }
+        }
+        if (!cancelled && token === generation) {
+          console.log('[WHATSAPP_UPDATE]', 'fetch_failed', lastError?.message ?? lastError);
+        }
+      };
+      void run();
+    };
+
+    load(false);
 
     const unsubscribe = subscribeRealtimeEvent('whatsapp_settings_changed', (payload) => {
-      const inner =
-        payload && typeof payload === 'object' && payload.payload && typeof payload.payload === 'object'
-          ? payload.payload
-          : payload;
+      const inner = unwrapSettingsEvent(payload);
+      generation += 1;
       if (inner && typeof inner === 'object' && Object.prototype.hasOwnProperty.call(inner, 'enabled')) {
         applySettings(inner);
-      } else {
-        load();
       }
+      load(true);
+    });
+    const unsubscribeReconnect = subscribeRealtimeEvent('__sync_stream_connected', () => {
+      load(true);
     });
 
     return () => {
       cancelled = true;
+      generation += 1;
       unsubscribe();
+      unsubscribeReconnect();
     };
   }, [applySettings]);
 

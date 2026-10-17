@@ -274,6 +274,7 @@ export function OsmaniAppProvider({ children }) {
   const verifyInFlightRef = useRef(false);
   const refreshInFlightRef = useRef(0);
   const refreshPromiseRef = useRef(null);
+  const refreshGenRef = useRef(0);
   /** Prevents cold-start disk cache hydrate from overwriting fresher catalog network sync. */
   const catalogNetworkHydratedRef = useRef({ channels: false, banners: false });
   const verifyPromiseRef = useRef(null);
@@ -1177,6 +1178,10 @@ export function OsmaniAppProvider({ children }) {
       return refreshPromiseRef.current;
     }
 
+    const gen = refreshGenRef.current + 1;
+    refreshGenRef.current = gen;
+    const isStale = () => gen !== refreshGenRef.current;
+
     const run = (async () => {
     refreshInFlightRef.current += 1;
     const shouldShowLoading =
@@ -1198,13 +1203,14 @@ export function OsmaniAppProvider({ children }) {
           'startup-trial-watch',
         ).catch(() => null),
       ]);
-      if (forceNetwork && bannersResult == null) {
+      if (forceNetwork && bannersResult == null && !isStale()) {
         bannersResult = await withTimeout(
           getBanners({ force: true }),
           STARTUP_FETCH_TIMEOUT_MS,
           'startup-banners-retry',
         ).catch(() => null);
       }
+      if (isStale()) return;
       if (flags && !skipSettingsFromHttp) {
         setSettings((prev) => ({ ...prev, ...flags }));
       }
@@ -1241,6 +1247,7 @@ export function OsmaniAppProvider({ children }) {
       }
       setIsOffline(false);
     } catch (e) {
+      if (isStale()) return;
       let catalogCount = rawChannelsRef.current.length;
       if (catalogCount === 0 && preserveDataOnError) {
         const cached = await readChannelsCache();
@@ -1276,7 +1283,7 @@ export function OsmaniAppProvider({ children }) {
         trialWatchReadyResolveRef.current(true);
         trialWatchReadyResolveRef.current = null;
       }
-      if (refreshInFlightRef.current === 0) {
+      if (!isStale() && refreshInFlightRef.current === 0) {
         setLoading(false);
       }
     }

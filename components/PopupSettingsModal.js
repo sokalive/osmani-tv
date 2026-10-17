@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Modal,
   Platform,
@@ -11,11 +11,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getPopupSettings } from '../api';
+import { normalizePopupSettings, popupContentKey, unwrapSettingsEvent } from '../lib/popupSettingsNormalize';
 import { subscribeRealtimeEvent } from '../lib/realtimeSync';
 
-const STORAGE_KEY = 'osmani_popup_settings_seen';
-const VALID_MODES = new Set(['show_once', 'always_show', 'disabled']);
+const STORAGE_KEY_PREFIX = 'osmani_popup_settings_seen:';
 const DISCLAIMER_LABEL = 'Tahadhari';
+const POPUP_FETCH_ATTEMPTS = 3;
 
 const DEFAULT_POPUP = {
   mode: 'disabled',
@@ -27,23 +28,22 @@ const DEFAULT_POPUP = {
 
 function normalizePopup(payload) {
   if (!payload || typeof payload !== 'object') return DEFAULT_POPUP;
-  const mode = VALID_MODES.has(payload.mode) ? payload.mode : 'disabled';
-  return {
-    ...payload,
-    mode,
-    title: typeof payload.title === 'string' ? payload.title : '',
-    greeting: typeof payload.greeting === 'string' ? payload.greeting : '',
-    bullet_points: Array.isArray(payload.bullet_points) ? payload.bullet_points : [],
-    disclaimer: typeof payload.disclaimer === 'string' ? payload.disclaimer : '',
-  };
+  return normalizePopupSettings(payload);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export default function PopupSettingsModal() {
   const [settings, setSettings] = useState(DEFAULT_POPUP);
   const [visible, setVisible] = useState(false);
+  const generationRef = useRef(0);
 
-  const applySettings = useCallback(async (payload, reason) => {
+  const applySettings = useCallback(async (payload, reason, token) => {
+    if (token != null && token !== generationRef.current) return;
     const next = normalizePopup(payload);
+    if (token != null && token !== generationRef.current) return;
     console.log('[POPUP_UPDATE]', reason, next);
     setSettings(next);
 
@@ -58,43 +58,75 @@ export default function PopupSettingsModal() {
     }
 
     if (next.mode === 'show_once') {
-      const seen = await AsyncStorage.getItem(STORAGE_KEY);
+      const seen = await AsyncStorage.getItem(`${STORAGE_KEY_PREFIX}${popupContentKey(next)}`);
+      if (token != null && token !== generationRef.current) return;
       setVisible(seen !== '1');
     }
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    const load = () => getPopupSettings()
-      .then((payload) => {
-        if (!cancelled) void applySettings(payload, 'fetch');
-      })
-      .catch((e) => {
-        console.log('[POPUP_UPDATE]', 'fetch_failed', e?.message ?? e);
-      });
-    load();
 
-    const unsubscribe = subscribeRealtimeEvent('popup_settings_changed', (payload) => {
-      const inner =
-        payload && typeof payload === 'object' && payload.payload && typeof payload.payload === 'object'
-          ? payload.payload
-          : payload;
-      if (inner && typeof inner === 'object' && VALID_MODES.has(inner.mode)) {
-        void applySettings(inner, 'sse');
-      } else {
-        load();
+    const bump = () => {
+      generationRef.current += 1;
+      return generationRef.current;
+    };
+
+    const fetchWithToken = (token, reason, force) => {
+      const run = async () => {
+        let lastError = null;
+        for (let attempt = 0; attempt < POPUP_FETCH_ATTEMPTS; attempt += 1) {
+          if (cancelled || token !== generationRef.current) return;
+          try {
+            const payload = await getPopupSettings({ force: force === true });
+            if (cancelled || token !== generationRef.current) return;
+            await applySettings(payload, reason, token);
+            return;
+          } catch (e) {
+            lastError = e;
+            if (attempt < POPUP_FETCH_ATTEMPTS - 1) {
+              await sleep(400 * 2 ** attempt);
+            }
+          }
+        }
+        if (!cancelled && token === generationRef.current) {
+          console.log('[POPUP_UPDATE]', 'fetch_failed', lastError?.message ?? lastError);
+        }
+      };
+      void run();
+    };
+
+    const load = (reason, force) => {
+      fetchWithToken(bump(), reason, force);
+    };
+
+    load('fetch', false);
+
+    const onPopup = (payload) => {
+      const inner = unwrapSettingsEvent(payload);
+      const token = bump();
+      if (inner && typeof inner.mode === 'string' && inner.mode.trim()) {
+        void applySettings(inner, 'sse', token);
       }
+      fetchWithToken(token, 'sse-refetch', true);
+    };
+
+    const unsubscribe = subscribeRealtimeEvent('popup_settings_changed', onPopup);
+    const unsubscribeReconnect = subscribeRealtimeEvent('__sync_stream_connected', () => {
+      load('sse-reconnect', true);
     });
 
     return () => {
       cancelled = true;
+      generationRef.current += 1;
       unsubscribe();
+      unsubscribeReconnect();
     };
   }, [applySettings]);
 
   const close = useCallback(() => {
     if (settings.mode === 'show_once') {
-      AsyncStorage.setItem(STORAGE_KEY, '1').catch(() => {});
+      AsyncStorage.setItem(`${STORAGE_KEY_PREFIX}${popupContentKey(settings)}`, '1').catch(() => {});
     }
     setVisible(false);
   }, [settings.mode]);

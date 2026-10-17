@@ -55,16 +55,22 @@ export async function getBanners(opts = {}) {
   return getCachedBanners(() => fetchBannersFromNetwork(opts), opts);
 }
 
-export async function getWhatsappSettings() {
-  const body = await fetchAdminApiJson('/api/whatsapp-settings', { tag: 'whatsapp-settings' });
+export async function getWhatsappSettings(opts = {}) {
+  const body = await fetchAdminApiJson('/api/whatsapp-settings', {
+    tag: 'whatsapp-settings',
+    ...(opts.force ? { cacheBust: true } : {}),
+  });
   if (!body || typeof body !== 'object') {
     throw new Error('Could not load WhatsApp settings (invalid response)');
   }
   return body;
 }
 
-export async function getPopupSettings() {
-  const body = await fetchAdminApiJson('/api/popup-settings', { tag: 'popup-settings' });
+export async function getPopupSettings(opts = {}) {
+  const body = await fetchAdminApiJson('/api/popup-settings', {
+    tag: 'popup-settings',
+    ...(opts.force ? { cacheBust: true } : {}),
+  });
   if (!body || typeof body !== 'object') {
     throw new Error('Could not load popup settings (invalid response)');
   }

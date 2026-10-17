@@ -132,10 +132,11 @@ function isExpiryValid(expiresAt) {
 /**
  * @returns {Promise<unknown[]>}
  */
-export async function getPlans() {
+export async function getPlans(opts = {}) {
   const body = await fetchAdminApiJson('/api/plans', {
     tag: 'payment-plans',
     timeoutMs: PAYMENT_CATALOG_TIMEOUT_MS,
+    ...(opts.cacheBust ? { cacheBust: true } : {}),
   });
   if (Array.isArray(body)) return body;
   if (body && Array.isArray(body.plans)) return body.plans;
