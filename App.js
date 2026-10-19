@@ -114,11 +114,14 @@ import {
 } from './lib/manualGiftAck';
 import BannerCarousel, { BannerCarouselSkeleton } from './components/BannerCarousel';
 import {
+  activeCategoryPill,
+  catalogShowsHomeBanner,
   channelAppearsOnNavigatorTab,
   channelIsFeatured,
   channelIsPopular,
+  filterCatalogChannels,
   getChannelTabKeys,
-  matchesHomePillFilter,
+  isCategorySpecificCatalog,
 } from './lib/channelTabVisibility';
 
 const Tab = createBottomTabNavigator();
@@ -869,13 +872,11 @@ function ChannelCatalogScreen({
 
   const displayChannels = useMemo(() => {
     if (maintenanceMode) return [];
-    let rows = rawChannels.filter(channelVisibleInApp);
-    rows = rows.filter((r) => channelAppearsOnNavigatorTab(r, navigatorTabKey));
-    if (selectedFilter === 'Trending') {
-      rows = rows.filter((r) => Boolean(r.isLive ?? r.live));
-    } else if (selectedFilter === 'Sports' || selectedFilter === 'Tamthilia') {
-      rows = rows.filter((r) => matchesHomePillFilter(r, selectedFilter));
-    }
+    const rows = filterCatalogChannels(
+      rawChannels.filter(channelVisibleInApp),
+      navigatorTabKey,
+      selectedFilter,
+    );
     return rows.map((raw, i) =>
       mapApiChannelToCard(raw, i, freeMode, serverHealth),
     );
@@ -895,6 +896,28 @@ function ChannelCatalogScreen({
   const catalogBlocked = useMemo(
     () => isCatalogInteractionBlocked(isOffline, displayChannels.length),
     [isOffline, displayChannels.length],
+  );
+
+  const showHomeBanner = catalogShowsHomeBanner(navigatorTabKey, selectedFilter);
+  const categoryViewActive = isCategorySpecificCatalog(navigatorTabKey, selectedFilter);
+
+  const onSelectCategory = useCallback(
+    (filter) => {
+      if (filter === 'Sports') {
+        if (navigatorTabKey !== 'sports') navigation.navigate('Sports');
+        return;
+      }
+      if (filter === 'Tamthilia') {
+        if (navigatorTabKey !== 'tamthilia') navigation.navigate('Tamthilia');
+        return;
+      }
+      if (filter === 'Zote' && navigatorTabKey !== 'home') {
+        navigation.navigate('Home');
+        return;
+      }
+      setSelectedFilter(filter);
+    },
+    [navigation, navigatorTabKey],
   );
 
   const bannerSlides = useMemo(() => {
@@ -1273,9 +1296,9 @@ function ChannelCatalogScreen({
           </View>
         </View>
 
-        {loading && bannerSlides.length === 0 ? (
+        {showHomeBanner && loading && bannerSlides.length === 0 ? (
           <BannerCarouselSkeleton slideWidth={CAROUSEL_SLIDE_WIDTH} />
-        ) : bannerSlides.length > 0 ? (
+        ) : showHomeBanner && bannerSlides.length > 0 ? (
           <BannerCarousel
             resetKey={refreshKey}
             slides={bannerSlides}
@@ -1307,11 +1330,11 @@ function ChannelCatalogScreen({
           contentContainerStyle={styles.filterRow}
         >
           {filters.map((filter) => {
-            const isSelected = selectedFilter === filter;
+            const isSelected = activeCategoryPill(navigatorTabKey, selectedFilter) === filter;
             return (
               <Pressable
                 key={filter}
-                onPress={() => setSelectedFilter(filter)}
+                onPress={() => onSelectCategory(filter)}
                 style={[
                   styles.filterPill,
                   { backgroundColor: isSelected ? COLORS.filterSelected : COLORS.filterPill },
@@ -1397,12 +1420,15 @@ function ChannelCatalogScreen({
     ),
     [
       selectedFilter,
+      showHomeBanner,
+      onSelectCategory,
       navigatorTabKey,
       popularChannelCards,
       featuredChannelCards,
       handleRefresh,
       displayChannels.length,
       bannerSlides,
+      loading,
       channelsPendingInitialLoad,
       error,
       refreshKey,
@@ -1433,8 +1459,13 @@ function ChannelCatalogScreen({
     if (catalogBlocked) {
       return <Text style={styles.channelsEmptyText}>Unganisha intaneti kuendelea kupata taarifa mpya.</Text>;
     }
+    if (categoryViewActive) {
+      return (
+        <Text style={styles.channelsEmptyText}>Hakuna chaneli katika kundi hili.</Text>
+      );
+    }
     return <Text style={styles.channelsEmptyText}>Hakuna chaneli bado.</Text>;
-  }, [channelsPendingInitialLoad, maintenanceMode, catalogBlocked]);
+  }, [channelsPendingInitialLoad, maintenanceMode, catalogBlocked, categoryViewActive]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }} edges={['top']}>
