@@ -10,6 +10,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { PAYMENT } from '../lib/paymentFlowTheme';
+import { formatPinCountdown } from '../lib/sonicpesaAttemptCooldown';
 
 const ACCENT = PAYMENT.accent;
 const TEXT_MUTED = PAYMENT.textMuted;
@@ -22,10 +23,7 @@ const PROGRESS_STEPS = [
 ];
 
 function formatCountdown(totalSeconds) {
-  const s = Math.max(0, Math.floor(totalSeconds));
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${m}:${sec.toString().padStart(2, '0')}`;
+  return formatPinCountdown(totalSeconds);
 }
 
 function statusLabel(step, appWaitingState) {

@@ -68,6 +68,7 @@ import { getDeviceIdentity } from '../lib/deviceIdentity';
 import { reportPaymentTelemetry } from '../api/userCenterSync';
 import { cacheSecurityPhone } from '../lib/security/securityPhone';
 import EmergencyModal from './EmergencyModal';
+import SonicpesaAttemptCooldownModal from './SonicpesaAttemptCooldownModal';
 import PaymentWaitingStep from './PaymentWaitingStep';
 import PaymentSuccessStep from './PaymentSuccessStep';
 import { buildPaymentSuccessDetails } from '../lib/paymentSuccessDisplay';
@@ -81,6 +82,17 @@ import {
   mapWaitingStateToProgressStep,
   PaymentReconcileGuard,
 } from '../lib/paymentWaitingState';
+import {
+  SONICPESA_PIN_WAIT_SEC,
+  cooldownFromCheckoutError,
+  sonicpesaCheckoutGate,
+  sonicpesaInitFailurePresentation,
+} from '../lib/sonicpesaAttemptCooldown';
+import {
+  clearSonicpesaAttemptCooldown,
+  readSonicpesaAttemptCooldown,
+  writeSonicpesaAttemptCooldown,
+} from '../lib/sonicpesaAttemptCooldownStore';
 import {
   ACTIVE_SUBSCRIPTION_PAYMENT_BLOCK_MESSAGE,
   ACTIVE_SUBSCRIPTION_PAYMENT_BLOCK_TITLE,
@@ -142,7 +154,7 @@ const MODAL_MAX_HEIGHT = Math.round(WINDOW_HEIGHT * 0.85);
 const POLL_MS = 1500;
 /** Aggressive activation window after provider confirms (handoff: first 2 min). */
 const ACTIVATION_AGGRESSIVE_MS = 120_000;
-/** Default STK wait window once a real order_id exists. */
+/** Default STK wait window once a real order_id exists. SonicPesa PIN wait is 02:00. */
 const CREATE_ORDER_WAIT_SEC = 180;
 /** Hard cap: Lipia spinner must never exceed this even if create-order hangs unexpectedly. */
 const LIPIA_SUBMITTING_WATCHDOG_MS = 50_000;
@@ -244,6 +256,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [closeAfterGuardDialog, setCloseAfterGuardDialog] = useState(false);
   const [paymentProgressStep, setPaymentProgressStep] = useState(1);
   const [appWaitingState, setAppWaitingState] = useState(APP_WAITING_STATE.PAYMENT_PENDING);
+  const [attemptCooldownVisible, setAttemptCooldownVisible] = useState(false);
+  const [sonicpesaNotice, setSonicpesaNotice] = useState('');
 
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -261,6 +275,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   /** Wall-clock when payment SUCCESS / entitlement first observed — for true confirm→unlock latency. */
   const paymentConfirmedAtRef = useRef(0);
   const checkoutProviderRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const closeSseRef = useRef(null);
+  onCloseRef.current = onClose;
   /** Mirrors step for async gates (payment-submit-gate must not use a stale closure). */
   const stepRef = useRef(1);
   /**
@@ -316,6 +333,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       sseRef.current = null;
     }
   }, []);
+  closeSseRef.current = closeSse;
 
   const showPaymentEntryDialog = useCallback((kind) => {
     // Never cover waiting / Hongera after payment checkout has started or finished.
@@ -1069,9 +1087,16 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           // Countdown exhausted — leave waiting UI; do not spin forever.
           if (prev === 1 && !doneRef.current) {
             queueMicrotask(() => {
-              if (!doneRef.current) {
-                handleFailed('Muda wa malipo umeisha. Kama umelipa, subiri kidogo au fungua tena.');
+              if (doneRef.current) return;
+              if (checkoutProviderRef.current === 'sonicpesa') {
+                doneRef.current = true;
+                checkoutSessionRef.current = 'idle';
+                clearTimers();
+                closeSseRef.current?.();
+                onCloseRef.current?.();
+                return;
               }
+              handleFailed('Muda wa malipo umeisha. Kama umelipa, subiri kidogo au fungua tena.');
             });
           }
           return 0;
@@ -1251,7 +1276,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   ]);
 
   const handleCancel = () => {
+    doneRef.current = true;
+    checkoutSessionRef.current = 'idle';
     clearTimers();
+    closeSse();
     onClose?.();
   };
 
@@ -1402,6 +1430,14 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         identity_candidates: identity.identityCandidates ?? [],
       };
       void cacheSecurityPhone(payPayload.phone);
+      if (activeProvider === 'sonicpesa') {
+        const storedCooldown = await readSonicpesaAttemptCooldown();
+        const gate = sonicpesaCheckoutGate(storedCooldown, Date.now());
+        if (gate.action === 'block_local') {
+          setAttemptCooldownVisible(true);
+          return;
+        }
+      }
       const startPayment = resolveCheckoutStartPayment(activeProvider);
       console.log('[PremiumModal]', 'payment_start', {
         provider: activeProvider,
@@ -1425,13 +1461,19 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           },
         );
       }
+      if (activeProvider === 'sonicpesa') {
+        await clearSonicpesaAttemptCooldown();
+      }
       // Real order only — enter waiting / STK confirmation UI now.
       checkoutSessionRef.current = 'waiting';
       setOrderId(orderIdValue);
+      setSonicpesaNotice('');
       const wait =
-        typeof expiresInSeconds === 'number' && expiresInSeconds > 0
-          ? Math.floor(expiresInSeconds)
-          : CREATE_ORDER_WAIT_SEC;
+        activeProvider === 'sonicpesa'
+          ? SONICPESA_PIN_WAIT_SEC
+          : typeof expiresInSeconds === 'number' && expiresInSeconds > 0
+            ? Math.floor(expiresInSeconds)
+            : CREATE_ORDER_WAIT_SEC;
       setRemainingSeconds(wait);
       setWaitingDeviceId(deviceId);
       setStep(3);
@@ -1522,6 +1564,11 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           plan_id: selectedPlan?.id ?? null,
           provider: activeProvider,
         });
+        if (activeProvider === 'sonicpesa') {
+          setSonicpesaNotice(CREATE_ORDER_TIMEOUT_MESSAGE);
+          setStep(2);
+          return;
+        }
         setFailureReason(CREATE_ORDER_TIMEOUT_MESSAGE);
         setStep(5);
         return;
@@ -1556,6 +1603,20 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         provider: activeProvider,
         reason: e?.backendReason ?? userMsg,
       });
+      const failurePresentation = sonicpesaInitFailurePresentation(activeProvider, e);
+      if (failurePresentation === 'cooldown_popup') {
+        const cooldown = cooldownFromCheckoutError(e);
+        if (cooldown) await writeSonicpesaAttemptCooldown(cooldown);
+        setSonicpesaNotice('');
+        setAttemptCooldownVisible(true);
+        setStep(2);
+        return;
+      }
+      if (failurePresentation === 'payment_screen') {
+        setSonicpesaNotice(alertMsg);
+        setStep(2);
+        return;
+      }
       setFailureReason(alertMsg);
       setStep(5);
     } finally {
@@ -1735,6 +1796,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                           <PaymentBrandMark />
                           <Text style={[styles.titleCentered, styles.step2Title]}>Weka Namba ya Simu</Text>
                           <Text style={styles.subtitleNetworks}>Tigo, M-Pesa, Airtel, HaloPesa</Text>
+                          {sonicpesaNotice ? (
+                            <Text style={styles.sonicpesaNotice}>{sonicpesaNotice}</Text>
+                          ) : null}
                           <View style={[styles.inputWrap, styles.step2GapClear]}>
                             <Ionicons
                               name="call"
@@ -1850,7 +1914,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         appWaitingState={appWaitingState}
                         ringSpin={ringSpin}
                         checkoutProvider={checkoutProvider}
-                        totalWaitSeconds={CREATE_ORDER_WAIT_SEC}
+                        totalWaitSeconds={
+                          checkoutProvider === 'sonicpesa' ? SONICPESA_PIN_WAIT_SEC : CREATE_ORDER_WAIT_SEC
+                        }
                         onSupportPress={handlePaymentSupport}
                       />
                     )}
@@ -1907,6 +1973,10 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         </View>
       </KeyboardAvoidingView>
     </Modal>
+    <SonicpesaAttemptCooldownModal
+      visible={attemptCooldownVisible}
+      onDismiss={() => setAttemptCooldownVisible(false)}
+    />
     <EmergencyModal
       visible={phoneGuardVisible}
       title={phoneGuardTitle}
@@ -2245,6 +2315,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 12,
     lineHeight: 20,
+  },
+  sonicpesaNotice: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginTop: 12,
+    marginBottom: 4,
   },
   mutedCenter: {
     color: '#9CA3AF',

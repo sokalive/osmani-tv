@@ -392,12 +392,16 @@ async function postCreateOrder(pathSuffixes, payload, errorLabel, provider) {
       provider,
       body,
     });
+    const cooldownSeconds = Number(body?.cooldown_seconds ?? body?.cooldownSeconds);
     throw new CheckoutPaymentError(userMessage, {
       backendReason,
       httpStatus: res.status,
       provider,
       path: url,
       providerHttpStatus: Number.isFinite(providerHttpStatus) ? providerHttpStatus : undefined,
+      code: body?.code != null ? String(body.code) : null,
+      cooldownUntil: body?.cooldown_until ?? body?.cooldownUntil ?? null,
+      cooldownSeconds: Number.isFinite(cooldownSeconds) ? cooldownSeconds : null,
     });
   }
   const orderId = pickOrderId(body);
