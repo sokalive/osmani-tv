@@ -137,7 +137,9 @@ assert(modal.includes('create_order_timeout_blocked'), '4a. timeout is blocked/e
 assert(!modal.includes('create_order_timeout_recovery'), '4b. no timeout-recovery loop');
 assert(!modal.includes('create-order-timeout-recovery'), '4c. no orphan recovery source');
 assert(modal.includes('CREATE_ORDER_TIMEOUT_MESSAGE'), '4d. timeout shows truthful error');
-assert(modal.includes("setStep(5)"), '4e. failure goes to error step');
+assert(!modal.includes("setStep(5)"), '4e. generic failure step is removed');
+assert(!modal.includes('Malipo hayajakamilika'), '4f. generic failure title is removed');
+assert(!modal.includes('Malipo hayajafanikiwa'), '4g. generic failure body is removed');
 
 // 5) Backend confirms → immediate unlock + Hongera
 assert(modal.includes('finalizePaymentSuccess'), '5a. finalizePaymentSuccess');

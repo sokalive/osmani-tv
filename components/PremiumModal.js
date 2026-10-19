@@ -29,7 +29,6 @@ import {
 } from '../api/payment';
 import { resolveApiBaseUrl } from '../lib/apiBaseUrl';
 import {
-  formatCheckoutPaymentError,
   isPaymentCreateOrderTimeout,
   PhoneSubscriptionConflictError,
   DeviceSubscriptionConflictError,
@@ -87,6 +86,7 @@ import {
   cooldownFromCheckoutError,
   sonicpesaCheckoutGate,
   sonicpesaInitFailurePresentation,
+  sonicpesaPaymentFailureAction,
 } from '../lib/sonicpesaAttemptCooldown';
 import {
   clearSonicpesaAttemptCooldown,
@@ -239,7 +239,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const [orderId, setOrderId] = useState(null);
   const [waitingDeviceId, setWaitingDeviceId] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [failureReason, setFailureReason] = useState('');
   const [successDetails, setSuccessDetails] = useState(null);
   const [providers, setProviders] = useState(FALLBACK_NETWORKS);
   const [logoErrors, setLogoErrors] = useState({});
@@ -340,7 +339,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     if (doneRef.current) return;
     if (payInFlightRef.current) return;
     const currentStep = stepRef.current;
-    if (currentStep === 3 || currentStep === 4 || currentStep === 5) return;
+    if (currentStep === 3 || currentStep === 4) return;
     if (
       checkoutSessionRef.current === 'waiting' ||
       checkoutSessionRef.current === 'success' ||
@@ -378,7 +377,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setOrderId(null);
     setWaitingDeviceId('');
     setSubmitting(false);
-    setFailureReason('');
     setSuccessDetails(null);
     setPhoneGuardVisible(false);
     setPhoneGuardTitle('Taarifa');
@@ -413,8 +411,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
       checkoutSessionRef.current === 'success' ||
       checkoutSessionRef.current === 'submitting' ||
       step === 3 ||
-      step === 4 ||
-      step === 5
+      step === 4
     ) {
       return undefined;
     }
@@ -441,8 +438,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           checkoutSessionRef.current === 'success' ||
           checkoutSessionRef.current === 'submitting' ||
           stepRef.current === 3 ||
-          stepRef.current === 4 ||
-          stepRef.current === 5
+          stepRef.current === 4
         ) {
           return;
         }
@@ -895,21 +891,24 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
   const handleFailed = useCallback(
     (reason) => {
       if (doneRef.current) return;
+      const failure = sonicpesaPaymentFailureAction();
       doneRef.current = true;
       checkoutSessionRef.current = 'failed';
       clearTimers();
       closeSse();
       applyWaitingState(APP_WAITING_STATE.FAILED);
-      setFailureReason(
-        formatCheckoutPaymentError(reason || 'Malipo hayajafanikiwa', {
-          provider: checkoutProvider,
-        }) || 'Malipo hayajafanikiwa',
-      );
+      setStep(3);
       if (reason) {
         console.log(
           '[PremiumModal]',
           'payment_poll_failed',
-          JSON.stringify({ provider: checkoutProvider, backendReason: reason }),
+          JSON.stringify({
+            provider: checkoutProvider,
+            backendReason: reason,
+            stayOnWaitingScreen: failure.stayOnWaitingScreen,
+            createOrder: failure.createOrder,
+            grantEntitlement: failure.grantEntitlement,
+          }),
         );
       }
       void reportPaymentTelemetry(/timeout/i.test(String(reason ?? '')) ? 'timeout' : 'failure', {
@@ -917,7 +916,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         provider: checkoutProvider,
         reason: String(reason ?? ''),
       });
-      setStep(5);
     },
     [clearTimers, closeSse, applyWaitingState, checkoutProvider, orderId],
   );
@@ -1339,7 +1337,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
     doneRef.current = false;
     setOrderId(null);
-    setFailureReason('');
     setPaymentProgressStep(1);
     setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
     reconcileGuardRef.current.reset();
@@ -1357,8 +1354,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           checkoutSessionRef.current === 'success' ||
           checkoutSessionRef.current === 'submitting' ||
           stepRef.current === 3 ||
-          stepRef.current === 4 ||
-          stepRef.current === 5
+          stepRef.current === 4
         ) {
           console.log('[PremiumModal]', 'payment_submit_gate_ignored_after_checkout_start', {
             session: checkoutSessionRef.current,
@@ -1564,13 +1560,8 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
           plan_id: selectedPlan?.id ?? null,
           provider: activeProvider,
         });
-        if (activeProvider === 'sonicpesa') {
-          setSonicpesaNotice(CREATE_ORDER_TIMEOUT_MESSAGE);
-          setStep(2);
-          return;
-        }
-        setFailureReason(CREATE_ORDER_TIMEOUT_MESSAGE);
-        setStep(5);
+        setSonicpesaNotice(CREATE_ORDER_TIMEOUT_MESSAGE);
+        setStep(2);
         return;
       }
       const userMsg =
@@ -1612,13 +1603,9 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         setStep(2);
         return;
       }
-      if (failurePresentation === 'payment_screen') {
-        setSonicpesaNotice(alertMsg);
-        setStep(2);
-        return;
-      }
-      setFailureReason(alertMsg);
-      setStep(5);
+      setSonicpesaNotice(alertMsg);
+      setStep(2);
+      return;
     } finally {
       if (lipiaWatchdogRef.current) {
         clearTimeout(lipiaWatchdogRef.current);
@@ -1656,17 +1643,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setStep(2);
   };
 
-  const handleRetry = () => {
-    doneRef.current = false;
-    setFailureReason('');
-    setOrderId(null);
-    setRemainingSeconds(0);
-    setStep(2);
-  };
-
-  const compactResultStep = step === 5;
   const successSheetHeight = Math.min(620, Math.round(WINDOW_HEIGHT * 0.72));
-  const compactSheetHeight = Math.min(460, Math.round(WINDOW_HEIGHT * 0.56));
 
   return (
     <>
@@ -1685,9 +1662,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                 ? styles.sheetWaitingFull
                 : step === 4
                   ? { height: successSheetHeight, maxHeight: successSheetHeight }
-                  : compactResultStep
-                    ? { height: compactSheetHeight, maxHeight: compactSheetHeight }
-                    : { height: MODAL_MAX_HEIGHT, maxHeight: MODAL_MAX_HEIGHT },
+                  : { height: MODAL_MAX_HEIGHT, maxHeight: MODAL_MAX_HEIGHT },
             ]}
           >
             <SafeAreaView
@@ -1715,9 +1690,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                       ? [styles.modalScrollContentStep2Centered]
                       : step === 3
                         ? styles.modalScrollContentStep3
-                        : compactResultStep
-                          ? styles.modalScrollContentCompactResult
-                          : styles.modalScrollContent
+                        : styles.modalScrollContent
                   }
                   bounces={false}
                 >
@@ -1927,24 +1900,6 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
                         onOpenChannel={handleOpenChannel}
                         onDismiss={handleDismissSuccess}
                       />
-                    )}
-
-                    {paymentEntryGate === 'allowed' && step === 5 && (
-                      <View style={styles.resultWrap}>
-                        <View style={styles.failIconHalo}>
-                          <View style={styles.failIconCircle}>
-                            <Ionicons name="alert" size={28} color="#FFFFFF" />
-                          </View>
-                        </View>
-                        <Text style={styles.failTitle}>Malipo hayajakamilika</Text>
-                        <Text style={styles.failBody}>{failureReason}</Text>
-                        <Pressable style={[styles.ctaSolid, styles.resultCta]} onPress={handleRetry}>
-                          <Text style={styles.ctaText}>JARIBU TENA</Text>
-                        </Pressable>
-                        <Pressable style={[styles.cancelBtn, styles.resultSecondary]} onPress={handleCancel}>
-                          <Text style={styles.cancelBtnText}>FUNGA</Text>
-                        </Pressable>
-                      </View>
                     )}
                   </Animated.View>
                 </ScrollView>
@@ -2778,11 +2733,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     flexShrink: 1,
   },
-  resultWrap: {
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    alignItems: 'center',
-  },
   successIconHalo: {
     width: 76,
     height: 76,
@@ -2846,65 +2796,6 @@ const styles = StyleSheet.create({
   successHighlight: {
     color: '#FFFFFF',
     fontWeight: '800',
-  },
-  failIconHalo: {
-    width: 76,
-    height: 76,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-    shadowColor: '#EF4444',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.55,
-    shadowRadius: 16,
-    elevation: 10,
-  },
-  failIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#EF4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(239,68,68,0.45)',
-  },
-  failTitle: {
-    color: '#F87171',
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 12,
-    textAlign: 'center',
-    letterSpacing: 0.3,
-  },
-  failIcon: {
-    alignSelf: 'center',
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    lineHeight: 44,
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    backgroundColor: '#EF4444',
-    marginBottom: 10,
-  },
-  failBody: {
-    color: '#E5E7EB',
-    fontSize: 14,
-    lineHeight: 21,
-    textAlign: 'center',
-    marginBottom: 22,
-  },
-  resultCta: {
-    marginTop: 0,
-    marginBottom: 8,
-  },
-  resultSecondary: {
-    marginTop: 0,
-    marginBottom: 8,
   },
   cancelBtn: {
     width: '100%',

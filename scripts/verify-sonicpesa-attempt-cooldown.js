@@ -19,6 +19,7 @@ const {
   sonicpesaCancelAction,
   sonicpesaCheckoutGate,
   sonicpesaInitFailurePresentation,
+  sonicpesaPaymentFailureAction,
   sonicpesaPinTimerExpiredAction,
 } = require('../lib/sonicpesaAttemptCooldown');
 
@@ -95,8 +96,8 @@ assert(
   'attempt-limit response opens the cooldown popup',
 );
 assert(
-  sonicpesaInitFailurePresentation('zenopay', { httpStatus: 500 }) === 'generic_failure_popup',
-  'other providers keep their failure popup',
+  sonicpesaInitFailurePresentation('zenopay', { httpStatus: 500 }) === 'payment_screen',
+  'other providers do not get the removed generic popup',
 );
 
 const expired = sonicpesaPinTimerExpiredAction();
@@ -206,7 +207,22 @@ assert(modal.includes('onDismiss={() => setAttemptCooldownVisible(false)}'), 'di
 assert(waiting.includes('formatPinCountdown'), 'waiting clock uses the 02:00 formatter');
 assert(payment.includes('cooldown_until'), 'create-order keeps the backend cooldown fields');
 assert(store.includes('osmani_sonicpesa_pay_attempt_cooldown_v1'), 'cooldown survives app restart in storage');
-assert(modal.includes('Malipo hayajakamilika'), 'generic failure copy remains for other providers');
+const failed = sonicpesaPaymentFailureAction();
+assert(
+  failed.stayOnWaitingScreen === true &&
+    failed.showGenericFailurePopup === false &&
+    failed.createOrder === false &&
+    failed.grantEntitlement === false,
+  'failed SonicPesa status stays on the waiting screen',
+);
+assert(!modal.includes('Malipo hayajakamilika'), 'generic failure title is not in the payment modal');
+assert(!modal.includes('Malipo hayajafanikiwa'), 'generic failure body is not in the payment modal');
+assert(!modal.includes('>FUNGA<') && !modal.includes('FUNGA'), 'generic FUNGA button is removed');
+assert(!modal.includes('setStep(5)'), 'failure no longer opens the removed popup step');
+assert(modal.includes('sonicpesaPaymentFailureAction'), 'status failure uses the waiting-screen action');
+assert(modal.includes('setStep(3)'), 'failed status remains on the waiting screen');
+assert(waiting.includes('Hatujapata uthibitisho wa malipo'), 'waiting screen shows the failed status inline');
+assert(!waiting.includes('Malipo hayajakamilika') && !waiting.includes('JARIBU TENA'), 'waiting screen does not recreate the popup');
 
 const payIdx = modal.indexOf('const handleStep2Pay');
 const gateIdx = modal.indexOf("gate.action === 'block_local'", payIdx);

@@ -31,6 +31,7 @@ function statusLabel(step, appWaitingState) {
   if (appWaitingState === 'RETRYING') return 'Inajaribu Tena';
   if (appWaitingState === 'PHONE_CONFLICT') return 'Namba Inatumika';
   if (appWaitingState === 'MOVED_TO_SIBLING_DEVICE') return 'Kifurushi Kimehamishwa';
+  if (appWaitingState === 'FAILED') return 'Inasubiri PIN';
   if (step >= 3) return 'Inaanzisha Kifurushi';
   if (step >= 2) return 'Uthibitisho Malipo';
   return 'Inasubiri PIN';
@@ -43,6 +44,7 @@ function waitingTitle(appWaitingState) {
   if (appWaitingState === 'RETRYING') return 'Inajaribu Kuunganisha';
   if (appWaitingState === 'PHONE_CONFLICT') return 'Namba Tayari Ina Kifurushi';
   if (appWaitingState === 'MOVED_TO_SIBLING_DEVICE') return 'Kifurushi Kiko Kifaa Kingine';
+  if (appWaitingState === 'FAILED') return 'Inasubiri Uthibitisho wa Malipo';
   return 'Inasubiri Uthibitisho wa Malipo';
 }
 
@@ -58,6 +60,9 @@ function waitingBody(appWaitingState) {
   }
   if (appWaitingState === 'MOVED_TO_SIBLING_DEVICE') {
     return 'Malipo yamefanikiwa. Kifurushi kimehamishwa kwenye kifaa kingine kilichounganishwa na akaunti yako.';
+  }
+  if (appWaitingState === 'FAILED') {
+    return 'Hatujapata uthibitisho wa malipo. Endelea kwenye skrini hii. Hakuna ombi jipya litaanzishwa kiotomatiki.';
   }
   return null;
 }
