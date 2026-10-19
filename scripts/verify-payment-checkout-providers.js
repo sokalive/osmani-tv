@@ -194,7 +194,7 @@ assert(!modalSrc.includes('LIPIA KUPITIA'), 'no provider name on pay button');
 assert(!modalSrc.includes('payButtonLabel'), 'no provider-specific pay button label');
 assert(!modalSrc.includes('checkoutGateways'), 'no checkout gateway card grid');
 assert(!modalSrc.includes('listEnabledCheckoutGateways'), 'no gateway card listing in modal');
-assert(modalSrc.includes('formatCheckoutPaymentError'), 'PremiumModal maps payment failure text');
+assert(modalSrc.includes('e?.userMessage') && !modalSrc.includes('[Jaribio]'), 'PremiumModal shows the mapped checkout message without a diagnostic prefix');
 assert(modalSrc.includes('reloadCheckoutConfig'), 'PremiumModal reloads checkout config');
 assert(modalSrc.includes('aurax_settings_changed'), 'PremiumModal listens for Aurax admin SSE');
 assert(!modalSrc.includes('CHECKOUT_GATEWAY_META'), 'PremiumModal does not show gateway brand badge UI');

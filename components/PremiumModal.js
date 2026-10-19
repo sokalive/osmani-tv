@@ -377,6 +377,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
     setOrderId(null);
     setWaitingDeviceId('');
     setSubmitting(false);
+    setSonicpesaNotice('');
     setSuccessDetails(null);
     setPhoneGuardVisible(false);
     setPhoneGuardTitle('Taarifa');
@@ -1337,6 +1338,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
 
     doneRef.current = false;
     setOrderId(null);
+    setSonicpesaNotice('');
     setPaymentProgressStep(1);
     setAppWaitingState(APP_WAITING_STATE.PAYMENT_PENDING);
     reconcileGuardRef.current.reset();
@@ -1587,7 +1589,7 @@ export default function PremiumModal({ visible, onClose, onUnlockSuccess, channe
         ? CREATE_ORDER_INIT_FAILED_MESSAGE
         : userMsg;
       if (checkoutTestMode && e?.backendReason) {
-        alertMsg = `${alertMsg}\n\n[Jaribio] ${e.backendReason}`;
+        console.log('[PremiumModal]', 'checkout_probe_reason', String(e.backendReason));
       }
       void reportPaymentTelemetry('failure', {
         plan_id: selectedPlan?.id ?? null,

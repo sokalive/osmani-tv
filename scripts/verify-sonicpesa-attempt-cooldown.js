@@ -9,6 +9,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const { createRequire } = require('module');
+const requireCjs = createRequire(__filename);
 const {
   COOLDOWN_POPUP_COPY,
   SONICPESA_ATTEMPT_COOLDOWN_CODE,
@@ -228,6 +230,46 @@ const payIdx = modal.indexOf('const handleStep2Pay');
 const gateIdx = modal.indexOf("gate.action === 'block_local'", payIdx);
 const startIdx = modal.indexOf('const startPayment = resolveCheckoutStartPayment', payIdx);
 assert(gateIdx > payIdx && startIdx > gateIdx, 'cooldown block is before create-order');
+
+const { formatCheckoutPaymentError } = requireCjs('../lib/paymentCheckoutErrors.js');
+const terminal = formatCheckoutPaymentError('Imeshindwa kuanzisha malipo. Jaribu tena baadae.', {
+  httpStatus: 502,
+  provider: 'sonicpesa',
+  body: {
+    error: 'Imeshindwa kuanzisha malipo. Jaribu tena baadae.',
+    checkout_phase: 'terminal_failure',
+    provider_initiation: 'failed',
+    pin_wait_allowed: false,
+  },
+});
+assert(
+  terminal === 'Imeshindwa kuanzisha malipo. Jaribu tena baadae.' &&
+    !terminal.includes('Seva ya malipo haipatikani'),
+  'SonicPesa terminal rejection is not rewritten as server unavailable',
+);
+const gateway = formatCheckoutPaymentError('Bad Gateway', {
+  httpStatus: 502,
+  provider: 'sonicpesa',
+  body: { error: 'Bad Gateway' },
+});
+assert(gateway.includes('Seva ya malipo haipatikani'), 'a real gateway 502 stays server-unavailable');
+const rate = formatCheckoutPaymentError('Maombi mengi sana. Subiri kidogo kisha ujaribu tena.', {
+  httpStatus: 429,
+  provider: 'sonicpesa',
+  body: { error: 'Maombi mengi sana. Subiri kidogo kisha ujaribu tena.', checkout_phase: 'retryable_rejection', provider_initiation: 'rejected_retryable' },
+});
+assert(!rate.includes('Seva ya malipo haipatikani') && !rate.includes('SONICPESA_PAY_ATTEMPT_COOLDOWN'), 'provider 429 is not the cooldown or a dead server');
+const ambiguousMessage = formatCheckoutPaymentError('Hatujapata jibu la malipo. Subiri kidogo usijaribu mara mbili.', {
+  httpStatus: 409,
+  provider: 'sonicpesa',
+  body: { checkout_phase: 'ambiguous', provider_initiation: 'ambiguous' },
+});
+assert(ambiguousMessage.includes('Hatujapata jibu la malipo') && !ambiguousMessage.includes('Seva ya malipo haipatikani'), 'ambiguous timeout is not server-unavailable');
+assert(!modal.includes('[Jaribio]'), 'diagnostic Jaribio prefix is not shown to customers');
+assert(modal.includes("setSonicpesaNotice('')"), 'phone screen clears a previous checkout notice');
+const openReset = modal.indexOf('useLayoutEffect');
+const clearIdx = modal.indexOf("setSonicpesaNotice('')", openReset);
+assert(openReset > 0 && clearIdx > openReset, 'opening the payment screen clears a stale notice');
 
 if (process.exitCode) process.exit(1);
 console.log('\n[verify-sonicpesa-attempt-cooldown] ok');
