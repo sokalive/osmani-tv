@@ -64,13 +64,17 @@ export default function WhatsAppFloatingButton() {
 
     const unsubscribe = subscribeRealtimeEvent('whatsapp_settings_changed', (payload) => {
       const inner = unwrapSettingsEvent(payload);
-      generation += 1;
+      const token = generation + 1;
+      generation = token;
       if (inner && typeof inner === 'object' && Object.prototype.hasOwnProperty.call(inner, 'enabled')) {
-        applySettings(inner);
+        if (token === generation) applySettings(inner);
       }
       load(true);
     });
     const unsubscribeReconnect = subscribeRealtimeEvent('__sync_stream_connected', () => {
+      load(true);
+    });
+    const unsubscribeSnapshot = subscribeRealtimeEvent('snapshot', () => {
       load(true);
     });
 
@@ -79,6 +83,7 @@ export default function WhatsAppFloatingButton() {
       generation += 1;
       unsubscribe();
       unsubscribeReconnect();
+      unsubscribeSnapshot();
     };
   }, [applySettings]);
 

@@ -39,6 +39,34 @@ else pass('popup listens for popup_settings_changed');
 if (!popup.includes("subscribeRealtimeEvent('__sync_stream_connected'")) fail('popup reconnect refetch missing');
 else pass('popup refetches after SSE reconnect');
 
+if (!popup.includes("subscribeRealtimeEvent('snapshot'")) fail('popup snapshot refetch missing');
+else pass('popup refetches after SSE snapshot');
+
+if (!whatsapp.includes("subscribeRealtimeEvent('snapshot'")) fail('whatsapp snapshot refetch missing');
+else pass('whatsapp refetches after SSE snapshot');
+
+if (!whatsapp.includes("subscribeRealtimeEvent('__sync_stream_connected'")) fail('whatsapp reconnect refetch missing');
+else pass('whatsapp refetches after SSE reconnect');
+
+if (!ctx.includes("refreshPaymentPlansCache({ reason: 'sse:snapshot' })")) fail('snapshot must refresh plans');
+else pass('snapshot refreshes plans');
+
+if (!ctx.includes("refreshSettingsOnly('sse:snapshot')")) fail('snapshot must refresh app settings');
+else pass('snapshot refreshes app settings');
+
+if (!ctx.includes("refreshPaymentPlansCache({ reason: 'sse:sync_stream_connected' })")) {
+  fail('reconnect must refresh plans');
+} else pass('reconnect refreshes plans');
+
+if (!ctx.includes("refreshPaymentPlansCache({ reason: 'app_resume' })")) fail('resume must refresh plans');
+else pass('resume refreshes plans');
+
+if (!ctx.includes('refreshFollowUpRef')) fail('forced catalog refresh must coalesce an in-flight request');
+else pass('forced catalog refresh schedules one follow-up');
+
+if (!plans.includes('plansEpoch')) fail('plans refresh must ignore an older in-flight write');
+else pass('plans refresh ignores an older in-flight write');
+
 if (!popup.includes('generationRef')) fail('popup generation guard missing');
 else pass('popup ignores late responses');
 
@@ -104,6 +132,37 @@ if (normalizePopupSettings) {
   else pass('lower configVersion after restart is accepted');
 }
 
+async function catalogFollowUp() {
+  invalidateCatalogCache();
+  let calls = 0;
+  const gates = [];
+  const fetcher = () => {
+    calls += 1;
+    return new Promise((resolve) => {
+      gates.push(resolve);
+    });
+  };
+  const followFetcher = () => {
+    calls += 1;
+    return Promise.resolve([{ id: 'follow' }]);
+  };
+  const first = getCachedChannels(fetcher, { force: true });
+  const second = getCachedChannels(followFetcher, { force: true });
+  const third = getCachedChannels(followFetcher, { force: true });
+  if (calls !== 1) {
+    fail(`forced refresh reused or stormed the in-flight request (calls=${calls})`);
+    return;
+  }
+  gates[0]([{ id: 'stale' }]);
+  const [a, b, c] = await Promise.all([first, second, third]);
+  const visible = await getCachedChannels(() => Promise.resolve([{ id: 'should-not-fetch' }]));
+  if (calls !== 2) fail(`follow-up fetch count ${calls}, expected 2`);
+  else if (a[0]?.id !== 'follow' || b[0]?.id !== 'follow' || c[0]?.id !== 'follow') {
+    fail('forced follow-up did not replace the in-flight catalog');
+  } else if (visible[0]?.id !== 'follow') fail('follow-up result was not stored');
+  else pass('forced refresh waits for one follow-up and does not reuse stale in-flight data');
+}
+
 async function catalogRace() {
   invalidateCatalogCache();
   let releaseOld;
@@ -124,7 +183,8 @@ async function catalogRace() {
   else pass('late catalog response cannot overwrite newer channels');
 }
 
-catalogRace()
+catalogFollowUp()
+  .then(() => catalogRace())
   .then(() => {
     if (process.exitCode) process.exit(process.exitCode);
     console.log('\n[verify-admin-stale-data] ok');

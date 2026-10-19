@@ -275,6 +275,8 @@ export function OsmaniAppProvider({ children }) {
   const refreshInFlightRef = useRef(0);
   const refreshPromiseRef = useRef(null);
   const refreshGenRef = useRef(0);
+  /** One forced catalog refetch after the in-flight refresh, instead of a parallel storm. */
+  const refreshFollowUpRef = useRef(null);
   /** Prevents cold-start disk cache hydrate from overwriting fresher catalog network sync. */
   const catalogNetworkHydratedRef = useRef({ channels: false, banners: false });
   const verifyPromiseRef = useRef(null);
@@ -1171,11 +1173,19 @@ export function OsmaniAppProvider({ children }) {
     const forceNetwork = opts.forceNetwork === true;
     const catalogOpts = forceNetwork ? { force: true } : {};
 
+    if (refreshPromiseRef.current) {
+      if (forceNetwork) {
+        refreshFollowUpRef.current = {
+          showGlobalLoading: false,
+          preserveDataOnError: preserveDataOnError,
+          skipSettingsFromHttp: skipSettingsFromHttp,
+          forceNetwork: true,
+        };
+      }
+      return refreshPromiseRef.current;
+    }
     if (forceNetwork) {
       invalidateCatalogCache();
-    }
-    if (!forceNetwork && refreshPromiseRef.current) {
-      return refreshPromiseRef.current;
     }
 
     const gen = refreshGenRef.current + 1;
@@ -1286,6 +1296,14 @@ export function OsmaniAppProvider({ children }) {
       if (!isStale() && refreshInFlightRef.current === 0) {
         setLoading(false);
       }
+    }
+    if (refreshPromiseRef.current === run) {
+      refreshPromiseRef.current = null;
+    }
+    if (refreshFollowUpRef.current) {
+      const follow = refreshFollowUpRef.current;
+      refreshFollowUpRef.current = null;
+      return refresh(follow);
     }
     })();
 
@@ -1661,6 +1679,7 @@ export function OsmaniAppProvider({ children }) {
     const onAppState = (next) => {
       if (next === 'active') {
         void refreshSettingsOnly('app_resume');
+        void refreshPaymentPlansCache({ reason: 'app_resume' });
         scheduleAdminDrivenSoftSync('app_resume');
       }
     };
@@ -1679,6 +1698,8 @@ export function OsmaniAppProvider({ children }) {
   useEffect(() => {
     const offSyncReconnect = subscribeRealtimeEvent('__sync_stream_connected', () => {
       void reverifySubscription('sse:sync_stream_connected');
+      void refreshSettingsOnly('sse:sync_stream_connected');
+      void refreshPaymentPlansCache({ reason: 'sse:sync_stream_connected' });
       invalidateCatalogCache();
       void refresh({
         showGlobalLoading: false,
@@ -1696,15 +1717,17 @@ export function OsmaniAppProvider({ children }) {
     });
     const offSnapshot = subscribeRealtimeEvent('snapshot', (payload) => {
       const patched = applyChannelCatalogRealtime('snapshot', payload, 'sse:snapshot');
+      void refreshSettingsOnly('sse:snapshot');
+      void refreshPaymentPlansCache({ reason: 'sse:snapshot' });
       if (patched) {
         invalidateCatalogCache();
-        void refresh({
-          showGlobalLoading: false,
-          preserveDataOnError: true,
-          skipSettingsFromHttp: true,
-          forceNetwork: true,
-        });
       }
+      void refresh({
+        showGlobalLoading: false,
+        preserveDataOnError: true,
+        skipSettingsFromHttp: true,
+        forceNetwork: true,
+      });
       const inner = unwrapSubscriptionSsePayload(payload);
       if (!inner || typeof inner !== 'object') return;
       const hasSubHint =
@@ -2049,7 +2072,7 @@ export function OsmaniAppProvider({ children }) {
       offCatalogAliases.forEach((off) => off());
       offCatchAllCatalog();
     };
-  }, [refresh, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway, tryInstantApplyFromSse, showActivationSuccess, applyChannelCatalogRealtime]);
+  }, [refresh, refreshSettingsOnly, refreshTrialWatchSettings, reverifySubscription, scheduleAdminDrivenSoftSync, applySourceTransferCompleted, handleRemoteTransferAway, tryInstantApplyFromSse, showActivationSuccess, applyChannelCatalogRealtime]);
 
   // Foreground sync: refresh catalog + reverify periodically while app is active.
   useEffect(() => {
@@ -2084,6 +2107,7 @@ export function OsmaniAppProvider({ children }) {
           preserveDataOnError: true,
           forceNetwork: true,
         });
+        await refreshPaymentPlansCache({ reason: 'foreground-tick' });
         await reverifySubscription('foreground-tick');
         failCount = 0;
       } catch {

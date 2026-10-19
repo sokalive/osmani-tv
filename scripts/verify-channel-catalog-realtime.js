@@ -88,6 +88,21 @@ sim('FREE→PREMIUM patch', () => {
   return changed && channels[1].accessType === 'premium' && channels[1].accessPremium === true;
 });
 
+sim('rewound process-local catalog revision still applies', () => {
+  const existing = [{ id: '1', accessType: 'premium', accessPremium: true, revision: 12838 }];
+  const patches = parseChannelAccessRealtimePatches('channels_changed', {
+    id: '1',
+    accessType: 'free',
+    accessPremium: false,
+    catalog_revision: 55,
+  });
+  return (
+    patches.length === 1 &&
+    channelAccessPatchIsNewer(patches[0], existing[0]) === true &&
+    applyChannelAccessPatches(existing, patches).channels[0].accessType === 'free'
+  );
+});
+
 sim('stale revision rejected', () => {
   const patches = parseChannelAccessRealtimePatches('channel_updated', {
     id: '1',

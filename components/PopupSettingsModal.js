@@ -115,12 +115,16 @@ export default function PopupSettingsModal() {
     const unsubscribeReconnect = subscribeRealtimeEvent('__sync_stream_connected', () => {
       load('sse-reconnect', true);
     });
+    const unsubscribeSnapshot = subscribeRealtimeEvent('snapshot', () => {
+      load('sse-snapshot', true);
+    });
 
     return () => {
       cancelled = true;
       generationRef.current += 1;
       unsubscribe();
       unsubscribeReconnect();
+      unsubscribeSnapshot();
     };
   }, [applySettings]);
 
