@@ -281,6 +281,16 @@ export default function ChannelPlayerScreen({ route, navigation }) {
   const useNativePlayer = playbackRoute === 'native';
   const useHlsWebView = playbackRoute === 'hls-webview';
   const useEmbedWebView = playbackRoute === 'embed-webview';
+  /**
+   * Channel 1 — Azam 1 HD (id 1): Mpingo player.php / Shaka DRM embed (MPD).
+   * Android WebView denies EME until RESOURCE_PROTECTED_MEDIA_ID is granted;
+   * react-native-webview exposes that as allowsProtectedMedia (OTA-safe JS prop).
+   * Scoped to channel 1 only so other embeds keep prior WebView permission behavior.
+   */
+  const channel1WidevineEmbed = useMemo(() => {
+    const id = String(channel?.id ?? channel?.channel_id ?? '').trim();
+    return id === '1';
+  }, [channel?.id, channel?.channel_id]);
 
   const isHlsManifest = Boolean(uri && looksLikeHlsPlaybackUri(uri));
 
@@ -1831,6 +1841,8 @@ export default function ChannelPlayerScreen({ route, navigation }) {
         requested_uri: uri,
         embed_target_uri: embedTargetUri,
         base_url: embedWebViewSource?.baseUrl ?? null,
+        channel_1_widevine: channel1WidevineEmbed,
+        allows_protected_media: channel1WidevineEmbed,
       });
     }
   };
@@ -1849,6 +1861,33 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     setPlaybackError('');
     if (useEmbedWebView) {
       embedWebRef.current?.injectJavaScript(buildEmbedCmdScript({ type: 'request-tracks' }));
+      if (channel1WidevineEmbed) {
+        // Best-effort EME probe for logcat during owner manual testing (no DRM credentials).
+        embedWebRef.current?.injectJavaScript(`
+(function(){
+  function post(kind, payload){
+    try{window.ReactNativeWebView.postMessage(JSON.stringify({kind:kind,payload:payload||null}));}catch(e){}
+  }
+  post('channel1_eme_env', {
+    secure: !!window.isSecureContext,
+    origin: String(location && location.origin || ''),
+    href: String(location && location.href || '').slice(0,160),
+    hasEme: !!(navigator && navigator.requestMediaKeySystemAccess)
+  });
+  if (!navigator.requestMediaKeySystemAccess) {
+    post('channel1_eme_probe', { ok:false, reason:'eme_api_missing' });
+    return;
+  }
+  var soft=[{initDataTypes:['cenc'],audioCapabilities:[{contentType:'audio/mp4; codecs="mp4a.40.2"',robustness:''}],videoCapabilities:[{contentType:'video/mp4; codecs="avc1.42E01E"',robustness:''}]}];
+  navigator.requestMediaKeySystemAccess('com.widevine.alpha', soft).then(function(){
+    post('channel1_eme_probe', { ok:true, softRobustness:true });
+  }).catch(function(err){
+    post('channel1_eme_probe', { ok:false, reason:'widevine_config_unavailable', message:String(err&&err.message||err||'') });
+  });
+})();
+true;
+`);
+      }
       // Keep isBuffering true until embed_playback_started (provider video actually playing).
       markPlaybackStartedForHide();
       return;
@@ -2009,6 +2048,10 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     if (!msg || typeof msg !== 'object') return;
     const kind = String(msg.kind || '');
     const payload = msg.payload ?? null;
+    if (kind === 'channel1_eme_env' || kind === 'channel1_eme_probe') {
+      console.log('[player][channel1-widevine]', kind, payload);
+      return;
+    }
     if (kind === 'embed_controls_detected') {
       setEmbedControls(payload || null);
       setEmbedHasControls(Boolean(payload));
@@ -2019,6 +2062,11 @@ export default function ChannelPlayerScreen({ route, navigation }) {
       setIsBuffering(false);
       setPlaybackError('');
       markPlaybackStartedForHide();
+      if (channel1WidevineEmbed) {
+        console.log('[player][channel1-widevine] playback_started', {
+          embed_target_uri: embedTargetUri,
+        });
+      }
       return;
     }
     if (kind === 'embed_playback_waiting') {
@@ -2492,6 +2540,7 @@ export default function ChannelPlayerScreen({ route, navigation }) {
             source={embedWebViewSource}
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
+            allowsProtectedMedia={channel1WidevineEmbed}
             javaScriptEnabled
             domStorageEnabled
             originWhitelist={['*']}
