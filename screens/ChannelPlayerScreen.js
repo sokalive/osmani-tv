@@ -52,6 +52,11 @@ import { STREAM_PROXY_BASE } from '../lib/streamProxy';
 import { buildHlsJsPlayerHtml } from '../lib/hlsJsPlayerHtml';
 import { buildEmbedBridgeJs, buildEmbedPageBootstrapJs, buildEmbedSuppressNativeUiJs } from '../lib/embedBridgeJs';
 import { resolveProviderEmbedPageUrl } from '../lib/embedPlaybackUrl';
+import {
+  ensureOsmaniLinkSession,
+  isOsmaniLinkEmbedUrl,
+  mergeOsmaniLinkWebViewSource,
+} from '../lib/osmaniLinkSilentAuth';
 import { pickPlaybackRoute } from '../lib/playbackRoute';
 import {
   buildDirectHlsStreamHeaders,
@@ -415,13 +420,60 @@ export default function ChannelPlayerScreen({ route, navigation }) {
     return resolveProviderEmbedPageUrl(uri) || uri;
   }, [useEmbedWebView, uri]);
 
+  const needsOsmaniLinkAuth = useMemo(
+    () => Boolean(embedTargetUri && isOsmaniLinkEmbedUrl(embedTargetUri)),
+    [embedTargetUri],
+  );
+  const [osmaniAuthHeaders, setOsmaniAuthHeaders] = useState(null);
+  const [osmaniAuthStatus, setOsmaniAuthStatus] = useState(
+    /** @type {'idle' | 'pending' | 'ready' | 'blocked' | 'denied'} */ ('idle'),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!needsOsmaniLinkAuth) {
+      setOsmaniAuthHeaders(null);
+      setOsmaniAuthStatus('idle');
+      return undefined;
+    }
+    setOsmaniAuthStatus('pending');
+    (async () => {
+      const result = await ensureOsmaniLinkSession();
+      if (cancelled) return;
+      if (result.ok) {
+        setOsmaniAuthHeaders(result.headers || {});
+        setOsmaniAuthStatus('ready');
+        return;
+      }
+      setOsmaniAuthHeaders(null);
+      setOsmaniAuthStatus(result.blocked ? 'blocked' : 'denied');
+      if (__DEV__) {
+        console.warn('[osmani-link-auth]', result.reason || 'failed');
+      }
+    })();
+    const refreshTimer = setInterval(() => {
+      void ensureOsmaniLinkSession().then((result) => {
+        if (cancelled || !result.ok) return;
+        setOsmaniAuthHeaders(result.headers || {});
+        setOsmaniAuthStatus('ready');
+      });
+    }, 10 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(refreshTimer);
+    };
+  }, [needsOsmaniLinkAuth, embedTargetUri]);
+
   const embedWebViewSource = useMemo(() => {
     if (!embedTargetUri) return null;
+    if (needsOsmaniLinkAuth && osmaniAuthStatus !== 'ready') return null;
     const baseUrl = baseUrlFromUrl(embedTargetUri);
     const hEntries = Object.entries(headers).filter(([, v]) => v != null && String(v).trim() !== '');
-    if (!hEntries.length) return { uri: embedTargetUri, baseUrl };
-    return { uri: embedTargetUri, baseUrl, headers: Object.fromEntries(hEntries) };
-  }, [embedTargetUri, headers]);
+    const base = hEntries.length
+      ? { uri: embedTargetUri, baseUrl, headers: Object.fromEntries(hEntries) }
+      : { uri: embedTargetUri, baseUrl };
+    return mergeOsmaniLinkWebViewSource(base, osmaniAuthHeaders || {});
+  }, [embedTargetUri, headers, needsOsmaniLinkAuth, osmaniAuthStatus, osmaniAuthHeaders]);
 
   const embedBridgeJs = useMemo(() => buildEmbedBridgeJs(), []);
   const embedPageBootstrapJs = useMemo(() => buildEmbedPageBootstrapJs(), []);
@@ -2521,12 +2573,26 @@ true;
             onError={onHlsWebError}
             pointerEvents={controlsVisible && !pickerKind ? 'none' : 'auto'}
           />
-        ) : playbackSurfacesMounted ? (
+        ) : playbackSurfacesMounted && needsOsmaniLinkAuth && osmaniAuthStatus === 'pending' ? (
+          <View style={[styles.video, { alignItems: 'center', justifyContent: 'center' }]}>
+            <ActivityIndicator color="#fff" />
+          </View>
+        ) : playbackSurfacesMounted && needsOsmaniLinkAuth && (osmaniAuthStatus === 'blocked' || osmaniAuthStatus === 'denied') ? (
+          <View style={[styles.video, { alignItems: 'center', justifyContent: 'center', padding: 24 }]}>
+            <Text style={{ color: '#fff', textAlign: 'center' }}>
+              {osmaniAuthStatus === 'blocked'
+                ? 'Osmani Link credentials are not configured for this app.'
+                : 'Osmani Link authorization was denied for this app.'}
+            </Text>
+          </View>
+        ) : playbackSurfacesMounted && embedWebViewSource ? (
           <WebView
             key={`embed-${playerEpoch}`}
             ref={embedWebRef}
             style={[styles.video, styles.embedWebView]}
             source={embedWebViewSource}
+            sharedCookiesEnabled
+            thirdPartyCookiesEnabled
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
             allowsProtectedMedia={allowEmbedProtectedMedia}

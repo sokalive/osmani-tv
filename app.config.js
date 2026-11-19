@@ -229,6 +229,13 @@ module.exports = {
         process.env.EXPO_PUBLIC_ANDROID_SIGNING_CERT_SHA256?.trim?.() || '',
       /** false when EXPO_PUBLIC_APK_INSTALLER_ENABLED=0 (Play Store builds). */
       apkInstallerEnabled: process.env.EXPO_PUBLIC_APK_INSTALLER_ENABLED !== '0',
+      /**
+       * Osmani Link silent auth — THIS APP ONLY.
+       * Set via EXPO_PUBLIC_OSMANI_LINK_APP_ID / EXPO_PUBLIC_OSMANI_LINK_ACCESS_KEY
+       * (e.g. .env.local). Never commit real Access Keys. Never reuse another app's key.
+       */
+      osmaniLinkAppId: process.env.EXPO_PUBLIC_OSMANI_LINK_APP_ID || '',
+      osmaniLinkAccessKey: process.env.EXPO_PUBLIC_OSMANI_LINK_ACCESS_KEY || '',
     },
     plugins: [
       /** Register before expo-splash-screen so style mods run after Expo's (mod chain order). */
